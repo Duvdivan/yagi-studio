@@ -24,10 +24,14 @@ Designs stay in your browser on that device, so use Save to keep a copy.
 
 If you put an antenna on a roof or mast, keep it well clear of power lines all the way up and down, and follow your local rules on grounding and lightning protection.
 
+## The source
+
+It's all in [`studio/`](studio/): `python studio/build.py` rebuilds this page from it, and [`studio/README.md`](studio/README.md) covers the solver, how it was checked and how to run the tests. The Android app is in [`studio/android/`](studio/android/).
+
 ## License
 
 Copyright (C) 2026 Duvdivan.
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE).
 
-The fonts in `fonts/` are under the SIL Open Font License, with their licences beside them.
+The fonts in `fonts/` are under the SIL Open Font License, with their licences beside them. The Gradle wrapper in `studio/android/gradle/` is under the Apache License 2.0.

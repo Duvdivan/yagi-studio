@@ -1,0 +1,18 @@
+__pycache__/
+
+# built from src for hosting; dist/yagi-studio.html is the one to keep
+dist/artifact.html
+
+# the Android app: build outputs, and its page, which build.py writes
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/index.html
+
+# built from android; hand it out rather than keeping it in git
+dist/YagiStudio.apk
+
+# the installable web app, which build.py writes to put on a host
+dist/web/

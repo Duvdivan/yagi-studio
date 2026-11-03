@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Yagi seen from the side: a reflector, a driven element in the accent colour, and directors -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group>
+        <path android:pathData="M32,54H78" android:strokeColor="@color/icon_ink" android:strokeWidth="3.5" android:strokeLineCap="round" />
+        <path android:pathData="M34,36V72" android:strokeColor="@color/icon_ink" android:strokeWidth="4" android:strokeLineCap="round" />
+        <path android:pathData="M45,38V70" android:strokeColor="@color/icon_accent" android:strokeWidth="4" android:strokeLineCap="round" />
+        <path android:pathData="M55,41V67" android:strokeColor="@color/icon_ink" android:strokeWidth="4" android:strokeLineCap="round" />
+        <path android:pathData="M65,43V65" android:strokeColor="@color/icon_ink" android:strokeWidth="4" android:strokeLineCap="round" />
+        <path android:pathData="M75,45V63" android:strokeColor="@color/icon_ink" android:strokeWidth="4" android:strokeLineCap="round" />
+    </group>
+</vector>

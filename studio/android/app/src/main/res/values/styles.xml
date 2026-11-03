@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The page's own background colour in style.css, so that nothing flashes as it loads -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/page</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">@color/accent</item>
+    </style>
+    <color name="page">#E6ECF1</color>
+    <color name="accent">#1A5BB5</color>
+    <color name="icon_back">#16324F</color>
+    <color name="icon_ink">#FFFFFF</color>
+    <color name="icon_accent">#5B9FF0</color>
+</resources>

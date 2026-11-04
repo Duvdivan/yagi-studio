@@ -756,7 +756,7 @@
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom follows the DuvYagi's printed one, but its cutting marks, check notches and label are new, and so are the hand grip and tripod mount. Print one and check it before you rely on it.</p>
+            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom follows the DuvYagi's printed one, but its cutting marks, check notches and label are new, and so are the hand grip, the tripod mount and the painter pole's arm. Print one and check it before you rely on it.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
             <div class="field-grid">
               <div class="field"><label for="p-mount">Mount</label><select class="sel" id="p-mount">${Object.keys(YS.PARTS.MOUNTS).map((k) => `<option value="${k}">${esc(YS.PARTS.MOUNTS[k].name)}</option>`).join("")}</select></div>
@@ -803,6 +803,7 @@
       if (!m) lines.push(`The clamp holds a 42 mm mast about ${fmt(YS.mastBehind(42), 0)} mm behind the reflector. Turn the mast on in the Design tab to see what that does.`);
       else if (Math.abs(YS.mastBehind(m.d) - m.behind) > 10) lines.push(`The clamp puts your ${fmt(m.d, 0)} mm mast about ${fmt(YS.mastBehind(m.d), 0)} mm behind the reflector, and the Design tab has it at ${fmt(m.behind, 0)} mm. Set them the same to see what it does.`);
     }
+    if (PRINT.mount === "pole") lines.push(`The pole's thread is from a socket proven on one real painter pole, in the USA. Check it fits yours. The pole sits ${fmt(YS.PARTS.POLE_BEHIND, 0)} mm behind the reflector, and a metal one can change the tuning, so sweep it on the pole. Look up first: a pole can reach overhead power lines. Don't raise it in wind or near storms.`);
     if (PRINT.mount === "grip") lines.push("A hand near the rods detunes them. Sweep the antenna the way you'll hold it.");
     host.innerHTML = lines.map((l) => `<p class="note">${l}</p>`).join("") + plan.warnings.map((w) => `<p class="note"><span class="pill warn">Note</span> ${esc(w)}</p>`).join("");
     renderPrintFiles();

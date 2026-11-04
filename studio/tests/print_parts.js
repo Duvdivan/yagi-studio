@@ -7,7 +7,7 @@
  * every rod at the right place, joints clear of the rods, and marks at the right lengths. Exits non-zero on a failure.
  */
 const fs = require("fs"), path = require("path");
-for (const f of ["guide", "parts"]) require(path.join(__dirname, "..", "src", f + ".js"));
+for (const f of ["guide", "pole-socket", "parts"]) require(path.join(__dirname, "..", "src", f + ".js"));
 const YS = globalThis.YS;
 
 let failed = 0;
@@ -88,7 +88,7 @@ function inside(mesh, x, y, z) {
 
   console.log("\n2b. Every socket prints standing, opening up, as the handle adapter snapped when flat");
   for (const pol of ["vertical", "horizontal"]) {
-    for (const mount of ["mast", "grip", "tripod"]) {
+    for (const mount of ["mast", "pole", "grip", "tripod"]) {
       const r = YS.buildParts(wasm, Object.assign({}, duv, { polarization: pol }), { mount }), m = r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "coupon");
       // straight down the socket's middle from the top of the file: empty for the socket's depth, so nothing is roofed over it
       const cx = m.mesh.t.reduce((a, t) => { for (const v of t) if (v[2] > m.size[2] - 0.001) { a.x0 = Math.min(a.x0, v[0]); a.x1 = Math.max(a.x1, v[0]); a.y0 = Math.min(a.y0, v[1]); a.y1 = Math.max(a.y1, v[1]); } return a; }, { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 });
@@ -96,6 +96,22 @@ function inside(mesh, x, y, z) {
       truth(`${pol}, ${mount}: its socket opens upward`, !inside(m.mesh, mx + 3, my + 3, top - 1) && !inside(m.mesh, mx + 3, my + 3, top - 20));
     }
   }
+
+  console.log("\n2c. The painter pole's socket, the owner's thread on a plate that bolts to the arm");
+  const pr = YS.buildParts(wasm, duv, { mount: "pole" }), ps = by(pr, "pole_socket"), pa = by(pr, "pole_arm");
+  const cx = 18, cy = 18, P = YS.POLE_SOCKET;
+  truth("lies flat on its plate, with the thread opening upward", near(ps.size[2], 7 + P.height, 0.01) && !inside(ps.mesh, cx, cy, ps.size[2] - 1), ps.size.map((v) => v.toFixed(2)).join(" x "));
+  truth("the thread doesn't break through the plate", inside(ps.mesh, cx, cy, 3));
+  truth("its wall is whole", [0, 1, 2, 3, 4, 5].every((i) => inside(ps.mesh, cx + 13.5 * Math.cos(i), cy + 13.5 * Math.sin(i), 25)));
+  truth("the thread is deep enough", !inside(ps.mesh, cx, cy, ps.size[2] - P.depth + 1), `${P.depth.toFixed(1)} mm`);
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => truth(`bolt hole ${a}, ${b} goes through the plate`, !inside(ps.mesh, cx + 14 * a, cy + 14 * b, 4) && inside(ps.mesh, cx + 14 * a + 2.2, cy + 14 * b, 4)));
+  // the arm lies on its block's far end, x up, so the block's holes run across the file. Standing, its z is the boom's -x
+  const az = 2, block = pa.mesh;
+  truth("the arm's four bolt holes are at the same spacing", (() => {
+    const ys = pa.size[1] / 2, xs = pa.size[0] / 2, h = 18;      // the block's middle along the boom
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([a, b]) => !inside(block, xs, ys + 14 * b, h + 14 * a) && inside(block, xs, ys + 14 * b + 2.2, h + 14 * a));
+  })());
+  truth("two pieces, and the notes list their bolts", /4 M3 x 40/.test(YS.partsNotes(duv, pr)));
 
   console.log("\n3. Scale: a filament that shrinks 0.36%");
   const scaled = YS.buildParts(wasm, duv, { mount: "none", scale: 1 / 0.9964 }), sr = by(scaled, "boom_rear");
@@ -116,7 +132,7 @@ function inside(mesh, x, y, z) {
     ["Horizontal rods", yagi("flat", 6, 70, 150, 3, { polarization: "horizontal" }), { bed: 256 }],
   ];
   for (const [name, d, o] of cases) {
-    for (const mount of ["mast", "grip", "tripod"]) {
+    for (const mount of ["mast", "pole", "grip", "tripod"]) {
       const r = YS.buildParts(wasm, d, Object.assign({ mount }, o));
       const fits = r.parts.filter((p) => p.id.startsWith("boom")).every((p) => p.size[0] <= o.bed - 15.9);
       const clear = r.plan.sections.slice(1).every((s) => !r.plan.rods.some((q) => q.x > s.prev - 8 + 1e-6 && q.x < s.prev + 38 - 1e-6));

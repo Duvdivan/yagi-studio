@@ -39,6 +39,7 @@
   const CAL_NOTCH = [4, 2.5];      // each notch's width (x) and depth (z)
   const GRIP = { width: 30, depth: 34, length: 115, back: 60, chamfer: 5 };   // the hand grip, and how far it's held behind the reflector
   const TRIPOD = { size: 36, back: 34, flats: 11.2, nut: 5.6, shelf: 5, bolt: 6.6 };   // block, and a 1/4-20 nut
+  const POLE = { plate: 8, bolts: 14 };          // the pole socket's plate, and its four M3 bolts either side of centre
   const CRADLE = { apex: -62, w: 80, h: 60 };    // the mast's V, from the reflector
 
   /* Letters on a 3 x 5 grid, as bars, so each is a groove a nozzle can follow. */
@@ -93,6 +94,11 @@
       },
       turn: (m, r) => keep(m.rotate(r)),
       at: (m, t) => keep(m.translate(t)),
+      /* A solid from base-64 Float32 positions and Uint32 triangles. */
+      fromData: (positions, triangles) => {
+        const bytes = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u.buffer; };
+        return keep(new Manifold(new wasm.Mesh({ numProp: 3, vertProperties: new Float32Array(bytes(positions)), triVerts: new Uint32Array(bytes(triangles)) })));
+      },
       cut: (a, list) => (list.length ? keep(a.subtract(keep(Manifold.union(list)))) : a),
       fuse: (list) => keep(Manifold.union(list)),
       free: () => { made.forEach((m) => { try { m.delete(); } catch (e) { /* already gone */ } }); made.length = 0; },
@@ -356,6 +362,32 @@
     return s;
   }
 
+  /* The arm is the tripod mount's, with bolt holes where the nut would go. The two pieces are bolted because the thread
+     and the socket each want to print pointing up, and they're at right angles in use. */
+  function poleArm(K, rods, sizes, roll) {
+    const front = socketFront(rods), sx0 = REAR - WALL, W2 = sizes.w + 2 * WALL + 2 * PLAY, H2 = sizes.h + 2 * WALL + 2 * PLAY;
+    const T = TRIPOD, half = T.size / 2, cx = poleBehind();
+    const yh = roll ? H2 / 2 : W2 / 2, zh = roll ? W2 / 2 : H2 / 2;
+    let head = K.box(sx0, front, -W2 / 2, W2 / 2, -H2 / 2, H2 / 2);
+    head = K.cut(head, socketCuts(K, rods, sizes, front, W2 / 2));
+    head = rolled(K, head, roll);
+    const s = K.fuse([head, K.box(cx + half - 0.01, sx0 + 0.01, -yh, yh, -zh, zh), K.box(cx - half, cx + half, -half, half, -zh, zh)]);
+    return K.cut(s, poleBolts(K, cx, -zh - 1, 2 * zh + 2));
+  }
+
+  /* The owner's own thread, unchanged, on a plate that bolts under the arm. Printed flat on its plate, opening up. */
+  function poleSocket(K) {
+    const half = TRIPOD.size / 2, P = YS.POLE_SOCKET;
+    const raw = K.fromData(P.positions, P.triangles), z0 = raw.boundingBox().min[2];
+    const boss = K.at(raw, [0, 0, POLE.plate - 1 - z0]);    // its solid end a millimetre into the plate
+    const plate = K.cut(K.box(-half, half, -half, half, 0, POLE.plate), poleBolts(K, 0, -1, POLE.plate + 2));
+    return K.fuse([plate, boss]);
+  }
+
+  const poleBolts = (K, cx, z0, h) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => K.cyl(cx + a * POLE.bolts, b * POLE.bolts, z0, M3, h));
+  /* Where the pole's axis ends up behind the reflector, as x. */
+  const poleBehind = () => -(TRIPOD.back + TRIPOD.size / 2 + 18);
+
   /* ---------- the coupon ---------- */
   /** A row of holes for each rod size, to find the fit on this printer, and the boom's M3 hole and nut trap. */
   function coupon(K, rods) {
@@ -389,6 +421,7 @@
   const MOUNTS = {
     none: { name: "No mount" },
     mast: { name: "Mast or pole clamp", hardware: ["2 hose clamps, for bands up to 13 mm", "1 M3 x 30 bolt and nut, to pin the boom"], print: "Stand it on the cradle, socket up, as the file has it. The V's sides are 45 degree overhangs, so it needs no supports." },
+    pole: { name: "Painter pole", hardware: ["4 M3 x 40 bolts with nuts, joining the socket's plate to the arm", "1 M3 x 30 bolt and nut, to pin the boom"], print: "Two pieces, each printed its best way. The arm stands on its block, socket up, and the pole socket lies flat on its plate, opening up, with no supports." },
     grip: { name: "Hand grip", hardware: ["1 M3 x 40 bolt and nut, to pin the boom", "Optional: a lanyard through the hole at the bottom"], print: "Stand it as the file has it, with the grip lying on the bed and the socket pointing up, and no supports." },
     tripod: { name: "Camera tripod", hardware: ["1 M3 x 30 bolt and nut, to pin the boom", "1 1/4-20 UNC nut, 7/16 in (11.1 mm) across flats, dropped into the top"], print: "Stand it on the block, socket up, as the file has it, with no supports." },
   };
@@ -438,6 +471,10 @@
       });
       const roll = rollFor(design.polarization);
       if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll), [0, -90, 0], MOUNTS.mast.print);
+      if (o.mount === "pole") {
+        add("pole_arm", "Painter pole arm", poleArm(K, rods, sizes, roll), [0, -90, 0], MOUNTS.pole.print);
+        add("pole_socket", "Painter pole socket", poleSocket(K), null, MOUNTS.pole.print);
+      }
       if (o.mount === "grip") add("hand_grip", MOUNTS.grip.name, handGrip(K, rods, sizes, roll), [0, -90, 0], MOUNTS.grip.print);
       if (o.mount === "tripod") add("tripod_mount", MOUNTS.tripod.name, tripodMount(K, rods, sizes, roll), [0, -90, 0], MOUNTS.tripod.print);
       if (o.coupon !== false) add("coupon", "Hole test coupon", coupon(K, rods), null, "As the file has it. Print it on the same plate as the boom, so that it prints under the same conditions.");
@@ -495,5 +532,5 @@
     return loading;
   }
 
-  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR }, planParts, buildParts, partsNotes, mastBehind, loadManifold });
+  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, POLE_BEHIND: -poleBehind() }, planParts, buildParts, partsNotes, mastBehind, loadManifold });
 })(typeof globalThis !== "undefined" ? globalThis : this);

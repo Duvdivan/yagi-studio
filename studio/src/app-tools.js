@@ -738,6 +738,186 @@
     $$("[data-cp]", $("#c-files")).forEach((b) => { b.onclick = () => { const f = files[+b.dataset.cp]; A.copy(f[1](), f[0]); }; });
   }
 
+  /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
+  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, label: true, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+
+  function printOptions() {
+    const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
+    const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
+    return { bed: st.bed || YS.GUIDE.BED_DEFAULT, scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount };
+  }
+  /* What the files on show were made from: when this changes, they're out of date. */
+  const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
+
+  function printTemplate() {
+    return `
+    <div class="view view-two" id="view-print">
+      <div class="col">
+        <section class="card" aria-label="What to make">
+          <div class="head"><h2>Parts for this design</h2></div>
+          <div class="body stack">
+            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom follows the DuvYagi's printed one, but its cutting marks, check notches and label are new, and so are the hand grip and tripod mount. Print one and check it before you rely on it.</p>
+            <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
+            <div class="field-grid">
+              <div class="field"><label for="p-mount">Mount</label><select class="sel" id="p-mount">${Object.keys(YS.PARTS.MOUNTS).map((k) => `<option value="${k}">${esc(YS.PARTS.MOUNTS[k].name)}</option>`).join("")}</select></div>
+              <div class="field"><label for="p-bed">Printer's bed, mm</label><input class="num" id="p-bed" inputmode="decimal"></div>
+              <div class="field"><label for="p-fit">Rod holes over the rod, mm ${A.help("printfit")}</label><input class="num" id="p-fit" inputmode="decimal"></div>
+              <div class="field"><label for="p-shrink">Shrinkage</label><select class="sel" id="p-shrink"><option value="slicer">My slicer handles it</option><option value="bar">Scale from a test bar</option></select></div>
+              <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
+            </div>
+            <label class="check"><input type="checkbox" id="p-gauge"> Rod-cutting gauge and check notches on top of the boom ${A.help("printcheck")}</label>
+            <label class="check"><input type="checkbox" id="p-label"> THIS SIDE UP on the boom's side</label>
+            <div class="row"><button class="btn primary" id="p-run">Make the files</button></div>
+            <p class="note" id="p-status" role="status"></p>
+            <div class="stack" id="p-plan"></div>
+          </div>
+        </section>
+        <section class="card" aria-label="Files to download"><div class="head"><h2>Files</h2></div><div class="body stack" id="p-files"><p class="note">Make the files, and they'll be listed here.</p></div></section>
+      </div>
+      <div class="col">
+        <section class="card grow tall-md" aria-label="Preview">
+          <div class="head"><h2 id="p-title">Preview</h2><span class="note">Drag to turn</span></div>
+          <div class="canvas-box" style="margin:4px"><canvas id="p-view" aria-label="A picture of the part, as it sits on the printer's bed"></canvas></div>
+        </section>
+      </div>
+    </div>`;
+  }
+
+  function renderPrintPlan() {
+    const d = S.design, host = $("#p-plan"), run = $("#p-run");
+    $("#p-bar-wrap").hidden = !PRINT.useBar;
+    let plan;
+    try {
+      plan = YS.planParts(d, printOptions());
+    } catch (e) {
+      host.innerHTML = `<p class="note"><span class="pill warn">Check that</span> ${esc(e.message)}</p>`;
+      run.disabled = true;
+      return;
+    }
+    run.disabled = PRINT.busy;
+    const lines = [`A ${fmt(plan.boom, 0)} mm boom in ${plan.sections.length === 1 ? "one piece" : plan.sections.length + " sections"}.`];
+    if (plan.gauge) lines.push(`Gauge marks, from these lengths: ${plan.gauge.marks.map((m) => `${esc(m.rod)} ${fmt(m.length, 1)}`).join(", ")} mm. If tuning changes a rod, make the boom again.`);
+    if (PRINT.useBar && printOptions().scale === 1) lines.push("Enter what the test bar measures, or these files won't be scaled. The bar is on the Cut list tab.");
+    if (PRINT.mount === "mast") {
+      const m = d.mast && d.mast.on ? d.mast : null;
+      if (!m) lines.push(`The clamp holds a 42 mm mast about ${fmt(YS.mastBehind(42), 0)} mm behind the reflector. Turn the mast on in the Design tab to see what that does.`);
+      else if (Math.abs(YS.mastBehind(m.d) - m.behind) > 10) lines.push(`The clamp puts your ${fmt(m.d, 0)} mm mast about ${fmt(YS.mastBehind(m.d), 0)} mm behind the reflector, and the Design tab has it at ${fmt(m.behind, 0)} mm. Set them the same to see what it does.`);
+    }
+    if (PRINT.mount === "grip") lines.push("A hand near the rods detunes them. Sweep the antenna the way you'll hold it.");
+    host.innerHTML = lines.map((l) => `<p class="note">${l}</p>`).join("") + plan.warnings.map((w) => `<p class="note"><span class="pill warn">Note</span> ${esc(w)}</p>`).join("");
+    renderPrintFiles();
+  }
+
+  function renderPrintFiles() {
+    const host = $("#p-files"), R = PRINT.result;
+    if (!R || PRINT.key !== printKey()) {
+      host.innerHTML = `<p class="note">${R ? "The design or settings changed. Make the files again." : "Make the files, and they'll be listed here."}</p>`;
+      return;
+    }
+    host.innerHTML = `
+      <table class="tbl"><tbody>
+        ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
+      </tbody></table>
+      <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
+      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. They've only been checked as models, not printed, so measure the check notches and test-fit the parts before you rely on them.</p>`;
+    const name = S.design.name.replace(/[^\w-]+/g, "_");
+    const notes = () => A.download(`${name}_build_notes.txt`, YS.partsNotes(S.design, R), "text/plain");
+    const one = (p) => A.download(p.file, YS.meshToStl(p.mesh, p.id), "model/stl");
+    $$("[data-show]", host).forEach((b) => { b.onclick = () => { PRINT.shown = +b.dataset.show; renderPrintFiles(); drawPart(); }; });
+    $$("[data-get]", host).forEach((b) => { b.onclick = () => one(R.parts[+b.dataset.get]); });
+    $("#p-notes").onclick = notes;
+    $("#p-all").onclick = async () => { for (const p of R.parts) await one(p); await notes(); };
+  }
+
+  /* The part, drawn back to front with flat shading: enough to see what it is, and with no library. */
+  function drawPart() {
+    const c = $("#p-view");
+    if (!c) return;
+    const box = c.parentElement.getBoundingClientRect(), dpr = root.devicePixelRatio || 1;
+    const W = Math.max(40, box.width), H = Math.max(40, box.height);
+    c.width = W * dpr; c.height = H * dpr;
+    const g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const R = PRINT.result, p = R && PRINT.key === printKey() ? R.parts[PRINT.shown] : null;
+    $("#p-title").textContent = p ? p.name : "Preview";
+    if (!p) return;
+    const cy = Math.cos(PRINT.yaw), sy = Math.sin(PRINT.yaw), cp = Math.cos(PRINT.pitch), sp = Math.sin(PRINT.pitch);
+    const ctr = [p.size[0] / 2, p.size[1] / 2, p.size[2] / 2];
+    const view = (v) => {
+      const x = v[0] - ctr[0], y = v[1] - ctr[1], z = v[2] - ctr[2];
+      const a = x * cy - y * sy, b = x * sy + y * cy;
+      return [a, b * sp + z * cp, -b * cp + z * sp];
+    };
+    const reach = Math.hypot(p.size[0], p.size[1], p.size[2]) / 2 || 1, k = 0.94 * Math.min(W, H) / (2 * reach);
+    const tris = p.mesh.t.map((t) => {
+      const q = t.map(view), u = [q[1][0] - q[0][0], q[1][1] - q[0][1], q[1][2] - q[0][2]], w = [q[2][0] - q[0][0], q[2][1] - q[0][1], q[2][2] - q[0][2]];
+      const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], l = Math.hypot(n[0], n[1], n[2]) || 1;
+      return { q, depth: (q[0][2] + q[1][2] + q[2][2]) / 3, front: n[2] / l, light: (n[0] * -0.35 + n[1] * 0.55 + n[2] * 0.76) / l };
+    }).filter((t) => t.front > 0).sort((a, b) => a.depth - b.depth);
+    tris.forEach((t) => {
+      const v = Math.round(90 + 130 * Math.max(0, t.light)), col = `rgb(${v},${Math.round(v * 0.86)},${Math.round(v * 0.55)})`;
+      g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 0.5;
+      g.beginPath();
+      t.q.forEach((a, i) => { const x = W / 2 + a[0] * k, y = H / 2 - a[1] * k; if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+      g.closePath(); g.fill(); g.stroke();
+    });
+  }
+
+  async function runPrint() {
+    if (PRINT.busy) return;
+    PRINT.busy = true; PRINT.status = "Making the parts…";
+    $("#p-run").disabled = true; $("#p-status").textContent = PRINT.status;
+    try {
+      const wasm = await YS.loadManifold(), started = performance.now();
+      PRINT.result = YS.buildParts(wasm, S.design, printOptions());
+      PRINT.key = printKey();
+      PRINT.shown = 0;
+      $("#p-status").textContent = `Done in ${fmt((performance.now() - started) / 1000, 1)} s.`;
+    } catch (e) {
+      PRINT.result = null;
+      $("#p-status").textContent = "That didn't work: " + ((e && e.message) || e);
+    }
+    PRINT.busy = false;
+    $("#p-run").disabled = false;
+    renderPrintPlan();
+    drawPart();
+  }
+
+  A.views.print = {
+    mount(host) {
+      host.innerHTML = printTemplate();
+      const saveGuide = (o) => { A.storage.write({ guide: Object.assign({}, A.storage.read().guide, o) }); };
+      const changed = () => { renderPrintPlan(); drawPart(); };
+      $("#p-mount").value = PRINT.mount;
+      $("#p-mount").onchange = (e) => { PRINT.mount = e.target.value; changed(); };
+      A.bindNum($("#p-bed"), { get: () => (A.storage.read().guide || {}).bed || YS.GUIDE.BED_DEFAULT, min: 50, max: 2000, decimals: 0, set: (v) => { saveGuide({ bed: v }); changed(); } });
+      A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
+      A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });
+      $("#p-shrink").onchange = (e) => { PRINT.useBar = e.target.value === "bar"; changed(); };
+      $("#p-gauge").checked = PRINT.gauge; $("#p-label").checked = PRINT.label;
+      $("#p-gauge").onchange = (e) => { PRINT.gauge = e.target.checked; changed(); };
+      $("#p-label").onchange = (e) => { PRINT.label = e.target.checked; changed(); };
+      $("#p-run").onclick = runPrint;
+      const c = $("#p-view");
+      let from = null;
+      c.addEventListener("pointerdown", (e) => { from = [e.clientX, e.clientY]; if (c.setPointerCapture) c.setPointerCapture(e.pointerId); });
+      c.addEventListener("pointermove", (e) => {
+        if (!from) return;
+        PRINT.yaw += (e.clientX - from[0]) * 0.01; PRINT.pitch = Math.max(-1.5, Math.min(1.5, PRINT.pitch + (e.clientY - from[1]) * 0.01));
+        from = [e.clientX, e.clientY];
+        drawPart();
+      });
+      c.addEventListener("pointerup", () => { from = null; });
+      c.style.touchAction = "none";
+      c.style.width = "100%"; c.style.height = "100%";
+      if (root.ResizeObserver) new ResizeObserver(() => { if (S.view === "print") drawPart(); }).observe(c.parentElement);
+    },
+    show() { $("#p-bed")._refresh(); renderPrintPlan(); drawPart(); },
+    refreshDesign() { renderPrintPlan(); drawPart(); },
+    refreshResults() {},
+    retheme() { drawPart(); },
+  };
+
   A.views.cut = {
     mount(host) {
       host.innerHTML = cutTemplate();

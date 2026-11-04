@@ -166,6 +166,25 @@ const topApp = () => { const m = /mCurrentFocus=.*?\{[^ ]+ [^ ]+ ([^}/ ]+)/.exec
   const stl = sh("ls -la /sdcard/Download/ | grep -i cutting_guide");
   ok("the guide saves as an STL", /cutting_guide\.stl\b/.test(stl), stl.replace(/\s+/g, " ").slice(0, 120));
   ok("and it's a real one", sh("cat /sdcard/Download/*cutting_guide.stl | tail -1").includes("endsolid"));
+
+  /* ---- the 3D print tab, with its library, from the design to the file ---- */
+  await p.ev(`YS.app.go("print")`);
+  await sleep(600);
+  await p.ev(`document.querySelector("#p-mount").value = "grip"; document.querySelector("#p-mount").dispatchEvent(new Event("change", { bubbles: true })); document.querySelector("#p-run").click()`);
+  await sleep(4000);
+  const printed = await p.ev(`document.querySelector("#p-status").textContent`);
+  ok("the geometry library starts, and parts come out", /^Done/.test(printed), printed);
+  ok("the hand grip's among them", await p.ev(`[...document.querySelectorAll("#p-files [data-show]")].some((b) => b.textContent === "Hand grip")`));
+  shot("6-print");
+  ok("no sideways scroll in the 3D print tab", await p.ev(`document.documentElement.scrollWidth <= innerWidth`));
+  sh("rm -f /sdcard/Download/*boom_rear*");
+  p.ev(`document.querySelector('[data-get="0"]').click()`);
+  await sleep(3000);
+  tapText(/^SAVE$/i);
+  await sleep(3000);
+  const boomFile = sh("ls -la /sdcard/Download/ | grep -i boom_rear");
+  ok("the boom saves as an STL", /boom_rear\.stl\b/.test(boomFile), boomFile.replace(/\s+/g, " ").slice(0, 120));
+  ok("and it's whole", sh("cat /sdcard/Download/*boom_rear.stl | tail -1").includes("endsolid"));
   await p.ev(`YS.app.go("design")`);
   await sleep(400);
 

@@ -9,6 +9,7 @@ A Yagi antenna simulator and tuning assistant that runs in a browser. Design a b
 | Tab | For |
 |---|---|
 | **Design** | Pick your network, and the target follows. Say what gain you want, or a range, and it finds the shortest booms that hold it, or the lowest SWR, the highest F/B or the best of both at that gain. Rods in a table or dragged in a true-scale drawing, with live SWR, gain, F/B, Smith chart, polar cuts, a 3D pattern and the pattern over ground. Pin a design to compare. |
+| **3D print** | New and untested: nothing from this tab has been printed yet. Makes the boom from the design: as many sections as your bed needs, a V on top with a mark for each rod's length, two notches 100 mm apart to check the print with calipers, and THIS SIDE UP on its side. With a mast clamp, a hand grip or a tripod mount, a hole coupon and build notes, as STL files. |
 | **Optimize** | The same gain search, then raises the worst gain across a band under limits on SWR, F/B and boom length, or holds the gain and works on SWR, F/B or both. **Which boom?** finds the best gain each mix of rods and boom can hold. |
 | **Build check** | Simulates hundreds of builds with cutting errors, and ranks which rods matter most. |
 | **Cut list** | Cut lengths and drilling positions, plus files: JSON, NEC deck, YagiCAD `.YC6`, CSV, `.s1p`. And a 3D-printed cutting guide for the rods, scaled to your printer. |
@@ -121,6 +122,7 @@ node tests/validate.js       # the checks above; needs Python with numpy and sci
 python tests/bor_reference.py   # the surface reference on its own
 python tests/gap_reference.py   # the driven element's gap on its own
 node tests/find_gain.js      # the search for a gain (a few minutes on one thread)
+node tests/print_parts.js    # the printable parts, against the DuvYagi's OpenCascade parts and on other designs
 node tests/crooked.js        # what the gap and crooked rods do to the DuvYagi (a few minutes)
 node tests/web_app.js chrome # the installable web app; the file says how to serve it, and webkit is the other choice
 python serve.py              # optional: adds a "Check with nec2++" button at http://localhost:8910
@@ -130,6 +132,7 @@ python serve.py              # optional: adds a "Check with nec2++" button at ht
 
 - `solver.js`: the moment method. `crooked.js`: the general one, for rods that aren't straight. `rf.js`: cables, Touchstone, imports and exports, presets. `radio.js`: the networks' presets and the LoRa math. `guide.js`: the cutting guide's mesh. `tasks.js`: optimizer cost, build study, sensitivity, the fit and the tuning plan.
 - `engine.js`: worker pool, the optimizer's search (jDE), the NanoVNA link.
+- `parts.js`: the printable parts, with Manifold (`vendor/`, Apache 2.0) for the solids, carried in the page so that it works offline.
 - `charts.js`, `view3d.js`, `layout2d.js`: drawing, with no libraries.
 - `app-*.js`, `body.html`, `style.css`: the interface.
 - `android-shim.js`: what a WebView lacks, in the Android app's page only. `../android/` is the app around it.

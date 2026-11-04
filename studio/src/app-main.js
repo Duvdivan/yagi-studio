@@ -7,7 +7,7 @@
   const YS = root.YS, A = YS.app, S = A.S;
   const { $, $$, esc } = A;
 
-  const TABS = [["design", "Design"], ["optimize", "Optimize"], ["check", "Build check"], ["cut", "Cut list"], ["tune", "Tune my antenna"]];
+  const TABS = [["design", "Design"], ["optimize", "Optimize"], ["check", "Build check"], ["cut", "Cut list"], ["print", "3D print"], ["tune", "Tune my antenna"]];
   const mounted = {};
 
   function renderTop() {

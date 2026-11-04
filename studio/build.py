@@ -9,6 +9,7 @@ Builds Yagi Studio into one self-contained HTML file: no server, no install, wor
 The worker's code is carried inside the page as text and started from a blob, because browsers
 won't load a worker from a file:// address.
 """
+import base64
 import hashlib
 import json
 import shutil
@@ -16,7 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
-PAGE_SCRIPTS = ["solver.js", "crooked.js", "rf.js", "radio.js", "guide.js", "tasks.js", "charts.js", "view3d.js", "layout2d.js", "engine.js",
+PAGE_SCRIPTS = ["solver.js", "crooked.js", "rf.js", "radio.js", "guide.js", "parts.js", "tasks.js", "charts.js", "view3d.js", "layout2d.js", "engine.js",
                 "app-core.js", "app-radio.js", "app-design.js", "app-tune.js", "app-tools.js", "app-main.js"]
 WORKER_SCRIPTS = ["solver.js", "crooked.js", "rf.js", "tasks.js", "worker.js"]
 FONTS = ('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
@@ -37,9 +38,13 @@ def page(title="Yagi Studio", fonts=FONTS, shim=""):
     body = (SRC / "body.html").read_text(encoding="utf-8").replace("Yagi Studio", title)
     worker = "\n".join(read(n) for n in WORKER_SCRIPTS)
     scripts = "\n".join(read(n) for n in PAGE_SCRIPTS)
+    # the 3D print tab's geometry library, as text until someone asks for parts
+    wasm = base64.b64encode((SRC / "vendor" / "manifold.wasm").read_bytes()).decode("ascii")
+    library = (f'<script type="text/plain" id="ys-manifold-js">\n{read("vendor/manifold.js")}\n</script>\n'
+               f'<script type="text/plain" id="ys-manifold-wasm">{wasm}</script>\n')
     # the page's own title, styles and fonts first: only the top of the file is scanned for a title
     return (f'<title>{title}</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n{fonts}\n<style>\n{style}</style>\n'
-            f'{body}\n<script type="text/plain" id="ys-worker-src">\n{worker}\n</script>\n<script>\n{shim}{scripts}\n</script>\n')
+            f'{body}\n<script type="text/plain" id="ys-worker-src">\n{worker}\n</script>\n{library}<script>\n{shim}{scripts}\n</script>\n')
 
 
 def document(inner):

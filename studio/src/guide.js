@@ -189,10 +189,12 @@
     const lines = [`solid ${name}`];
     const fix = (v) => v.toFixed(4);
     for (const t of mesh.t) {
+      const at = t.map((c) => c.map(fix).join(" "));
+      if (at[0] === at[1] || at[1] === at[2] || at[0] === at[2]) continue;     // a sliver thinner than these numbers: its neighbours close the gap
       const u = [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]], v = [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]];
       const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(n[0], n[1], n[2]) || 1;
       lines.push(`facet normal ${fix(n[0] / l)} ${fix(n[1] / l)} ${fix(n[2] / l)}`, " outer loop");
-      for (const p of t) lines.push(`  vertex ${fix(p[0])} ${fix(p[1])} ${fix(p[2])}`);
+      for (const p of at) lines.push(`  vertex ${p}`);
       lines.push(" endloop", "endfacet");
     }
     lines.push(`endsolid ${name}`);

@@ -4584,10 +4584,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const lines = [`solid ${name}`];
     const fix = (v) => v.toFixed(4);
     for (const t of mesh.t) {
+      const at = t.map((c) => c.map(fix).join(" "));
+      if (at[0] === at[1] || at[1] === at[2] || at[0] === at[2]) continue;     // a sliver thinner than these numbers: its neighbours close the gap
       const u = [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]], v = [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]];
       const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(n[0], n[1], n[2]) || 1;
       lines.push(`facet normal ${fix(n[0] / l)} ${fix(n[1] / l)} ${fix(n[2] / l)}`, " outer loop");
-      for (const p of t) lines.push(`  vertex ${fix(p[0])} ${fix(p[1])} ${fix(p[2])}`);
+      for (const p of at) lines.push(`  vertex ${p}`);
       lines.push(" endloop", "endfacet");
     }
     lines.push(`endsolid ${name}`);
@@ -4649,6 +4651,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const BRIM = 16;                 // bed length a section can't use: a brim on both ends, and a margin
   const GROOVE = 3;                // the coax's groove, for RG178 and the like, on the +y face
   const WINDOW = [12, 10];         // the solder window at the driven element (x, z)
+  const PIN_NUT = { flats: 5.6, height: 3.6, top: 4.4, shoulder: 1.2, foot: 1 };   // the bulge for the pin's nut, mm: recess across flats, height, flat top's radius, and the rounding of its shoulder and foot
+  const SOFT = { edge: 2.5, rim: 1, block: 4, blockRim: 1.5 };   // rounded outside edges, mm: a socket's long edges and open end, and a block's
   const WALL = 3, PLAY = 0.2;      // a mount's socket: its walls, and the room around the boom
   const SEGMENTS = 64;             // round holes: 0.002 mm under a 3 mm rod's radius
   const FLOPPY = 1200;             // mm of boom past which a printed one sags too much to recommend
@@ -4659,7 +4663,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const CAL_NOTCH = [4, 2.5];      // each notch's width (x) and depth (z)
   const GRIP = { width: 30, depth: 34, length: 115, back: 60, chamfer: 5 };   // the hand grip, and how far it's held behind the reflector
   const TRIPOD = { size: 36, back: 34, flats: 11.2, nut: 5.6, shelf: 5, bolt: 6.6 };   // block, and a 1/4-20 nut
-  const POLE = { plate: 8, bolts: 14 };          // the pole socket's plate, and its four M3 bolts either side of centre
+  const POLE = { plate: 8, bolts: 14, tilt: 30 };          // the pole socket's plate, and its four M3 bolts either side of centre, and how many degrees the thread's axis rises above the bed
   const CRADLE = { apex: -62, w: 80, h: 60 };    // the mast's V, from the reflector
 
   /* Letters on a 3 x 5 grid, as bars, so each is a groove a nozzle can follow. */
@@ -4712,6 +4716,20 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         });
         return out;
       },
+      /* A box along x with its long edges rounded, and its far end's edge too, by the convex hull of its outline at each height. */
+      rbox: (x0, x1, y0, y1, z0, z1, edge, rim) => {
+        const pts = [], levels = [[x0, 0], [x1 - rim, 0]];
+        for (let i = 1; rim > 0 && i <= 6; i++) { const a = i / 6 * Math.PI / 2; levels.push([x1 - rim + rim * Math.sin(a), rim * (1 - Math.cos(a))]); }
+        levels.forEach(([x, inset]) => {
+          const r = Math.max(edge - inset, 0.001);
+          [[y1 - edge, z1 - edge, 0], [y0 + edge, z1 - edge, 1], [y0 + edge, z0 + edge, 2], [y1 - edge, z0 + edge, 3]].forEach(([y, z, q]) => {
+            for (let i = 0; i <= 8; i++) { const a = (q + i / 8) * Math.PI / 2; pts.push([x, y + r * Math.cos(a), z + r * Math.sin(a)]); }
+          });
+        });
+        return keep(Manifold.hull(pts));
+      },
+      /* A solid of revolution around z, from its outline as [radius, z]. */
+      revolve: (outline) => keep(Manifold.revolve([outline], SEGMENTS)),
       turn: (m, r) => keep(m.rotate(r)),
       at: (m, t) => keep(m.translate(t)),
       /* A solid from base-64 Float32 positions and Uint32 triangles. */
@@ -4725,7 +4743,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       /* Print orientation, resting on the bed at the origin, and scaled across the bed for the printer's shrinkage. */
       place: (m, turn, scale) => {
         const t = turn ? K.turn(m, turn) : m, b = t.boundingBox();
-        const s = keep(keep(t.translate([-b.min[0], -b.min[1], -b.min[2]])).scale([scale, scale, 1]));
+        const s = keep(keep(keep(t.translate([-b.min[0], -b.min[1], -b.min[2]])).scale([scale, scale, 1])).simplify(0.001));   // no slivers too thin for an STL's numbers
         return s;
       },
       mesh: (m) => {
@@ -4922,6 +4940,29 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       K.box(REAR, front + 1, w / 2 - 1, wideY + 1, -GROOVE / 2, GROOVE / 2)];
   }
 
+  /* A length of arm or socket, rounded along its length unless these are the plain solids. */
+  const pipe = (K, soft, x0, x1, y, z, rim) => (soft ? K.rbox(x0, x1, -y, y, -z, z, SOFT.edge, rim) : K.box(x0, x1, -y, y, -z, z));
+
+  /* The outline of the bulge for the pin's nut, as [radius, height off the wall]: a flat top, a rounded shoulder, a 45 degree
+     side, and a foot blending into the wall. So it prints standing with no supports. */
+  function nutBulge() {
+    const { height: H, top, shoulder: s, foot: c } = PIN_NUT, side = top + s * Math.SQRT2 + H - s, far = side + c * Math.tan(Math.PI / 8);
+    const out = [[0, -0.01], [far, -0.01]];
+    for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 - (i / 6) * Math.PI / 4; out.push([far + c * Math.cos(a), c + c * Math.sin(a)]); }
+    for (let i = 0; i <= 6; i++) { const a = Math.PI / 4 + (i / 6) * Math.PI / 4; out.push([top + s * Math.cos(a), H - s + s * Math.sin(a)]); }
+    out.push([0, H]);
+    return out;
+  }
+
+  /* The socket with its holes, and a bulge on its underside with a recess that holds the pin's nut. The bulge adds to the wall
+     and takes nothing from it, because the socket is where a flat print snapped. The recess is open outward, so a nut of any
+     thickness goes in, and its point is up as printed, so its roof needs no bridge. */
+  function socketWithNut(K, solid, rods, sizes, front, wideY, face, soft) {
+    if (!soft) return K.cut(solid, socketCuts(K, rods, sizes, front, wideY));
+    const px = REAR + 7, bulge = K.at(K.turn(K.revolve(nutBulge()), [180, 0, 0]), [px, 0, -face]);
+    return K.cut(K.fuse([solid, bulge]), [...socketCuts(K, rods, sizes, front, wideY), K.hex(px, 0, PIN_NUT.flats, -face - PIN_NUT.height - 1, -face)]);
+  }
+
   /* How far a mount's socket runs past the reflector: to just past it, without reaching the next rod. */
   const socketFront = (rods) => Math.min(12, rods[1].x - rods[0].x - 4);
 
@@ -4929,14 +4970,14 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const rollFor = (polar) => (polar === "horizontal" ? [90, 0, 0] : null);
   const rolled = (K, m, roll) => (roll ? K.turn(m, roll) : m);
 
-  function mastMount(K, rods, sizes, roll) {
+  function mastMount(K, rods, sizes, roll, soft) {
     const front = socketFront(rods), sx0 = REAR - WALL, W2 = sizes.w + 2 * WALL + 2 * PLAY, H2 = sizes.h + 2 * WALL + 2 * PLAY;
     const { apex, w: VW } = CRADLE, VH = Math.max(CRADLE.h, (roll ? W2 : H2) + 10), vx0 = apex - 28, vx1 = apex + 12;
-    let s = K.box(sx0, front, -W2 / 2, W2 / 2, -H2 / 2, H2 / 2);
-    s = K.cut(s, socketCuts(K, rods, sizes, front, W2 / 2));
-    s = K.fuse([s, K.box(vx1, sx0 + 0.01, -W2 / 2, W2 / 2, -H2 / 2, H2 / 2)]);
+    let s = pipe(K, soft, sx0, front, W2 / 2, H2 / 2, SOFT.rim);
+    s = socketWithNut(K, s, rods, sizes, front, W2 / 2, H2 / 2, soft);
+    s = K.fuse([s, pipe(K, soft, vx1, sx0 + 0.01, W2 / 2, H2 / 2, 0)]);
     s = rolled(K, s, roll);
-    let block = K.box(vx0, vx1, -VW / 2, VW / 2, -VH / 2, VH / 2);
+    let block = soft ? K.rbox(vx0, vx1, -VW / 2, VW / 2, -VH / 2, VH / 2, SOFT.block, SOFT.blockRim) : K.box(vx0, vx1, -VW / 2, VW / 2, -VH / 2, VH / 2);
     const back = apex - vx0 + 1;
     const cuts = [K.prism([[apex, 0], [vx0 - 1, -back], [vx0 - 1, back]], -VH / 2 - 1, VH / 2 + 1)];
     [-24, 10].forEach((z0) => cuts.push(K.box(apex + 4, apex + 8, -VW / 2 - 1, VW / 2 + 1, z0, z0 + 14)));     // hose-clamp slots, for bands up to 13 mm
@@ -4950,58 +4991,67 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   /* A socket, an arm behind the reflector, and a block for the hand or the tripod, all made with the rods upright. */
-  function handGrip(K, rods, sizes, roll) {
+  function handGrip(K, rods, sizes, roll, soft) {
     const front = socketFront(rods), sx0 = REAR - WALL, half = GRIP.width / 2;
     const gx1 = -GRIP.back, gx0 = gx1 - GRIP.depth;
     // the head is square, as wide as the grip, so that the part lies flat on the bed whichever way the rods go
     const half2 = Math.max(half, sizes.h / 2 + PLAY + WALL);
-    const sock = K.box(sx0, front, -half2, half2, -half2, half2);
-    let head = K.cut(sock, socketCuts(K, rods, sizes, front, half2));
+    const sock = pipe(K, soft, sx0, front, half2, half2, SOFT.rim);
+    let head = socketWithNut(K, sock, rods, sizes, front, half2, half2, soft);
     head = rolled(K, head, roll);
     const top = half2, bottom = -top, c = GRIP.chamfer;
-    const arm = K.box(gx1 - 0.01, sx0 + 0.01, -half2, half2, bottom, top);
-    const grip = K.prism([[gx0 + c, -half2], [gx1 - c, -half2], [gx1, -half2 + c], [gx1, half2 - c], [gx1 - c, half2], [gx0 + c, half2], [gx0, half2 - c], [gx0, -half2 + c]], bottom - GRIP.length, top);
+    const arm = pipe(K, soft, gx1 - 0.01, sx0 + 0.01, half2, top, 0);
+    // rounded on the side that prints up, and chamfered on the bed's side, where a round would hang in the air
+    const round = (cy, a0) => Array.from({ length: 7 }, (_, i) => { const a = a0 + i / 6 * Math.PI / 2; return [gx1 - c + c * Math.cos(a), cy + c * Math.sin(a)]; });
+    const grip = K.prism([[gx0 + c, -half2], [gx1 - c, -half2], ...round(-half2 + c, -Math.PI / 2), ...round(half2 - c, 0), [gx0 + c, half2], [gx0, half2 - c], [gx0, -half2 + c]], bottom - GRIP.length, top);
+    // the grip at full width under the arm and the brace, whose edges would otherwise hang over its rounded corners
+    const under = K.box(gx1 - c, gx1, -half2, half2, bottom - 22, top);
     const lanyard = K.cylY(gx0 + GRIP.depth / 2, -half2 - 1, bottom - GRIP.length + 10, 6, 2 * half2 + 2);
     // a brace in the corner under the arm, where a dropped or leaned-on antenna bends it across the layers
     const brace = K.turn(K.prism([[gx1 - 0.01, 0], [gx1 + 22, 0], [gx1 - 0.01, 22]], -half2, half2), [-90, 0, 0]);
-    return K.cut(K.fuse([head, arm, grip, K.at(brace, [0, 0, bottom + 0.01])]), [lanyard]);
+    return K.cut(K.fuse([head, arm, grip, under, K.at(brace, [0, 0, bottom + 0.01])]), [lanyard]);
   }
 
-  function tripodMount(K, rods, sizes, roll) {
+  function tripodMount(K, rods, sizes, roll, soft) {
     const front = socketFront(rods), sx0 = REAR - WALL, W2 = sizes.w + 2 * WALL + 2 * PLAY, H2 = sizes.h + 2 * WALL + 2 * PLAY;
     const T = TRIPOD, half = T.size / 2, cx = -(T.back + half + 18);
     const yh = roll ? H2 / 2 : W2 / 2, zh = roll ? W2 / 2 : H2 / 2;
-    let head = K.box(sx0, front, -W2 / 2, W2 / 2, -H2 / 2, H2 / 2);
-    head = K.cut(head, socketCuts(K, rods, sizes, front, W2 / 2));
+    let head = pipe(K, soft, sx0, front, W2 / 2, H2 / 2, SOFT.rim);
+    head = socketWithNut(K, head, rods, sizes, front, W2 / 2, H2 / 2, soft);
     head = rolled(K, head, roll);
-    const arm = K.box(cx + half - 0.01, sx0 + 0.01, -yh, yh, -zh, zh);
-    const block = K.box(cx - half, cx + half, -half, half, -zh, zh);
+    const arm = pipe(K, soft, cx + half - SOFT.blockRim - 0.5, sx0 + 0.01, yh, zh, 0);      // down into the block, past its rounded edge
+    const block = K.rbox(cx - half, cx + half, -half, half, -zh, zh, SOFT.block, SOFT.blockRim);
     let s = K.fuse([head, arm, block]);
     // a 1/4-20 tripod screw comes up from below into a nut sitting on the shelf
     s = K.cut(s, [K.cyl(cx, 0, -zh - 1, T.bolt, T.shelf + 2), K.hex(cx, 0, T.flats, -zh + T.shelf, zh + 1)]);
     return s;
   }
 
-  /* The arm is the tripod mount's, with bolt holes where the nut would go. The two pieces are bolted because the thread
-     and the socket each want to print pointing up, and they're at right angles in use. */
-  function poleArm(K, rods, sizes, roll) {
+  /* The arm is the tripod mount's, with bolt holes where the nut would go. The two pieces are bolted because the socket
+     wants to print pointing up and the thread wants to print tilted, and they're at right angles in use. */
+  function poleArm(K, rods, sizes, roll, soft) {
     const front = socketFront(rods), sx0 = REAR - WALL, W2 = sizes.w + 2 * WALL + 2 * PLAY, H2 = sizes.h + 2 * WALL + 2 * PLAY;
     const T = TRIPOD, half = T.size / 2, cx = poleBehind();
     const yh = roll ? H2 / 2 : W2 / 2, zh = roll ? W2 / 2 : H2 / 2;
-    let head = K.box(sx0, front, -W2 / 2, W2 / 2, -H2 / 2, H2 / 2);
-    head = K.cut(head, socketCuts(K, rods, sizes, front, W2 / 2));
+    let head = pipe(K, soft, sx0, front, W2 / 2, H2 / 2, SOFT.rim);
+    head = socketWithNut(K, head, rods, sizes, front, W2 / 2, H2 / 2, soft);
     head = rolled(K, head, roll);
-    const s = K.fuse([head, K.box(cx + half - 0.01, sx0 + 0.01, -yh, yh, -zh, zh), K.box(cx - half, cx + half, -half, half, -zh, zh)]);
+    const s = K.fuse([head, pipe(K, soft, cx + half - SOFT.blockRim - 0.5, sx0 + 0.01, yh, zh, 0), K.rbox(cx - half, cx + half, -half, half, -zh, zh, SOFT.block, SOFT.blockRim)]);
     return K.cut(s, poleBolts(K, cx, -zh - 1, 2 * zh + 2));
   }
 
-  /* The owner's own thread, unchanged, on a plate that bolts under the arm. Printed flat on its plate, opening up. */
+  /* The owner's own thread, unchanged, on a plate that bolts under the arm. Printed tilted, thread end up, on supports,
+     as the proven one was: standing straight, a pole's sideways load would pull the boss's layers apart at its root. */
   function poleSocket(K) {
     const half = TRIPOD.size / 2, P = YS.POLE_SOCKET;
     const raw = K.fromData(P.positions, P.triangles), z0 = raw.boundingBox().min[2];
     const boss = K.at(raw, [0, 0, POLE.plate - 1 - z0]);    // its solid end a millimetre into the plate
-    const plate = K.cut(K.box(-half, half, -half, half, 0, POLE.plate), poleBolts(K, 0, -1, POLE.plate + 2));
-    return K.fuse([plate, boss]);
+    const plate = K.cut(K.turn(K.rbox(0, POLE.plate, -half, half, -half, half, SOFT.block, SOFT.rim), [0, -90, 0]), poleBolts(K, 0, -1, POLE.plate + 2));
+    // a fillet where the boss meets the plate, which a sideways load bends most, and a rounded lip on the open end
+    const r0 = P.radius, c = 3, top = POLE.plate - 1 + P.height, arc = (cx, cy, r, a0, a1) => Array.from({ length: 9 }, (_, i) => { const a = a0 + (a1 - a0) * i / 8; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; });
+    const collar = K.revolve([[r0 - 1.5, POLE.plate - 0.01], [r0 + c, POLE.plate - 0.01], ...arc(r0 + c, POLE.plate + c, c, -Math.PI / 2, -Math.PI), [r0 - 1.5, POLE.plate + c]]);
+    const lip = K.revolve([[r0, top - 1], [r0 + 1, top - 1], [r0 + 1, top + 1], [r0 - 1, top + 1], ...arc(r0 - 1, top - 1, 1, Math.PI / 2, 0)]);
+    return K.cut(K.fuse([plate, boss, collar]), [lip]);
   }
 
   const poleBolts = (K, cx, z0, h) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => K.cyl(cx + a * POLE.bolts, b * POLE.bolts, z0, M3, h));
@@ -5040,10 +5090,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   /* ---------- what the page calls ---------- */
   const MOUNTS = {
     none: { name: "No mount" },
-    mast: { name: "Mast or pole clamp", hardware: ["2 hose clamps, for bands up to 13 mm", "1 M3 x 30 bolt and nut, to pin the boom"], print: "Stand it on the cradle, socket up, as the file has it. The V's sides are 45 degree overhangs, so it needs no supports." },
-    pole: { name: "Painter pole", hardware: ["4 M3 x 40 bolts with nuts, joining the socket's plate to the arm", "1 M3 x 30 bolt and nut, to pin the boom"], print: "Two pieces, each printed its best way. The arm stands on its block, socket up, and the pole socket lies flat on its plate, opening up, with no supports." },
-    grip: { name: "Hand grip", hardware: ["1 M3 x 40 bolt and nut, to pin the boom", "Optional: a lanyard through the hole at the bottom"], print: "Stand it as the file has it, with the grip lying on the bed and the socket pointing up, and no supports." },
-    tripod: { name: "Camera tripod", hardware: ["1 M3 x 30 bolt and nut, to pin the boom", "1 1/4-20 UNC nut, 7/16 in (11.1 mm) across flats, dropped into the top"], print: "Stand it on the block, socket up, as the file has it, with no supports." },
+    mast: { name: "Mast or pole clamp", hardware: ["2 hose clamps, for bands up to 13 mm", "1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket"], print: "Stand it on the cradle, socket up, as the file has it. The V's sides are 45 degree overhangs, so it needs no supports." },
+    pole: { name: "Painter pole", hardware: ["4 M3 x 40 bolts with nuts, joining the socket's plate to the arm", "1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket"], print: "Two pieces, each printed its best way. The arm stands on its block, socket up, and the pole socket lies tilted as the file has it, thread end up, the angle of the socket that's proven on a pole. Give it tree supports from the bed, and clear any from the thread." },
+    grip: { name: "Hand grip", hardware: ["1 M3 x 40 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "Optional: a lanyard through the hole at the bottom"], print: "Stand it as the file has it, with the grip lying on the bed and the socket pointing up, and no supports." },
+    tripod: { name: "Camera tripod", hardware: ["1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "1 1/4-20 UNC nut, 7/16 in (11.1 mm) across flats, dropped into the top"], print: "Stand it on the block, socket up, as the file has it, with no supports." },
   };
 
   /**
@@ -5089,14 +5139,14 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
         add(id, nameIt, solid, sec.upper ? [180, 0, 0] : null, sec.upper ? "As the file has it, already upside down so its joint lies on the bed. A brim helps." : "As the file has it, with the joint on the bed. A brim helps.");
       });
-      const roll = rollFor(design.polarization);
-      if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll), [0, -90, 0], MOUNTS.mast.print);
+      const roll = rollFor(design.polarization), soft = o.soft !== false;
+      if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.mast.print);
       if (o.mount === "pole") {
-        add("pole_arm", "Painter pole arm", poleArm(K, rods, sizes, roll), [0, -90, 0], MOUNTS.pole.print);
-        add("pole_socket", "Painter pole socket", poleSocket(K), null, MOUNTS.pole.print);
+        add("pole_arm", "Painter pole arm", poleArm(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.pole.print);
+        add("pole_socket", "Painter pole socket", poleSocket(K), [90 - POLE.tilt, 0, 0], MOUNTS.pole.print);
       }
-      if (o.mount === "grip") add("hand_grip", MOUNTS.grip.name, handGrip(K, rods, sizes, roll), [0, -90, 0], MOUNTS.grip.print);
-      if (o.mount === "tripod") add("tripod_mount", MOUNTS.tripod.name, tripodMount(K, rods, sizes, roll), [0, -90, 0], MOUNTS.tripod.print);
+      if (o.mount === "grip") add("hand_grip", MOUNTS.grip.name, handGrip(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.grip.print);
+      if (o.mount === "tripod") add("tripod_mount", MOUNTS.tripod.name, tripodMount(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.tripod.print);
       if (o.coupon !== false) add("coupon", "Hole test coupon", coupon(K, rods), null, "As the file has it. Print it on the same plate as the boom, so that it prints under the same conditions.");
     } finally {
       K.free();
@@ -5152,7 +5202,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return loading;
   }
 
-  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, POLE_BEHIND: -poleBehind() }, planParts, buildParts, partsNotes, mastBehind, loadManifold });
+  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt }, planParts, buildParts, partsNotes, mastBehind, loadManifold });
 })(typeof globalThis !== "undefined" ? globalThis : this);
 
 /*

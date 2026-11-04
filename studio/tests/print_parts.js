@@ -44,7 +44,7 @@ function inside(mesh, x, y, z) {
 
   console.log("1. The same solids as OpenCascade made, with the new marks off");
   const t0 = Date.now();
-  const plain = YS.buildParts(wasm, duv, { gauge: false, label: false, mount: "mast" });
+  const plain = YS.buildParts(wasm, duv, { gauge: false, label: false, soft: false, mount: "mast" });
   console.log(`  ${Date.now() - t0} ms`);
   const by = (r, id) => r.parts.find((p) => p.id === id);
   const OCC = { boom_rear: [69466, [239.8, 16, 20]], boom_front: [56582, [193.4, 16, 20]], mast_mount: [158156, [60, 80, 102]], coupon: [18838, [64, 26, 12]] };
@@ -99,19 +99,53 @@ function inside(mesh, x, y, z) {
 
   console.log("\n2c. The painter pole's socket, the owner's thread on a plate that bolts to the arm");
   const pr = YS.buildParts(wasm, duv, { mount: "pole" }), ps = by(pr, "pole_socket"), pa = by(pr, "pole_arm");
-  const cx = 18, cy = 18, P = YS.POLE_SOCKET;
-  truth("lies flat on its plate, with the thread opening upward", near(ps.size[2], 7 + P.height, 0.01) && !inside(ps.mesh, cx, cy, ps.size[2] - 1), ps.size.map((v) => v.toFixed(2)).join(" x "));
-  truth("the thread doesn't break through the plate", inside(ps.mesh, cx, cy, 3));
-  truth("its wall is whole", [0, 1, 2, 3, 4, 5].every((i) => inside(ps.mesh, cx + 13.5 * Math.cos(i), cy + 13.5 * Math.sin(i), 25)));
-  truth("the thread is deep enough", !inside(ps.mesh, cx, cy, ps.size[2] - P.depth + 1), `${P.depth.toFixed(1)} mm`);
-  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => truth(`bolt hole ${a}, ${b} goes through the plate`, !inside(ps.mesh, cx + 14 * a, cy + 14 * b, 4) && inside(ps.mesh, cx + 14 * a + 2.2, cy + 14 * b, 4)));
+  const P = YS.POLE_SOCKET, tall = 7 + P.height, up = YS.PARTS.POLE_TILT * Math.PI / 180, cs = Math.cos(Math.PI / 2 - up), sn = Math.sin(Math.PI / 2 - up);
+  // a point given as if the part stood on its plate, x and y from the thread's axis and z up it, to where the tilted file has it
+  const lift = (x, y, z) => [x + 18, ps.size[1] - (18 * cs - (y * cs - z * sn)), y * sn + z * cs + 18 * sn];
+  const inPole = (x, y, z) => inside(ps.mesh, ...lift(x, y, z));
+  truth("its plate's edge is on the bed, and the thread's axis rises as the proven one did", near(ps.size[2], (18 + P.radius) * sn + tall * cs, 0.5) && !inPole(0, 0, tall - 1) && YS.PARTS.POLE_TILT === 30, ps.size.map((v) => v.toFixed(2)).join(" x "));
+  truth("the thread doesn't break through the plate", inPole(0, 0, 3));
+  truth("its wall is whole", [0, 1, 2, 3, 4, 5].every((i) => inPole(13.5 * Math.cos(i), 13.5 * Math.sin(i), 25)));
+  truth("the thread is deep enough", !inPole(0, 0, tall - P.depth + 1), `${P.depth.toFixed(1)} mm`);
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => truth(`bolt hole ${a}, ${b} goes through the plate`, !inPole(14 * a, 14 * b, 4) && inPole(14 * a + 2.2, 14 * b, 4)));
   // the arm lies on its block's far end, x up, so the block's holes run across the file. Standing, its z is the boom's -x
   const az = 2, block = pa.mesh;
   truth("the arm's four bolt holes are at the same spacing", (() => {
     const ys = pa.size[1] / 2, xs = pa.size[0] / 2, h = 18;      // the block's middle along the boom
     return [[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([a, b]) => !inside(block, xs, ys + 14 * b, h + 14 * a) && inside(block, xs, ys + 14 * b + 2.2, h + 14 * a));
   })());
+  const seen = new Map(); YS.meshToStl(ps.mesh, "s").split("\n").filter((l) => l.startsWith("  vertex")).forEach((l, i, all) => { if (i % 3 === 0) { const c = all.slice(i, i + 3); [[0, 1], [1, 2], [2, 0]].forEach(([a, b]) => { const k = [c[a], c[b]].sort().join("|"); seen.set(k, (seen.get(k) || 0) + 1); }); } });
+  truth("its STL is closed, with every edge shared by two faces", [...seen.values()].every((n) => n === 2), `${seen.size} edges`);
   truth("two pieces, and the notes list their bolts", /4 M3 x 40/.test(YS.partsNotes(duv, pr)));
+
+  console.log("\n2d. The bulge that holds the pin's nut: it adds to the socket, takes nothing from its wall, and takes any thickness of nut");
+  const side = 4.4 + 1.2 * Math.SQRT2 + 3.6 - 1.2;      // where its 45 degree side would meet the wall
+  for (const mount of ["tripod", "mast", "pole", "grip"]) {
+    const id = { tripod: "tripod_mount", mast: "mast_mount", pole: "pole_arm", grip: "hand_grip" }[mount];
+    const on = by(YS.buildParts(wasm, duv, { mount }), id);
+    const face = mount === "grip" ? 15 : 13.2, px = -8, front = 12;
+    // the part stands with the boom's x up and its z across the file, with the bulge on the -z side: the file's far x
+    const hit = (x, y, z) => inside(on.mesh, (mount === "mast" ? on.size[0] / 2 : face) - z, on.size[1] / 2 + y, x - (front - on.size[2]));
+    truth(`${mount}: the recess is open to the outside, all the way out`, !hit(px, 2, -face - 0.5) && !hit(px, 2, -face - 3.5) && !hit(px, 2, -face - 3.7));
+    truth(`${mount}: the wall behind the nut is whole, and the bolt goes through it`, hit(px, 2.5, -face + 1.5) && hit(px, -2.5, -face + 2.8) && !hit(px, 0, -face + 1.5));
+    truth(`${mount}: the recess has walls round it, and holds a nut from turning`, hit(px, 3.3, -face - 1.5) && hit(px, -3.3, -face - 1.5) && hit(px + 3.7, 0, -face - 1.5) && hit(px - 3.7, 0, -face - 1.5));
+    truth(`${mount}: the bulge's underside is no steeper than 45 degrees`, [1, 2, 3].every((h) => hit(px - (side - h - 0.3), 2.8 - 2.8, -face - h) && !hit(px - (side - h + 0.3), 0, -face - h)));
+    truth(`${mount}: its outside edges are rounded`, !hit(5, (mount === "grip" ? 15 : 11.2) - 0.3, face - 0.3) && hit(5, (mount === "grip" ? 15 : 11.2) - 1.5, face - 1.5));
+  }
+  truth("the bolts listed still reach through a nut in the recess", /M3 x 30[^"]*recess/.test(JSON.stringify(YS.PARTS.MOUNTS.tripod.hardware)) && /M3 x 40[^"]*recess/.test(JSON.stringify(YS.PARTS.MOUNTS.grip.hardware)) && 26.4 + 2.4 <= 30 && 30 + 2.4 <= 40);
+
+  console.log("\n2e. Nothing flat hangs in the air as printed, but the tops of round holes and the mast clamp's two slots, which are short bridges");
+  const flatArea = (mesh) => mesh.t.reduce((sum, [a, b, c]) => {
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const nx = u[1] * v[2] - u[2] * v[1], ny = u[2] * v[0] - u[0] * v[2], nz = u[0] * v[1] - u[1] * v[0], len = Math.hypot(nx, ny, nz);
+    return len > 0 && nz / len < -0.99 && Math.min(a[2], b[2], c[2]) > 0.05 ? sum + len / 2 : sum;
+  }, 0);
+  for (const pol of ["vertical", "horizontal"]) {
+    for (const [mount, limit] of [["mast", 2400], ["pole", 60], ["grip", 60], ["tripod", 60]]) {
+      const m = YS.buildParts(wasm, Object.assign({}, duv, { polarization: pol }), { mount }).parts.find((p) => !p.id.startsWith("boom") && p.id !== "coupon");
+      truth(`${pol}, ${mount}`, flatArea(m.mesh) < limit, `${flatArea(m.mesh).toFixed(0)} mm2 flat, under ${limit}`);
+    }
+  }
 
   console.log("\n3. Scale: a filament that shrinks 0.36%");
   const scaled = YS.buildParts(wasm, duv, { mount: "none", scale: 1 / 0.9964 }), sr = by(scaled, "boom_rear");

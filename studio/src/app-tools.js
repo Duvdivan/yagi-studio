@@ -23,7 +23,7 @@
     }
     if (!OPT.goals || OPT.goals.forDesign !== d.name) {
       OPT.goals = { forDesign: d.name, band: d.band.slice(), bandWas: d.f0 + ":" + d.band, fbMin: 15, swrMax: 1.5, boomMax: Math.round(YS.boomLength(d)), limitBoom: true,
-        changeLengths: true, changeSpacing: true, minGap: Math.round(0.05 * 299792.458 / d.f0), range: "wide", effort: "thorough", locks: {},
+        favor: "gain", changeLengths: true, changeSpacing: true, minGap: Math.round(0.05 * 299792.458 / d.f0), range: "wide", effort: "thorough", locks: {},
         rodsFrom: 4, rodsTo: 8, boomFrom: Math.round(0.4 * 299792.458 / d.f0), boomTo: Math.round(2 * 299792.458 / d.f0), boomSteps: 6 };
     }
     return OPT.goals;
@@ -37,7 +37,8 @@
         <section class="card" aria-label="Goals">
           <div class="head"><h2>What you want</h2></div>
           <div class="body stack">
-            <p class="note">It raises the worst gain across the band, while holding the limits below. Gain may dip at first as it gets within your limits.</p>
+            <p class="note" id="g-note"></p>
+            <div class="field"><label for="g-favor">Make the best of ${A.help("favor")}</label><select class="sel" id="g-favor"><option value="gain">Highest gain</option><option value="swr">Lowest SWR</option><option value="fb">Highest F/B</option><option value="both">Both SWR and F/B</option></select></div>
             <div class="field-grid">
               <div class="field"><label for="g-lo">Band from, MHz</label><input class="num" id="g-lo" inputmode="decimal"></div>
               <div class="field"><label for="g-hi">to, MHz</label><input class="num" id="g-hi" inputmode="decimal"></div>
@@ -188,6 +189,7 @@
     set("rodsTo", $("#x-rods-b"), { min: 3, max: 30, decimals: 0 });
     set("boomFrom", $("#x-boom-a"), { min: 1, decimals: 0 });
     set("boomTo", $("#x-boom-b"), { min: 1, decimals: 0 });
+    $("#g-favor").onchange = (e) => { goals().favor = e.target.value; A.renderGainCards(); };
     $("#g-range").onchange = (e) => { goals().range = e.target.value; };
     $("#g-effort").onchange = (e) => { goals().effort = e.target.value; };
     $("#g-len").onchange = (e) => { goals().changeLengths = e.target.checked; };
@@ -221,7 +223,7 @@
   function syncOptimize() {
     const g = goals();
     ["#g-lo", "#g-hi", "#g-swr", "#g-fb", "#g-boom", "#g-gap", "#x-rods-a", "#x-rods-b", "#x-boom-a", "#x-boom-b"].forEach((q) => $(q)._refresh());
-    $("#g-range").value = g.range; $("#g-effort").value = g.effort; $("#g-len").checked = g.changeLengths; $("#g-spc").checked = g.changeSpacing;
+    $("#g-favor").value = g.favor; $("#g-range").value = g.range; $("#g-effort").value = g.effort; $("#g-len").checked = g.changeLengths; $("#g-spc").checked = g.changeSpacing;
     const sorted = S.design.elements.slice().sort((a, b) => a.x - b.x);
     $("#g-locks").innerHTML = `<thead><tr><th>Rod</th><th>Hold length</th><th>Hold gap to next</th></tr></thead><tbody>` + sorted.map((e, i) => {
       const l = g.locks[e.id] || {};
@@ -250,7 +252,8 @@
     const started = performance.now();
     try {
       const effort = EFFORT[g.effort];
-      const res = await YS.optimise(A.pool, S.design, Object.assign({}, g, { boomMax: g.boomMax }), effort, {
+      const favoured = g.favor !== "gain";
+      const res = await YS.optimise(A.pool, S.design, Object.assign({}, g, { boomMax: g.boomMax, gainMin: FIND.target + 0.02, gainMax: favoured ? FIND.gainTo : 0 }), effort, {
         cancelled: () => OPT.cancel,
         onProgress: (p) => {
           OPT.progress = p;
@@ -266,7 +269,8 @@
       OPT.result = res;
       previewDesign(res.design);
       $("#opt-bar").style.width = "100%";
-      $("#opt-status").textContent = OPT.cancel ? "Stopped. This is the best it had found." : "Done.";
+      const short = favoured && res.parts.worstGain < FIND.target - 0.01 ? ` It couldn't hold ${fmt(FIND.target, 2)} dBd here, so its gain is what it could reach. A longer boom or another rod may help.` : "";
+      $("#opt-status").textContent = (OPT.cancel ? "Stopped. This is the best it had found." : "Done.") + short;
       renderOptResult();
     } catch (e) {
       $("#opt-status").textContent = e.message;
@@ -314,13 +318,15 @@
   }
 
   /* ==================== The gain you want: a card in both the Design and Optimize views ==================== */
-  const FIND = { target: 10, rod: null, rodFor: "", running: false, rows: null, best: null, tooHigh: 0, key: "", status: "", bar: 0 };
+  const FIND = { target: 10, gainTo: 0, boomTop: 0, rod: null, rodFor: "", running: false, rows: null, best: null, tooHigh: 0, key: "", status: "", bar: 0 };
 
   const firstDirector = () => S.design.elements.find((e) => e.type === "director") || S.design.elements[0];
   const rodSize = () => (FIND.rod && FIND.rodFor === S.design.name ? FIND.rod : firstDirector().d);
   const metalName = (m) => ({ aluminium: "aluminum" }[m] || m);
   /* What an answer depends on: when this changes, the answers on show are out of date. */
-  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, rodSize(), firstDirector().material].join(); };
+  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, FIND.gainTo, g.favor, g.favor === "gain" ? 0 : FIND.boomTop, rodSize(), firstDirector().material].join(); };
+  /* An optional number: blank means no limit, and is stored as 0. */
+  const optionalNum = (get, set) => ({ get: () => get() || NaN, set, min: 0, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)) });
 
   A.gainCard = (at) => `
     <section class="card gain-card" aria-label="The gain you want">
@@ -328,7 +334,12 @@
       <div class="body stack">
         <div class="field-grid">
           <div class="field"><label for="${at}-gf-target">Gain, dBd</label><input class="num" id="${at}-gf-target" data-gf="target" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-to">up to, if it matters</label><input class="num" id="${at}-gf-to" data-gf="to" inputmode="decimal" placeholder="any"></div>
           <div class="field"><label for="${at}-gf-rod">Rod diameter, mm</label><input class="num" id="${at}-gf-rod" data-gf="rod" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-favor">Make the best of ${A.help("favor")}</label><select class="sel" id="${at}-gf-favor" data-gf="favor"><option value="gain">Shortest boom</option><option value="swr">Lowest SWR</option><option value="fb">Highest F/B</option><option value="both">Both SWR and F/B</option></select></div>
+          ${at === "design" ? `<div class="field"><label for="${at}-gf-swr">SWR under ${A.help("swr")}</label><input class="num" id="${at}-gf-swr" data-gf="swr" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-fb">F/B over, dB ${A.help("fb")}</label><input class="num" id="${at}-gf-fb" data-gf="fb" inputmode="decimal"></div>` : ""}
+          <div class="field" data-gf="topwrap"><label for="${at}-gf-top">Longest boom, mm</label><input class="num" id="${at}-gf-top" data-gf="top" inputmode="decimal" placeholder="any"></div>
         </div>
         <p class="note" data-gf="limits"></p>
         <div class="row"><button class="btn primary" data-gf="run">Find the boom</button><button class="btn" data-gf="stop" disabled>Stop</button></div>
@@ -342,6 +353,13 @@
     const q = (k) => card.querySelector(`[data-gf="${k}"]`);
     A.bindNum(q("target"), { get: () => FIND.target, min: 0.5, max: 30, decimals: 2, set: (v) => { FIND.target = v; A.renderGainCards(card); } });
     A.bindNum(q("rod"), { get: rodSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.rod = v; FIND.rodFor = S.design.name; A.renderGainCards(card); } });
+    A.bindNum(q("to"), Object.assign(optionalNum(() => FIND.gainTo, (v) => { FIND.gainTo = v; A.renderGainCards(card); }), { decimals: 2 }));
+    A.bindNum(q("top"), Object.assign(optionalNum(() => FIND.boomTop, (v) => { FIND.boomTop = v; A.renderGainCards(card); }), { decimals: 0 }));
+    if (q("swr")) {
+      A.bindNum(q("swr"), { get: () => goals().swrMax, min: 1.01, max: 20, decimals: 2, set: (v) => { goals().swrMax = v; A.renderGainCards(card); } });
+      A.bindNum(q("fb"), { get: () => goals().fbMin, min: 0, max: 60, decimals: 1, set: (v) => { goals().fbMin = v; A.renderGainCards(card); } });
+    }
+    q("favor").onchange = (e) => { goals().favor = e.target.value; A.renderGainCards(); };
     q("run").onclick = runFind;
     q("stop").onclick = () => { OPT.cancel = true; };
     q("out").onclick = (e) => { const b = e.target.closest("[data-use]"); if (b) useFound(FIND.rows[+b.dataset.use]); };
@@ -351,10 +369,15 @@
   /* Both cards show the same search. `typing` is the card being typed in, whose fields are left alone. */
   A.renderGainCards = (typing) => {
     const g = goals(), R = FIND.rows && FIND.key === findKey() ? FIND : null;
+    const note = $("#g-note");
+    if (note) note.textContent = g.favor === "gain" ? "It raises the worst gain across the band, while holding the limits below. Gain may dip at first as it gets within your limits."
+      : `It works on ${FAVOR_NAMES[g.favor]} while holding the gain in the card above, ${fmt(FIND.target, 2)} dBd or more, and the limits below.`;
     $$(".gain-card").forEach((card) => {
       const q = (k) => card.querySelector(`[data-gf="${k}"]`), onDesign = !!card.closest("#view-design");
-      if (card !== typing) { q("target")._refresh(); q("rod")._refresh(); }
-      q("limits").textContent = `The worst across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, with SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, in ${metalName(firstDirector().material)} rods.${onDesign ? " Optimize sets those limits." : ""}`;
+      if (card !== typing) ["target", "to", "rod", "top", "swr", "fb"].forEach((k) => { if (q(k)) q(k)._refresh(); });
+      q("favor").value = g.favor;
+      q("topwrap").hidden = g.favor === "gain";
+      q("limits").textContent = `Worst gain across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, in ${metalName(firstDirector().material)} rods.${onDesign ? "" : ` With SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, set below.`}`;
       q("run").disabled = OPT.running;
       q("stop").disabled = !FIND.running;
       q("bar").style.width = FIND.bar + "%";
@@ -366,10 +389,13 @@
     });
   };
 
+  const FAVOR_NAMES = { swr: "the lowest SWR", fb: "the highest F/B", both: "the best SWR and F/B together" };
+
   function foundMessage() {
     const seconds = fmt((performance.now() - FIND.started) / 1000, 0);
     if (FIND.tooHigh) return `That's more than ${FIND.tooHigh} rods can reach, the most this searches. Try a lower gain.`;
     if (OPT.cancel && FIND.rows.length) return "Stopped. These are what it had found, and there may be shorter ones.";
+    if (FIND.rows.length && goals().favor !== "gain") return `Done in ${seconds} s. Each row is ${FAVOR_NAMES[goals().favor]} it found for that many rods at this gain. This is a quick search, so Optimize can polish the one you use.`;
     if (FIND.rows.length > 1) return `Done in ${seconds} s. More rods shorten the boom. This is a quick search, so Optimize can polish the one you use.`;
     if (FIND.rows.length) return `Done in ${seconds} s. Another rod wouldn't shorten it. This is a quick search, so Optimize can polish it.`;
     const b = FIND.best;
@@ -380,6 +406,7 @@
     if (OPT.running) return;
     const g = goals(), d = S.design, rod = firstDirector();
     if (!(g.band[1] > g.band[0])) { FIND.status = "Check the band: its top should be above its bottom."; return A.renderGainCards(); }
+    if (FIND.gainTo && FIND.gainTo <= FIND.target) { FIND.status = "Check the gain: the second number should be above the first."; FIND.key = findKey(); FIND.rows = []; return A.renderGainCards(); }
     const lock = (on) => ["#opt-run", "#x-run"].forEach((q) => { const b = $(q); if (b) b.disabled = on; });
     Object.assign(FIND, { running: true, rows: [], best: null, tooHigh: 0, bar: 0, key: findKey(), status: "Starting…", started: performance.now() });
     OPT.running = true; OPT.cancel = false;
@@ -390,7 +417,7 @@
       const settings = {};
       ["f0", "z0", "polarization", "endCap", "feedWire", "boomFace", "mast", "cable", "ground", "radio"].forEach((k) => { if (d[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(d[k])); });
       const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rod.material || d.material, gap: d.gap, settings },
-        { band: g.band.slice(), fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7 }, FIND.target, {
+        { band: g.band.slice(), fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7, favor: g.favor, gainMax: FIND.gainTo, boomTop: FIND.boomTop }, FIND.target, {
           cancelled: () => OPT.cancel,
           onProgress: (p) => {
             FIND.rows = p.rows.slice();

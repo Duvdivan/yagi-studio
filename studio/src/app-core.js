@@ -26,6 +26,7 @@
   /* Plain-language meanings, shown from the small ? buttons. */
   const GLOSSARY = {
     swr: ["SWR", "How well the antenna takes power from the cable. 1.0 is perfect. Under 1.5 is good, and under 2 is usable. At SWR 2, about 11% of the power bounces back, a 0.5 dB loss."],
+    favor: ["Make the best of", "Once a design has the gain you asked for and stays within your limits, this is what the search spends what's left on. Lowest SWR gives the best match. Highest F/B rejects most from behind. Both raises whichever of the two is worse, with SWR counted as return loss. A longer boom or another rod pays for them. SWR stops counting at 1.04 and F/B at 40 dB, as past those a real build can't hold on to them."],
     gain: ["Gain", "How much stronger the signal is straight ahead than from a reference antenna. dBd compares with a plain dipole, dBi with an ideal point source; dBi is always 2.15 higher. Every 3 dB doubles the power."],
     fb: ["Front-to-back", "How much stronger the antenna is straight ahead than straight behind. F/B 20 dB means 1/100 of the power goes directly backward. Higher means it ignores more from directly behind."],
     fr: ["Front-to-rear", "Like front-to-back, but against the strongest lobe anywhere in the rear half, not just straight behind. It's the more honest number."],

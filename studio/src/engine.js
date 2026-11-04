@@ -129,7 +129,8 @@
       vars,
       freqs: bandFreqs(goals.band, design.f0),
       goals: { fbMin: goals.fbMin, swrMax: goals.swrMax, fbWeight: 0.15, swrWeight: 3, gainWeight: 1,
-        boomMax: goals.boomMax || 0, boomFixed: goals.boomFixed || 0, minGap: goals.minGap },
+        boomMax: goals.boomMax || 0, boomFixed: goals.boomFixed || 0, minGap: goals.minGap,
+        lam, favor: goals.favor || "gain", gainMin: goals.gainMin || 0, gainMax: goals.gainMax || 0 },
       counts: YS.buildWires(solver, { quality: "draft" }).map((w) => w.m),
     };
   }
@@ -220,28 +221,19 @@
     return { design: applyToDesign(design, pol.solver), parts: pol.parts, evals, history };
   }
 
-  /** The best gain one mix of rods and boom can hold over the band. template.settings carries a design's model settings across. */
-  async function boomRun(pool, template, goals, n, boom, gens, hooks) {
+  /**
+   * The best one mix of rods and boom can do over the band. template.settings carries a design's model settings across.
+   * With top, boom is only where it starts from, and it's free to settle anywhere up to top.
+   */
+  async function boomRun(pool, template, goals, n, boom, gens, hooks, top) {
     const start = YS.startingDesign(template.f0, n, template.d, template.material);
     const span = YS.boomLength(start), k = boom / span;
     start.elements.forEach((e) => { e.x = Math.round(e.x * k * 10) / 10; });
     Object.assign(start, template.settings || {});
     start.band = goals.band;
     start.gap = template.gap;
-    const res = await optimise(pool, start, Object.assign({}, goals, { boomFixed: boom, boomMax: 0, range: "wide" }), { gens, patience: 30, polish: 80 }, { cancelled: hooks.cancelled });
-    return { rods: n, boom, gain: res.parts.worstGain, swr: res.parts.worstSwr, fb: res.parts.minFb, design: res.design };
-  }
-
-  /** The best gain one mix of rods and boom can hold over the band. template.settings carries a design's model settings across. */
-  async function boomRun(pool, template, goals, n, boom, gens, hooks) {
-    const start = YS.startingDesign(template.f0, n, template.d, template.material);
-    const span = YS.boomLength(start), k = boom / span;
-    start.elements.forEach((e) => { e.x = Math.round(e.x * k * 10) / 10; });
-    Object.assign(start, template.settings || {});
-    start.band = goals.band;
-    start.gap = template.gap;
-    const res = await optimise(pool, start, Object.assign({}, goals, { boomFixed: boom, boomMax: 0, range: "wide" }), { gens, patience: 30, polish: 80 }, { cancelled: hooks.cancelled });
-    return { rods: n, boom, gain: res.parts.worstGain, swr: res.parts.worstSwr, fb: res.parts.minFb, design: res.design };
+    const res = await optimise(pool, start, Object.assign({}, goals, { boomFixed: top ? 0 : boom, boomMax: top || 0, range: "wide" }), { gens, patience: 30, polish: 80 }, { cancelled: hooks.cancelled });
+    return { rods: n, boom: top ? YS.boomLength(res.design) : boom, gain: res.parts.worstGain, swr: res.parts.worstSwr, fb: res.parts.minFb, cost: res.parts.cost, design: res.design };
   }
 
   /** The best gain each (rods, boom) pair can hold over the band: for picking the shortest boom. */
@@ -271,6 +263,8 @@
   const FIND_ROWS = 3;        // how many rod counts it offers
   const FIND_MARGIN = 0.02;   // dB over the target, as rounding lengths to 0.1 mm can cost a little
   const FIND_GENS = 90;       // the optimiser's generations per try, as in Which boom?
+  const FAVOR_STARTS = 2;     // tries per rod count when favouring SWR or F/B, as those have narrower optima than gain
+  const FAVOR_RISE = 0.3;     // dB the favoured figure must improve for another rod to be worth a row
 
   /**
    * The shortest booms that hold a gain across the band: one answer per rod count, from the fewest rods
@@ -280,6 +274,7 @@
    * Returns { rows, best, tooHigh }: best is the closest try that held the limits, for when no row reaches it.
    */
   async function findForGain(pool, template, goals, target, hooks) {
+    if (goals.favor && goals.favor !== "gain") return findFavoured(pool, template, goals, target, hooks);
     const lam = 299792.458 / template.f0, rows = [];
     const cancelled = () => hooks.cancelled && hooks.cancelled();
     const held = (r) => r.swr <= goals.swrMax + 0.01 && r.fb >= goals.fbMin - 0.1;
@@ -331,6 +326,41 @@
       const row = await shortestFor(n, prior);
       if (!row) { if (prior) break; continue; }
       if (prior && row.boom > 0.97 * prior.boom) break;
+      rows.push(row);
+      if (hooks.onProgress) hooks.onProgress({ tries, last: row, rows });
+    }
+    return { rows, best, tooHigh: 0 };
+  }
+
+  /**
+   * With the gain settled, the best SWR, F/B or both that each rod count can do: goals.favor is "swr", "fb" or "both".
+   * The boom is free here, up to goals.boomTop if that's set, because it's what pays for them. From the fewest
+   * rods that hold the gain, up to where another rod no longer helps. Returns the same as findForGain.
+   */
+  async function findFavoured(pool, template, goals, target, hooks) {
+    const lam = 299792.458 / template.f0, rows = [];
+    const cancelled = () => hooks.cancelled && hooks.cancelled();
+    if (target > GAIN_TOPS[FIND_RODS] + FIND_SLACK) return { rows, best: null, tooHigh: FIND_RODS };
+    const aim = Object.assign({}, goals, { gainMin: target + FIND_MARGIN });
+    const held = (r) => r.swr <= goals.swrMax + 0.01 && r.fb >= goals.fbMin - 0.1 && (!goals.gainMax || r.gain <= goals.gainMax + FIND_MARGIN);
+    let best = null, tries = 0;
+    let n = 3;
+    while (n < FIND_RODS && GAIN_TOPS[n] + FIND_SLACK < target) n++;
+    for (; n <= FIND_RODS && rows.length < FIND_ROWS && !cancelled(); n++) {
+      const top = Math.min(goals.boomTop || Infinity, 0.4 * lam * (n - 1));
+      if (top < goals.minGap * (n - 1)) break;      // no room for this many rods, or for any more
+      let row = null;
+      for (let i = 0; i < FAVOR_STARTS && !cancelled(); i++) {
+        const from = Math.min(top, (i ? 0.2 : 0.3) * lam * (n - 1));
+        const r = await boomRun(pool, template, Object.assign({}, aim, { seed: (goals.seed || 7) + i }), n, Math.round(from), FIND_GENS, hooks, top);
+        tries++;
+        if (held(r) && (!best || r.gain > best.gain)) best = r;
+        if (held(r) && r.gain >= target + FIND_MARGIN - 0.005 && (!row || r.cost < row.cost)) row = r;
+        if (hooks.onProgress) hooks.onProgress({ tries, last: r, rows });
+      }
+      const prior = rows[rows.length - 1];
+      if (!row) { if (prior) break; continue; }
+      if (prior && row.cost > prior.cost - FAVOR_RISE) break;
       rows.push(row);
       if (hooks.onProgress) hooks.onProgress({ tries, last: row, rows });
     }

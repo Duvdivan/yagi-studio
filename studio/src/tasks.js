@@ -142,6 +142,14 @@
     return Object.assign({}, b, { elements });
   }
 
+  const FAVOR_GAIN = 40;      // cost per dB of gain outside what was asked for
+  const FAVOR_UNMET = 100;    // cost of missing the gain or a limit, above anything a design's SWR or F/B can score
+  const RL_ENOUGH = 34;       // dB of return loss, SWR 1.04: no one can build or measure a better match than this
+  const FB_ENOUGH = 40;       // dB of F/B: past this it's a sharp null that the mast or a bent rod will fill in
+  const FAVOR_BOOM = 1.5;     // dB a wavelength of boom has to earn, so that it doesn't grow for nothing
+  /* SWR as return loss, dB, so that it can be set beside F/B. */
+  const returnLoss = (swr) => -20 * Math.log10(Math.max((swr - 1) / (swr + 1), 1e-3));
+
   const costParts = (ctx, run, s) => {
     const g = ctx.goals;
     let worstGain = Infinity, worstSwr = 0, minFb = Infinity, penalty = 0;
@@ -159,6 +167,17 @@
       const gap = s.elements[i + 1].x - s.elements[i].x;
       if (gap < g.minGap) penalty += 5 * (g.minGap - gap);
     }
+    if (g.favor && g.favor !== "gain") {
+      // the gain and the limits come first: a design that misses one always loses to one that meets them all
+      if (worstGain < g.gainMin) penalty += FAVOR_GAIN * (g.gainMin - worstGain);
+      if (g.gainMax && worstGain > g.gainMax) penalty += FAVOR_GAIN * (worstGain - g.gainMax);
+      if (penalty > 0) return { worstGain, worstSwr, minFb, cost: FAVOR_UNMET + penalty };
+      const rl = Math.min(returnLoss(worstSwr), RL_ENOUGH), fb = Math.min(minFb, FB_ENOUGH);
+      const aim = g.favor === "swr" ? rl : g.favor === "fb" ? fb : Math.min(rl, fb) + 0.1 * Math.max(rl, fb);
+      const boom = s.elements[s.elements.length - 1].x - s.elements[0].x;
+      return { worstGain, worstSwr, minFb, cost: -aim + FAVOR_BOOM * boom / g.lam };
+    }
+    if (g.gainMax && worstGain > g.gainMax) penalty += FAVOR_GAIN * (worstGain - g.gainMax);
     return { worstGain, worstSwr, minFb, cost: -(g.gainWeight || 1) * worstGain + penalty };
   };
 

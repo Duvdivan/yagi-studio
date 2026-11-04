@@ -68,6 +68,18 @@ function across(design, quality) {
   const stopped = await YS.findForGain(pool, template, goals, 7, { cancelled: () => ++calls > 3 });
   truth("stops without an error", Array.isArray(stopped.rows));
 
+  console.log("\n5. Making the best of SWR and F/B at a gain, with a limit on the boom and a ceiling on the gain");
+  const shortest = low.rows[0];
+  const both = await YS.findForGain(pool, template, Object.assign({}, goals, { favor: "both", gainMax: 7.6, boomTop: 300 }), 7, {});
+  truth("it found something", both.rows.length > 0, both.rows.map((r) => `${r.rods} rods ${r.boom} mm`).join(", "));
+  both.rows.forEach((r) => {
+    const a = across(r.design, "fine");
+    truth(`${r.rods} rods, ${r.boom.toFixed(0)} mm, holds the gain, its ceiling and the limits`, a.gain >= 6.97 && a.gain <= 7.65 && a.swr <= 1.53 && a.fb >= 14.7, `${a.gain.toFixed(2)} dBd, SWR ${a.swr.toFixed(2)}, F/B ${a.fb.toFixed(1)}`);
+    truth("  and the boom limit", YS.boomLength(r.design) <= 300.05, YS.boomLength(r.design).toFixed(1));
+  });
+  const bestBoth = across(both.rows[both.rows.length - 1].design, "fine"), plain = across(shortest.design, "fine");
+  truth("and it beats the shortest boom on both", bestBoth.swr < plain.swr && bestBoth.fb > plain.fb, `SWR ${plain.swr.toFixed(2)} to ${bestBoth.swr.toFixed(2)}, F/B ${plain.fb.toFixed(1)} to ${bestBoth.fb.toFixed(1)}`);
+
   console.log(failed ? `\n${failed} FAILED` : "\nAll passed");
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

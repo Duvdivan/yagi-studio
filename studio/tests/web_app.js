@@ -127,10 +127,11 @@ async function ios(name, device) {
   /* a bend, which goes through the general solver */
   await p.click("#bend-more summary");
   const cell = await p.evaluate(() => { const e = YS.app.S.design.elements.find((q) => q.name === "Driven"); return `input[data-rod="${e.id}"][data-k="topF"]`; });
+  const straight = await atTarget(p);
   await p.fill(cell, "-5.6");
   await p.press(cell, "Tab");
-  await p.waitForTimeout(600);
-  await p.waitForFunction(() => YS.app.S.solvedQuality === YS.app.S.quality, null, { timeout: 120000 });
+  // the old answer stays on show, marked as solved, until the first draft of the new one lands
+  await p.waitForFunction((was) => { const S = YS.app.S, d = S.design, r = S.rows.reduce((a, b) => (Math.abs(b.f - d.f0) < Math.abs(a.f - d.f0) ? b : a)); return Math.abs(r.swr - was) > 1e-6 && S.solvedQuality === S.quality; }, straight, { timeout: 120000 }).catch(() => {});
   ok(`${name}: bent rods solve`, Math.abs((await atTarget(p)) - 1.25) > 0.005, (await atTarget(p)).toFixed(3));
   await p.click("#bend-clear");
   await p.waitForTimeout(800);

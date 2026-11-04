@@ -25,6 +25,7 @@
             </div>
           </div>
         </section>
+        ${A.gainCard("design")}
         <section class="card" aria-label="Rods">
           <div class="head"><h2>Rods, mm</h2><span class="note">Drag in the drawing, or type. 1/8 in works too.</span></div>
           <div class="body">
@@ -517,10 +518,11 @@
       ro.observe($("#sweep-box"));
       ro.observe($("#smith"));
       $("#nec-check").hidden = !S.server;
+      A.bindGainCard($("#view-design .gain-card"));
       inited = true;
     },
-    show() { renderRods(); syncForm(); refreshAll(); },
-    refreshDesign(full) { if (!inited) return; if (full) renderRods(); else syncRodsValues(); syncForm(); drawLayout(); },
+    show() { renderRods(); syncForm(); refreshAll(); A.renderGainCards(); },
+    refreshDesign(full) { if (!inited) return; if (full) renderRods(); else syncRodsValues(); syncForm(); drawLayout(); A.renderGainCards(); },
     refreshResults() { refreshAll(); },
     retheme() { refreshAll(); },
     showNecButton() { const b = $("#nec-check"); if (b) b.hidden = !S.server; },

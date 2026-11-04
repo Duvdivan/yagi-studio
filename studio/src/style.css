@@ -202,6 +202,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
 .tbl td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
 .tbl th:first-child, .tbl td:first-child { text-align: left; font-family: var(--sans); }
 .tbl tr.total td { font-weight: 600; }
+.gf-table th, .gf-table td { padding-left: 4px; padding-right: 4px; }
 .tbl .better { color: var(--good); }
 .tbl .worse { color: var(--bad); }
 .progress { height: 4px; border-radius: 2px; background: var(--sunken); overflow: hidden; }

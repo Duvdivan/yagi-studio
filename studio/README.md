@@ -8,8 +8,8 @@ A Yagi antenna simulator and tuning assistant that runs in a browser. Design a b
 
 | Tab | For |
 |---|---|
-| **Design** | Pick your network, and the target follows. Rods in a table or dragged in a true-scale drawing, with live SWR, gain, F/B, Smith chart, polar cuts, a 3D pattern and the pattern over ground. Pin a design to compare. |
-| **Optimize** | Raises the worst gain across a band under limits on SWR, F/B and boom length. **Which boom?** finds the best gain each mix of rods and boom can hold. |
+| **Design** | Pick your network, and the target follows. Say what gain you want, and it finds the shortest booms that hold it. Rods in a table or dragged in a true-scale drawing, with live SWR, gain, F/B, Smith chart, polar cuts, a 3D pattern and the pattern over ground. Pin a design to compare. |
+| **Optimize** | The same gain search, then raises the worst gain across a band under limits on SWR, F/B and boom length. **Which boom?** finds the best gain each mix of rods and boom can hold. |
 | **Build check** | Simulates hundreds of builds with cutting errors, and ranks which rods matter most. |
 | **Cut list** | Cut lengths and drilling positions, plus files: JSON, NEC deck, YagiCAD `.YC6`, CSV, `.s1p`. And a 3D-printed cutting guide for the rods, scaled to your printer. |
 | **Tune my antenna** | Enter what you measured on your parts and what your VNA says: draw the curve, type a few numbers, load a `.s1p` or read a NanoVNA. It fits the model to those readings, says which conclusions are firm, and ranks real fixes with exact lengths. |
@@ -120,6 +120,7 @@ python build.py              # src/ -> dist/yagi-studio.html, dist/artifact.html
 node tests/validate.js       # the checks above; needs Python with numpy and scipy, and uses nec2++ if present
 python tests/bor_reference.py   # the surface reference on its own
 python tests/gap_reference.py   # the driven element's gap on its own
+node tests/find_gain.js      # the search for a gain (a few minutes on one thread)
 node tests/crooked.js        # what the gap and crooked rods do to the DuvYagi (a few minutes)
 node tests/web_app.js chrome # the installable web app; the file says how to serve it, and webkit is the other choice
 python serve.py              # optional: adds a "Check with nec2++" button at http://localhost:8910

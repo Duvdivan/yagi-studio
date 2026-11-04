@@ -15,9 +15,14 @@
   };
 
   function goals() {
-    if (!OPT.goals || OPT.goals.forDesign !== S.design.name) {
-      const d = S.design;
-      OPT.goals = { forDesign: d.name, band: d.band.slice(), fbMin: 15, swrMax: 1.5, boomMax: Math.round(YS.boomLength(d)), limitBoom: true,
+    const d = S.design;
+    if (OPT.goals && OPT.goals.forDesign === d.name && OPT.goals.bandWas !== d.f0 + ":" + d.band) {
+      // the Design view moved the target or the band, so what's searched follows it
+      const lam = 299792.458 / d.f0;
+      Object.assign(OPT.goals, { band: d.band.slice(), bandWas: d.f0 + ":" + d.band, minGap: Math.round(0.05 * lam), boomFrom: Math.round(0.4 * lam), boomTo: Math.round(2 * lam) });
+    }
+    if (!OPT.goals || OPT.goals.forDesign !== d.name) {
+      OPT.goals = { forDesign: d.name, band: d.band.slice(), bandWas: d.f0 + ":" + d.band, fbMin: 15, swrMax: 1.5, boomMax: Math.round(YS.boomLength(d)), limitBoom: true,
         changeLengths: true, changeSpacing: true, minGap: Math.round(0.05 * 299792.458 / d.f0), range: "wide", effort: "thorough", locks: {},
         rodsFrom: 4, rodsTo: 8, boomFrom: Math.round(0.4 * 299792.458 / d.f0), boomTo: Math.round(2 * 299792.458 / d.f0), boomSteps: 6 };
     }
@@ -28,6 +33,7 @@
     return `
     <div class="view view-three" id="view-optimize">
       <div class="col">
+        ${A.gainCard("opt")}
         <section class="card" aria-label="Goals">
           <div class="head"><h2>What you want</h2></div>
           <div class="body stack">
@@ -170,9 +176,10 @@
 
   function bindOptimize() {
     const g = goals();
-    const set = (key, input, opt) => A.bindNum(input, Object.assign({ get: () => goals()[key], set: (v) => { goals()[key] = v; }, decimals: 1 }, opt));
-    A.bindNum($("#g-lo"), { get: () => goals().band[0], decimals: 3, min: 1, set: (v) => { goals().band[0] = v; } });
-    A.bindNum($("#g-hi"), { get: () => goals().band[1], decimals: 3, min: 1, set: (v) => { goals().band[1] = v; } });
+    const set = (key, input, opt) => A.bindNum(input, Object.assign({ get: () => goals()[key], set: (v) => { goals()[key] = v; A.renderGainCards(); }, decimals: 1 }, opt));
+    A.bindGainCard($("#view-optimize .gain-card"));
+    A.bindNum($("#g-lo"), { get: () => goals().band[0], decimals: 3, min: 1, set: (v) => { goals().band[0] = v; A.renderGainCards(); } });
+    A.bindNum($("#g-hi"), { get: () => goals().band[1], decimals: 3, min: 1, set: (v) => { goals().band[1] = v; A.renderGainCards(); } });
     set("swrMax", $("#g-swr"), { min: 1.01, max: 20, decimals: 2 });
     set("fbMin", $("#g-fb"), { min: 0, max: 60 });
     set("boomMax", $("#g-boom"), { min: 1, decimals: 0 });
@@ -239,6 +246,7 @@
     const g = goals();
     OPT.running = true; OPT.cancel = false; OPT.result = null;
     $("#opt-run").disabled = true; $("#opt-stop").disabled = false; $("#x-run").disabled = true;
+    A.renderGainCards();
     const started = performance.now();
     try {
       const effort = EFFORT[g.effort];
@@ -265,6 +273,7 @@
     }
     OPT.running = false;
     $("#opt-run").disabled = false; $("#opt-stop").disabled = true; $("#x-run").disabled = false;
+    A.renderGainCards();
   }
 
   async function runExplore() {
@@ -279,6 +288,7 @@
     if (!rods.length || g.boomTo <= g.boomFrom) { $("#x-status").textContent = "Check the ranges: the second number should be larger than the first."; return; }
     OPT.running = true; OPT.cancel = false; OPT.explore = [];
     $("#x-run").disabled = true; $("#x-stop").disabled = false; $("#opt-run").disabled = true;
+    A.renderGainCards();
     const started = performance.now();
     try {
       const res = await YS.exploreBooms(A.pool, { f0: d.f0, d: firstDir.d, material: firstDir.material || d.material, gap: d.gap },
@@ -300,6 +310,117 @@
     }
     OPT.running = false;
     $("#x-run").disabled = false; $("#x-stop").disabled = true; $("#opt-run").disabled = false;
+    A.renderGainCards();
+  }
+
+  /* ==================== The gain you want: a card in both the Design and Optimize views ==================== */
+  const FIND = { target: 10, rod: null, rodFor: "", running: false, rows: null, best: null, tooHigh: 0, key: "", status: "", bar: 0 };
+
+  const firstDirector = () => S.design.elements.find((e) => e.type === "director") || S.design.elements[0];
+  const rodSize = () => (FIND.rod && FIND.rodFor === S.design.name ? FIND.rod : firstDirector().d);
+  const metalName = (m) => ({ aluminium: "aluminum" }[m] || m);
+  /* What an answer depends on: when this changes, the answers on show are out of date. */
+  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, rodSize(), firstDirector().material].join(); };
+
+  A.gainCard = (at) => `
+    <section class="card gain-card" aria-label="The gain you want">
+      <div class="head"><h2>The gain you want ${A.help("gain")}</h2></div>
+      <div class="body stack">
+        <div class="field-grid">
+          <div class="field"><label for="${at}-gf-target">Gain, dBd</label><input class="num" id="${at}-gf-target" data-gf="target" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-rod">Rod diameter, mm</label><input class="num" id="${at}-gf-rod" data-gf="rod" inputmode="decimal"></div>
+        </div>
+        <p class="note" data-gf="limits"></p>
+        <div class="row"><button class="btn primary" data-gf="run">Find the boom</button><button class="btn" data-gf="stop" disabled>Stop</button></div>
+        <div class="progress"><i data-gf="bar"></i></div>
+        <p class="note" data-gf="status" role="status"></p>
+        <div data-gf="out"></div>
+      </div>
+    </section>`;
+
+  A.bindGainCard = (card) => {
+    const q = (k) => card.querySelector(`[data-gf="${k}"]`);
+    A.bindNum(q("target"), { get: () => FIND.target, min: 0.5, max: 30, decimals: 2, set: (v) => { FIND.target = v; A.renderGainCards(card); } });
+    A.bindNum(q("rod"), { get: rodSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.rod = v; FIND.rodFor = S.design.name; A.renderGainCards(card); } });
+    q("run").onclick = runFind;
+    q("stop").onclick = () => { OPT.cancel = true; };
+    q("out").onclick = (e) => { const b = e.target.closest("[data-use]"); if (b) useFound(FIND.rows[+b.dataset.use]); };
+    A.renderGainCards();
+  };
+
+  /* Both cards show the same search. `typing` is the card being typed in, whose fields are left alone. */
+  A.renderGainCards = (typing) => {
+    const g = goals(), R = FIND.rows && FIND.key === findKey() ? FIND : null;
+    $$(".gain-card").forEach((card) => {
+      const q = (k) => card.querySelector(`[data-gf="${k}"]`), onDesign = !!card.closest("#view-design");
+      if (card !== typing) { q("target")._refresh(); q("rod")._refresh(); }
+      q("limits").textContent = `The worst across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, with SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, in ${metalName(firstDirector().material)} rods.${onDesign ? " Optimize sets those limits." : ""}`;
+      q("run").disabled = OPT.running;
+      q("stop").disabled = !FIND.running;
+      q("bar").style.width = FIND.bar + "%";
+      q("status").textContent = FIND.running || R ? FIND.status : "";
+      q("out").innerHTML = R && R.rows.length ? `
+        <div class="scroll-x"><table class="tbl gf-table"><thead><tr><th>Rods</th><th>Boom, mm</th><th>Worst dBd</th><th>SWR</th><th>F/B</th><th></th></tr></thead><tbody>
+          ${R.rows.map((r, i) => `<tr><td>${r.rods}</td><td>${fmt(r.boom, 0)}</td><td>${fmt(r.gain, 2)}</td><td>${fmt(r.swr, 2)}</td><td>${fmt(r.fb, 1)}</td><td><button class="btn small" data-use="${i}" aria-label="Use ${r.rods} rods on ${fmt(r.boom, 0)} mm">Use</button></td></tr>`).join("")}
+        </tbody></table></div>` : "";
+    });
+  };
+
+  function foundMessage() {
+    const seconds = fmt((performance.now() - FIND.started) / 1000, 0);
+    if (FIND.tooHigh) return `That's more than ${FIND.tooHigh} rods can reach, the most this searches. Try a lower gain.`;
+    if (OPT.cancel && FIND.rows.length) return "Stopped. These are what it had found, and there may be shorter ones.";
+    if (FIND.rows.length > 1) return `Done in ${seconds} s. More rods shorten the boom. This is a quick search, so Optimize can polish the one you use.`;
+    if (FIND.rows.length) return `Done in ${seconds} s. Another rod wouldn't shorten it. This is a quick search, so Optimize can polish it.`;
+    const b = FIND.best;
+    return (OPT.cancel ? "Stopped before reaching it." : "It didn't reach that under these limits.") + (b ? ` The most it found was ${fmt(b.gain, 2)} dBd, on ${b.rods} rods and ${fmt(b.boom, 0)} mm. Try a lower gain, a narrower band or looser limits.` : "");
+  }
+
+  async function runFind() {
+    if (OPT.running) return;
+    const g = goals(), d = S.design, rod = firstDirector();
+    if (!(g.band[1] > g.band[0])) { FIND.status = "Check the band: its top should be above its bottom."; return A.renderGainCards(); }
+    const lock = (on) => ["#opt-run", "#x-run"].forEach((q) => { const b = $(q); if (b) b.disabled = on; });
+    Object.assign(FIND, { running: true, rows: [], best: null, tooHigh: 0, bar: 0, key: findKey(), status: "Starting…", started: performance.now() });
+    OPT.running = true; OPT.cancel = false;
+    lock(true);
+    A.renderGainCards();
+    try {
+      // the model's settings come along, so that the design found is the one you'll then see
+      const settings = {};
+      ["f0", "z0", "polarization", "endCap", "feedWire", "boomFace", "mast", "cable", "ground", "radio"].forEach((k) => { if (d[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(d[k])); });
+      const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rod.material || d.material, gap: d.gap, settings },
+        { band: g.band.slice(), fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7 }, FIND.target, {
+          cancelled: () => OPT.cancel,
+          onProgress: (p) => {
+            FIND.rows = p.rows.slice();
+            FIND.bar = Math.min(92, 100 * p.tries / (p.tries + 6));
+            FIND.status = `Tried ${p.last.rods} rods on ${fmt(p.last.boom, 0)} mm: ${fmt(p.last.gain, 2)} dBd. ${fmt((performance.now() - FIND.started) / 1000, 0)} s so far.`;
+            A.renderGainCards();
+          },
+        });
+      Object.assign(FIND, { rows: res.rows, best: res.best, tooHigh: res.tooHigh });
+      FIND.status = foundMessage();
+    } catch (e) {
+      FIND.status = e.message;
+    }
+    FIND.running = false; FIND.bar = 100; OPT.running = false;
+    lock(false);
+    A.renderGainCards();
+  }
+
+  function useFound(row) {
+    const name = `${row.rods}-element ${Math.round(S.design.f0)} MHz, ${fmt(FIND.target, 2)} dBd`;
+    const next = Object.assign(JSON.parse(JSON.stringify(row.design)), { name });
+    delete next.tune;      // any readings were of the antenna this replaces
+    const g = goals();
+    Object.assign(g, { forDesign: name, boomMax: Math.round(row.boom) });
+    FIND.rodFor = name;
+    A.loadDesign(next, true);
+    g.bandWas = next.f0 + ":" + next.band;
+    FIND.key = findKey();
+    A.go("design");
+    A.toast("Design loaded. Undo brings the old one back.");
   }
 
   A.views.optimize = {
@@ -310,8 +431,8 @@
       const ro = new ResizeObserver(() => { drawOptChart(); drawExplorer(); });
       ro.observe($("#opt-chart")); ro.observe($("#x-chart"));
     },
-    show() { syncOptimize(); previewDesign(OPT.result ? OPT.result.design : S.design); drawOptChart(); drawExplorer(); renderOptResult(); },
-    refreshDesign() { if (!OPT.running) { OPT.goals = OPT.goals && OPT.goals.forDesign === S.design.name ? OPT.goals : null; syncOptimize(); previewDesign(S.design); } },
+    show() { syncOptimize(); previewDesign(OPT.result ? OPT.result.design : S.design); drawOptChart(); drawExplorer(); renderOptResult(); A.renderGainCards(); if (OPT.running) { $("#opt-run").disabled = true; $("#x-run").disabled = true; } },
+    refreshDesign() { if (!OPT.running) { OPT.goals = OPT.goals && OPT.goals.forDesign === S.design.name ? OPT.goals : null; syncOptimize(); previewDesign(S.design); A.renderGainCards(); } },
     refreshResults() { renderOptResult(); },
     retheme() { drawOptChart(); drawExplorer(); if (optLayout) optLayout.draw(); },
   };

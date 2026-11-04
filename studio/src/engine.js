@@ -220,6 +220,30 @@
     return { design: applyToDesign(design, pol.solver), parts: pol.parts, evals, history };
   }
 
+  /** The best gain one mix of rods and boom can hold over the band. template.settings carries a design's model settings across. */
+  async function boomRun(pool, template, goals, n, boom, gens, hooks) {
+    const start = YS.startingDesign(template.f0, n, template.d, template.material);
+    const span = YS.boomLength(start), k = boom / span;
+    start.elements.forEach((e) => { e.x = Math.round(e.x * k * 10) / 10; });
+    Object.assign(start, template.settings || {});
+    start.band = goals.band;
+    start.gap = template.gap;
+    const res = await optimise(pool, start, Object.assign({}, goals, { boomFixed: boom, boomMax: 0, range: "wide" }), { gens, patience: 30, polish: 80 }, { cancelled: hooks.cancelled });
+    return { rods: n, boom, gain: res.parts.worstGain, swr: res.parts.worstSwr, fb: res.parts.minFb, design: res.design };
+  }
+
+  /** The best gain one mix of rods and boom can hold over the band. template.settings carries a design's model settings across. */
+  async function boomRun(pool, template, goals, n, boom, gens, hooks) {
+    const start = YS.startingDesign(template.f0, n, template.d, template.material);
+    const span = YS.boomLength(start), k = boom / span;
+    start.elements.forEach((e) => { e.x = Math.round(e.x * k * 10) / 10; });
+    Object.assign(start, template.settings || {});
+    start.band = goals.band;
+    start.gap = template.gap;
+    const res = await optimise(pool, start, Object.assign({}, goals, { boomFixed: boom, boomMax: 0, range: "wide" }), { gens, patience: 30, polish: 80 }, { cancelled: hooks.cancelled });
+    return { rods: n, boom, gain: res.parts.worstGain, swr: res.parts.worstSwr, fb: res.parts.minFb, design: res.design };
+  }
+
   /** The best gain each (rods, boom) pair can hold over the band: for picking the shortest boom. */
   async function exploreBooms(pool, template, goals, grid, hooks) {
     const out = [];
@@ -229,20 +253,88 @@
       for (const boom of grid.booms) {
         if (hooks.cancelled && hooks.cancelled()) return out;
         const lam = 299792.458 / template.f0;
-        const start = YS.startingDesign(template.f0, n, template.d, template.material);
-        const span = YS.boomLength(start), k = boom / span;
-        start.elements.forEach((e) => { e.x = Math.round(e.x * k * 10) / 10; });
         // too many rods for too short a boom can't be built
         if (boom / (n - 1) < 0.04 * lam) { done++; continue; }
-        start.band = goals.band;
-        start.gap = template.gap;
-        const res = await optimise(pool, start, Object.assign({}, goals, { boomFixed: boom, boomMax: 0, range: "wide" }), { gens: grid.gens, patience: 30, polish: 80 }, { cancelled: hooks.cancelled });
-        out.push({ rods: n, boom, gain: res.parts.worstGain, swr: res.parts.worstSwr, fb: res.parts.minFb, design: res.design });
+        out.push(await boomRun(pool, template, goals, n, boom, grid.gens, hooks));
         done++;
         if (hooks.onProgress) hooks.onProgress({ done, total, results: out });
       }
     }
     return out;
+  }
+
+  /* The worst gain across a 1.5% band that each rod count tops out at, dBd, with SWR under 1.5 and F/B over 15 dB. Measured up to 12
+     rods; a rough guide for where to start looking, not a limit, so it's given FIND_SLACK of room for narrower bands and looser limits. */
+  const GAIN_TOPS = { 3: 6, 4: 7.9, 5: 9.2, 6: 10.2, 7: 11.2, 8: 11.8, 9: 12.3, 10: 12.7, 11: 13, 12: 13.3, 13: 13.6, 14: 13.9, 15: 14.1, 16: 14.3 };
+  const FIND_SLACK = 1;       // dB
+  const FIND_RODS = 16;       // the most rods it tries: the time grows quickly past this
+  const FIND_ROWS = 3;        // how many rod counts it offers
+  const FIND_MARGIN = 0.02;   // dB over the target, as rounding lengths to 0.1 mm can cost a little
+  const FIND_GENS = 90;       // the optimiser's generations per try, as in Which boom?
+
+  /**
+   * The shortest booms that hold a gain across the band: one answer per rod count, from the fewest rods
+   * that reach it, because more rods buy a shorter boom. Gain climbs with boom only up to about 0.3 of a wavelength
+   * between rods, then falls, so this walks along the boom until it brackets the target or passes the top, and
+   * then closes in by interpolating. It stops once another rod no longer shortens the boom.
+   * Returns { rows, best, tooHigh }: best is the closest try that held the limits, for when no row reaches it.
+   */
+  async function findForGain(pool, template, goals, target, hooks) {
+    const lam = 299792.458 / template.f0, rows = [];
+    const cancelled = () => hooks.cancelled && hooks.cancelled();
+    const held = (r) => r.swr <= goals.swrMax + 0.01 && r.fb >= goals.fbMin - 0.1;
+    const meets = (r) => held(r) && r.gain >= target + FIND_MARGIN;
+    if (target > GAIN_TOPS[FIND_RODS] + FIND_SLACK) return { rows, best: null, tooHigh: FIND_RODS };
+    let best = null, tries = 0;
+    const run = async (n, boom) => {
+      const r = await boomRun(pool, template, goals, n, Math.round(boom), FIND_GENS, hooks);
+      tries++;
+      if (held(r) && (!best || r.gain > best.gain)) best = r;
+      if (hooks.onProgress) hooks.onProgress({ tries, last: r, rows });
+      return r;
+    };
+
+    async function shortestFor(n, longerRow) {
+      const floor = Math.max(0.1 * lam, goals.minGap) * (n - 1), ceil = 0.4 * lam * (n - 1);
+      let boom = Math.min(ceil, Math.max(floor, longerRow ? longerRow.boom * 0.9 : 0.22 * lam * (n - 1)));
+      let ok = null, short = null;
+      // find a boom that does it, and one just too short
+      for (;;) {
+        if (cancelled()) return ok;
+        const r = await run(n, boom);
+        if (meets(r)) {
+          ok = r;
+          if (boom <= floor || short) break;
+          boom = Math.max(floor, boom / 1.25);
+        } else {
+          if (short && !ok && r.gain < short.gain - 0.1) return null;     // past the top
+          short = r;
+          if (ok) break;
+          if (boom >= ceil) return null;
+          boom = Math.min(ceil, boom * 1.25);
+        }
+      }
+      // close in. The middle half of the gap, in case the two are near level or the limits are what stopped it
+      for (let i = 0; i < 3 && short && ok.boom - short.boom > 0.02 * ok.boom && ok.gain - target > 0.05; i++) {
+        if (cancelled()) break;
+        const rise = ok.gain - short.gain, at = rise > 0.02 ? (target + FIND_MARGIN - short.gain) / rise : 0.5;
+        const r = await run(n, short.boom + (ok.boom - short.boom) * Math.min(0.75, Math.max(0.25, at)));
+        if (meets(r)) ok = r; else short = r;
+      }
+      return ok;
+    }
+
+    let n = 3;
+    while (n < FIND_RODS && GAIN_TOPS[n] + FIND_SLACK < target) n++;
+    for (; n <= FIND_RODS && rows.length < FIND_ROWS && !cancelled(); n++) {
+      const prior = rows[rows.length - 1];
+      const row = await shortestFor(n, prior);
+      if (!row) { if (prior) break; continue; }
+      if (prior && row.boom > 0.97 * prior.boom) break;
+      rows.push(row);
+      if (hooks.onProgress) hooks.onProgress({ tries, last: row, rows });
+    }
+    return { rows, best, tooHigh: 0 };
   }
 
   /* ---------- NanoVNA over Web Serial ---------- */
@@ -318,5 +410,5 @@
     }
   }
 
-  Object.assign(YS, { Pool, optimise, exploreBooms, applyToDesign, makeContext, bandFreqs, NanoVNA });
+  Object.assign(YS, { Pool, optimise, exploreBooms, findForGain, applyToDesign, makeContext, bandFreqs, NanoVNA });
 })(typeof globalThis !== "undefined" ? globalThis : this);

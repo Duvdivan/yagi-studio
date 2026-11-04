@@ -6,7 +6,7 @@
  * background, and they take over the next time the app is opened: a page already open is one file and
  * carries on as it is, so nobody loses work in the middle of something.
  */
-const VERSION = "00080ea662a4";
+const VERSION = "c90a5873ab57";
 const FILES = ["LICENSE", "README.md", "fonts/OFL-barlow-condensed.txt", "fonts/OFL-ibm-plex-mono.txt", "fonts/OFL-ibm-plex-sans.txt", "fonts/barlow-condensed-600.woff2", "fonts/ibm-plex-mono-400.woff2", "fonts/ibm-plex-mono-500.woff2", "fonts/ibm-plex-sans.woff2", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "index.html", "manifest.webmanifest"];
 const CACHE = "yagi-studio-" + VERSION;
 

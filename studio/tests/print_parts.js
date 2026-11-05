@@ -38,16 +38,19 @@ function inside(mesh, x, y, z) {
   return n % 2 === 1;
 }
 
+/* The volumes of the v3 draft that was looked at, mm3, before it went in. */
+const DRAFT_V3 = [66089,65874];
+
 (async () => {
   const Module = (await import(path.join(__dirname, "..", "src", "vendor", "manifold.js").replace(/\\/g, "/").replace(/^([A-Za-z]):/, "file:///$1:"))).default;
   const wasm = await Module();
 
-  console.log("1. The same solids as OpenCascade made, with the new marks off");
+  console.log("1. The same solids as OpenCascade made, with the new marks off. cad/parts.py's booms still have the half lap, so only these two compare");
   const t0 = Date.now();
   const plain = YS.buildParts(wasm, duv, { gauge: false, label: false, soft: false, mount: "mast" });
   console.log(`  ${Date.now() - t0} ms`);
   const by = (r, id) => r.parts.find((p) => p.id === id);
-  const OCC = { boom_rear: [69466, [239.8, 16, 20]], boom_front: [56582, [193.4, 16, 20]], mast_mount: [158156, [60, 80, 102]], coupon: [18838, [64, 26, 12]] };
+  const OCC = { mast_mount: [158156, [60, 80, 102]], coupon: [18838, [64, 26, 12]] };
   Object.keys(OCC).forEach((id) => {
     const p = by(plain, id);
     if (!p) return truth(id, false, "missing");
@@ -59,19 +62,20 @@ function inside(mesh, x, y, z) {
   const full = YS.buildParts(wasm, duv, { mount: "mast" }), rear = by(full, "boom_rear"), g = full.plan.gauge, n = full.plan.notches;
   const offX = 15, offY = 8, topZ = 20;   // from the boom's frame to the file's
   truth("the plan has no warnings", full.plan.warnings.length === 0, full.plan.warnings.join(" | "));
-  truth("a valid solid", rear.volume > 66000 && rear.volume < 69466, rear.volume.toFixed(0));
+  truth("a valid solid", rear.volume > 50000 && rear.volume < 69466, rear.volume.toFixed(0));
   truth("still fits a 256 mm bed with a brim", rear.size[0] <= 240);
   const want = { R: 158.6, DE: 73, D1: 142.3, D2: 140.8, D3: 138.3, D4: 136.1 };
   Object.keys(want).forEach((name) => {
     const m = g.marks.find((q) => q.rod === name);
     if (!m) return truth(`mark ${name}`, false, "missing");
-    truth(`mark ${name} is its length from the stop`, near(m.x - g.stop, want[name], 1e-6), m.x - g.stop);
+    truth(`mark ${name} is its length from the wall`, near(g.end - m.x, want[name], 1e-6), g.end - m.x);
     // cut into the lip beside the channel, in the file itself, and not just beside it
     truth(`  and it's in the solid at ${want[name]} mm`, !inside(rear.mesh, m.x + offX, 0.5, topZ - 0.3) && inside(rear.mesh, m.x + offX + 0.55, 0.5, topZ - 0.3));
     truth(`  with its label`, m.labelled);
   });
-  truth("the wall stops a rod", inside(rear.mesh, g.stop + offX - 0.5, g.marks[0] && offY - 4.5, topZ - 1.8) && !inside(rear.mesh, g.stop + offX + 0.5, offY - 4.5, topZ - 1.0));
-  truth("the channel is open at its far end, for hole compensation", !inside(rear.mesh, g.end + offX - 0.2, offY - 4.5, topZ - 0.2));
+  truth("the wall stops a rod", inside(rear.mesh, g.end + offX + 0.5, offY - 4.5, topZ - 1.0) && !inside(rear.mesh, g.end + offX - 0.5, offY - 4.5, topZ - 1.0), `at x ${g.end.toFixed(1)}`);
+  truth("the V runs off the boom's rear end, so that an uncut rod lies in it", !inside(rear.mesh, 0.2, offY - 4.5, topZ - 1.0));
+  truth("and the boom's top is whole from the wall to the tongue", inside(rear.mesh, g.end + offX + 4, offY - 4.5, topZ - 0.2));
   truth("the notches are 100 mm apart between far walls", n && near(n.to - n.from, 100, 1e-9), n && `${n.from + offX} to ${n.to + offX}`);
   if (n) {
     const y = 15.5, z = topZ - 1;
@@ -161,15 +165,15 @@ function inside(mesh, x, y, z) {
     ["3 rods, short", yagi("short", 3, 40, 160, 3), { bed: 256 }],
     ["8 rods, 450 mm", yagi("eight", 8, 64, 150, 3), { bed: 256 }],
     ["10 rods, 3 sections", yagi("ten", 10, 90, 150, 3), { bed: 256 }],
-    ["14 rods, a small bed", yagi("long", 14, 100, 150, 3), { bed: 180 }],
+    ["14 rods, a small bed", yagi("long", 14, 100, 150, 3), { bed: 200 }],
     ["Thick rods", yagi("thick", 6, 100, 140, 6), { bed: 256 }],
     ["Horizontal rods", yagi("flat", 6, 70, 150, 3, { polarization: "horizontal" }), { bed: 256 }],
   ];
   for (const [name, d, o] of cases) {
     for (const mount of ["mast", "pole", "grip", "tripod"]) {
       const r = YS.buildParts(wasm, d, Object.assign({ mount }, o));
-      const fits = r.parts.filter((p) => p.id.startsWith("boom")).every((p) => p.size[0] <= o.bed - 15.9);
-      const clear = r.plan.sections.slice(1).every((s) => !r.plan.rods.some((q) => q.x > s.prev - 8 + 1e-6 && q.x < s.prev + 38 - 1e-6));
+      const fits = r.parts.filter((p) => p.id.startsWith("boom")).every((p) => p.size[0] <= o.bed - 15.9 && p.place.fits);
+      const clear = r.plan.sections.every((s) => !s.next || (s.next.bolts.every((b) => r.plan.rods.every((q) => Math.abs(q.x - b) >= q.hole / 2 + 1.6 + 2 - 1e-6)) && !r.plan.rods.some((q) => Math.abs(q.x - s.next.t) < q.hole / 2 + 3 - 1e-6)));
       const covered = r.plan.rods.every((q) => r.plan.sections.some((s) => q.x >= s.x0 && q.x <= s.x1));
       const solid = r.parts.every((p) => p.volume > 100 && p.mesh.t.length > 10);
       const m = r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "coupon");
@@ -181,13 +185,88 @@ function inside(mesh, x, y, z) {
     }
   }
   try {
-    YS.planParts(yagi("no room", 12, 30, 150, 3), { bed: 180 });
+    YS.planParts(yagi("no room", 40, 9, 150, 3), { bed: 180 });
     truth("rods with no room for a joint are refused", false);
   } catch (e) { truth("rods with no room for a joint are refused", /nowhere to join/.test(e.message), e.message); }
   try {
     YS.planParts(yagi("close", 4, 5, 150, 3), {});
     truth("rods too close are refused", false);
   } catch (e) { truth("rods too close are refused", /too close/.test(e.message), e.message); }
+
+  console.log("\nThe fork and tongue");
+  {
+    const { Manifold } = wasm;
+    const solidOf = (p, dx, dy, dz) => {
+      const seen = new Map(), verts = [], tris = [];
+      for (const t of p.mesh.t) for (const c of t) { const key = c.join(","); if (!seen.has(key)) { seen.set(key, seen.size); verts.push(c[0] + dx, c[1] + dy, c[2] + dz); } tris.push(seen.get(key)); }
+      return new Manifold(new wasm.Mesh({ numProp: 3, vertProperties: new Float32Array(verts), triVerts: new Uint32Array(tris) }));
+    };
+    const built = YS.buildParts(wasm, duv, { mount: "none", coupon: false }), joint = built.plan.sections[0].next, t = joint.t;
+    const R = by(built, "boom_rear"), F = by(built, "boom_front"), x0 = built.plan.sections[1].x0, J = YS.PARTS.JOINT;
+    truth("the rear piece is the draft's 239.8 mm", near(R.size[0], 239.8, 0.01), R.size.map((v) => v.toFixed(2)).join(" x "));
+    truth("the front piece is the draft's, 23.2 mm across the prongs", near(F.size[1], 23.2, 0.01) && near(F.size[0], 388.6 - x0, 0.01), F.size.map((v) => v.toFixed(2)).join(" x "));
+    truth("its bolts are where the draft has them", near(joint.bolts[0], 201, 1e-6) && near(joint.bolts[1], 219, 1e-6), joint.bolts.join(", "));
+    truth("the same volumes as the draft that was looked at", near(R.volume, DRAFT_V3[0], 0.002 * DRAFT_V3[0]) && near(F.volume, DRAFT_V3[1], 0.002 * DRAFT_V3[1]), `${R.volume.toFixed(0)} and ${F.volume.toFixed(0)} mm3; the draft ${DRAFT_V3.join(" and ")}`);
+    const rs = solidOf(R, -15, -8, -10), fs2 = solidOf(F, x0, -11.6, -10);
+    truth("the pieces don't overlap, seated", Manifold.intersection(rs, fs2).volume() < 0.01, Manifold.intersection(rs, fs2).volume().toFixed(4));
+    const slide = [50, 40, 30, 20, 10, 5, 2].map((d) => Manifold.intersection(rs.translate([-d, 0, 0]), fs2).volume());
+    truth("and it slides home without touching", slide.every((v) => v < 0.01), slide.map((v) => v.toFixed(3)).join(" "));
+    truth("the V is what stops it being pushed up or down", Manifold.intersection(rs, fs2.translate([0, 0, 0.3])).volume() > 0.01, Manifold.intersection(rs, fs2.translate([0, 0, 0.3])).volume().toFixed(3));
+    const inR = (x, y, z) => inside(R.mesh, x + 15, y + 8, z + 10), inF = (x, y, z) => inside(F.mesh, x - x0, y + 11.6, z + 10);
+    truth("the tongue is solid between the bolts, and the prongs are either side of it", inR(210, 0, 5) && inF(210, 6, 5) && inF(210, -6, 5) && !inF(210, 0, 5) && !inR(210, 6, 5));
+    truth("the head's recess and the nut's are open to the outside", !inF(201, 11, 2.5) && !inF(219, -11, 2.5) && inF(201, -11, 3.5));
+    truth("the bolt holes line up", [201, 219].every((x) => !inR(x, 0, 0) && !inF(x, 7, 0) && !inF(x, -7, 0)));
+    truth("the rear piece's rods, and the front's", !inR(163.8, 0, 0) && !inF(272.4, 0, 0) && !inF(378.6, 0, 0));
+    truth("the notes give the longer bolts", /4 M3 x 20|2 M3 x 20/.test(YS.partsNotes(duv, built)));
+
+    // a rod in the way: the first place a joint would go, on the same bed, with D2 moved onto it
+    const movedTo = (x) => { const d = JSON.parse(JSON.stringify(duv)); d.elements[3].x = x; return d; };
+    const clean = YS.planParts(movedTo(190), {}), j2 = clean.sections[0].next;
+    truth("a rod where the joint would go moves the joint back, if there's room", !j2.through.length && j2.t < t, `tip at ${j2.t.toFixed(1)}`);
+    const crowded = yagi("crowded", 12, 35, 150, 3), plan = YS.planParts(crowded, { bed: 180 });
+    truth("with no clear place, a rod goes through the tongue, and the plan says so", plan.sections.some((s) => s.next && s.next.through.length) && plan.warnings.some((w) => /through its tongue/.test(w)), plan.warnings.join(" ").slice(0, 170));
+    const made = YS.buildParts(wasm, crowded, { bed: 180, mount: "none", coupon: false });
+    made.plan.sections.forEach((s, i) => {
+      if (!s.next) return;
+      const P = made.parts[i], offs = s.i === 0 ? 15 : -s.x0, wide = s.wide / 2;
+      s.next.through.forEach((q) => {
+        truth(`  ${q.name}, at ${q.x.toFixed(1)}: its hole is in the tongue, with plastic round it`, !inside(P.mesh, q.x + offs, wide, 10) && inside(P.mesh, q.x + offs, wide + q.hole / 2 + 0.5, 10) && inside(P.mesh, q.x + offs, wide - q.hole / 2 - 0.5, 10));
+        s.next.bolts.forEach((b) => truth(`    and clear of the bolt at ${b.toFixed(1)}`, Math.abs(b - q.x) >= q.hole / 2 + 1.6 + 2 - 1e-6));
+      });
+    });
+    const thick = YS.buildParts(wasm, yagi("thick", 6, 100, 140, 6), { bed: 256, mount: "none", coupon: false }), thickF = thick.parts.find((p) => p.id === "boom_front");
+    truth("on a thicker boom, the joint's widths grow with it", near(thickF.size[1], 30 * 1.45, 0.01), thickF.size.map((v) => v.toFixed(1)).join(" x "));
+    truth("every section of it is one solid", thick.parts.every((p) => p.genus >= 0 && p.volume > 100));
+    truth("a very short bed is refused in words", (() => { try { YS.planParts(duv, { bed: 100 }); return false; } catch (e) { return /nowhere to join/.test(e.message); } })());
+  }
+
+  console.log("\nThe printer's three dimensions, and corner to corner");
+  {
+    const six = yagi("six", 6, 76, 150, 3);
+    const pieces = (bed) => YS.planParts(six, { bed }).sections.length;
+    const close = (a, b, tol) => Math.abs(a - b) <= tol;
+    truth("one number still means that much each way", pieces(256) === pieces({ x: 256, y: 256, z: 256 }));
+    truth("the longest straight part is the bed's longer side", YS.longestOn({ x: 300, y: 200, z: 100 }, 30) === 300);
+    truth("across a square bed, the diagonal less the part's width", close(YS.longestOn({ x: 256, y: 256, corner: true }, 32), 256 * Math.SQRT2 - 32, 0.01), YS.longestOn({ x: 256, y: 256, corner: true }, 32).toFixed(2));
+    truth("a part that is too wide doesn't fit at any angle", YS.longestOn({ x: 60, y: 60, corner: true }, 90) === 0);
+    const lies = YS.placeOn({ x: 200, y: 300, z: 100 }, 280, 30, 20);
+    truth("a part longer than X lies along Y", lies.fits && lies.how === "y" && lies.angle === 90);
+    const off = YS.placeOn({ x: 256, y: 256, z: 256 }, 300, 30, 20), on = YS.placeOn({ x: 256, y: 256, z: 256, corner: true }, 300, 30, 20);
+    truth("too long straight, and fits corner to corner only when allowed", !off.fits && on.fits && on.how === "corner" && on.angle === 45, `${on.angle} degrees`);
+    truth("too tall is its own reason", YS.placeOn({ x: 256, y: 256, z: 50 }, 100, 100, 51).why === "height");
+    const a = pieces({ x: 300, y: 300, z: 256 }), b = pieces({ x: 300, y: 300, z: 256, corner: true });
+    truth("a longer Y alone is enough", pieces({ x: 150, y: 450, z: 256 }) === 1 && YS.planParts(six, { bed: { x: 150, y: 450, z: 256 } }).sections[0].place.how === "y");
+    truth("corner to corner never needs more pieces", b <= a, `${a} straight, ${b} corner to corner`);
+    const boomLong = YS.planParts(six, { bed: 2000 }).boom, side = Math.ceil((boomLong + 16 + 32) / Math.SQRT2) + 2;
+    const c = YS.planParts(six, { bed: { x: side, y: side, z: 256, corner: true } }), s2 = YS.planParts(six, { bed: { x: side, y: side, z: 256 } });
+    truth("and can save a joint", c.sections.length === 1 && c.sections[0].place.how === "corner" && s2.sections.length === 2, `a ${boomLong} mm boom on a ${side} mm bed, at ${c.sections[0].place.angle} degrees`);
+    truth("the page is told when it would help", s2.cornerPieces === 1);
+    try { YS.planParts(six, { bed: { x: 256, y: 256, z: 15 } }); truth("a printer too low for the boom is refused", false); } catch (e) { truth("a printer too low for the boom is refused", /tall/.test(e.message), e.message); }
+    const low = YS.buildParts(wasm, six, { bed: { x: 256, y: 256, z: 60 }, mount: "pole" });
+    const tall = low.parts.filter((p) => !p.place.fits);
+    truth("a mount too tall for the printer says so", tall.length > 0 && tall.every((p) => /too tall/.test(p.placing)), tall.map((p) => `${p.name} ${p.size[2].toFixed(0)}`).join(", "));
+    truth("and so do its build notes", tall.every((p) => YS.partsNotes(six, low).includes(p.placing)));
+  }
 
   console.log(failed ? `\n${failed} FAILED` : "\nAll passed");
   process.exit(failed ? 1 : 0);

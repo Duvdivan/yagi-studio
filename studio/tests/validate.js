@@ -261,6 +261,11 @@ console.log("\n12. The printed cutting guide");
   truth("an unlikely measurement is questioned", YS.guideScale(90).suspicious && !YS.guideScale(99.64).suspicious);
   truth("a 2 m rod doesn't fit a 256 mm bed", !YS.guideFits(YS.buildGuide([{ label: "R", length: 1000, d: 6, count: 1 }], 1), 256));
   truth("this guide does", YS.guideFits(g, 256));
+  const std = YS.startingDesign(910, 6, 3, "aluminium"), mix = YS.startingDesign(910, 6, 3, "aluminium", { d: 6, material: "brass" });
+  const dr = (d) => d.elements.find((e) => e.type === "driven");
+  truth("a new design's driven element can be its own rod", dr(mix).d === 6 && dr(mix).material === "brass" && mix.elements.filter((e) => e !== dr(mix)).every((e) => e.d === 3 && e.material === "aluminium"));
+  truth("a thicker one starts shorter, and nothing else moves", dr(mix).L < dr(std).L && mix.elements.every((e, i) => e.x === std.elements[i].x && (e === dr(mix) || e.L === std.elements[i].L)), `${dr(std).L} to ${dr(mix).L}`);
+  truth("left out, it matches the others as it always did", dr(std).d === 3 && dr(std).material === "aluminium");
 }
 
 console.log("\n13. Bends and the feed wire in the app");

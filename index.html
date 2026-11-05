@@ -317,6 +317,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
     </div>
     <input class="design-name" id="design-name" aria-label="Design name" spellcheck="false">
     <div class="tools">
+      <button class="btn primary" id="new-design">New design</button>
       <button class="btn" id="open">Open</button>
       <button class="btn" id="save">Save</button>
       <button class="btn icon" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo">
@@ -1938,12 +1939,13 @@ input::placeholder { color: var(--muted); opacity: .75; }
 
   /* ------------ starting designs ------------ */
   /** DL6WU-style spacings and lengths, as a starting point for any band and rod count. */
-  function startingDesign(f0, count, diameter, material) {
+  function startingDesign(f0, count, diameter, material, driven) {
     const lam = 299792.458 / f0;
     const spacing = [0.2, 0.075, 0.18, 0.215, 0.25, 0.28, 0.3, 0.315, 0.33, 0.345, 0.36, 0.375, 0.39, 0.4];
     // thinner rods resonate longer: a log correction around 1% of a wavelength in diameter
     const corr = 1 + 0.03 * Math.log10(0.0096 * lam / diameter);
-    const elements = [{ type: "reflector", x: 0, L: 0.495 * lam * corr, d: diameter }, { type: "driven", x: spacing[0] * lam, L: 0.46 * lam * corr, d: diameter }];
+    const drivenD = (driven && driven.d) || diameter, drivenMetal = (driven && driven.material) || material;   // often not the same rod as the others
+    const elements = [{ type: "reflector", x: 0, L: 0.495 * lam * corr, d: diameter }, { type: "driven", x: spacing[0] * lam, L: 0.46 * lam * (1 + 0.03 * Math.log10(0.0096 * lam / drivenD)), d: drivenD }];
     let x = elements[1].x;
     for (let i = 2; i < count; i++) {
       x += (spacing[i - 1] || 0.4) * lam;
@@ -1951,7 +1953,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
       elements.push({ type: "director", x, L: taper * lam * corr, d: diameter });
     }
     const fine = (v) => Math.round(v * 10) / 10;
-    for (const e of elements) { e.x = fine(e.x); e.L = fine(e.L); e.material = material; }
+    for (const e of elements) { e.x = fine(e.x); e.L = fine(e.L); e.material = e.type === "driven" ? drivenMetal : material; }
     return makeDesign({ name: `${count}-element ${Math.round(f0)} MHz`, f0, band: [f0 * 0.992, f0 * 1.008], material, elements });
   }
 
@@ -4226,12 +4228,13 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 
   /* ------------ starting designs ------------ */
   /** DL6WU-style spacings and lengths, as a starting point for any band and rod count. */
-  function startingDesign(f0, count, diameter, material) {
+  function startingDesign(f0, count, diameter, material, driven) {
     const lam = 299792.458 / f0;
     const spacing = [0.2, 0.075, 0.18, 0.215, 0.25, 0.28, 0.3, 0.315, 0.33, 0.345, 0.36, 0.375, 0.39, 0.4];
     // thinner rods resonate longer: a log correction around 1% of a wavelength in diameter
     const corr = 1 + 0.03 * Math.log10(0.0096 * lam / diameter);
-    const elements = [{ type: "reflector", x: 0, L: 0.495 * lam * corr, d: diameter }, { type: "driven", x: spacing[0] * lam, L: 0.46 * lam * corr, d: diameter }];
+    const drivenD = (driven && driven.d) || diameter, drivenMetal = (driven && driven.material) || material;   // often not the same rod as the others
+    const elements = [{ type: "reflector", x: 0, L: 0.495 * lam * corr, d: diameter }, { type: "driven", x: spacing[0] * lam, L: 0.46 * lam * (1 + 0.03 * Math.log10(0.0096 * lam / drivenD)), d: drivenD }];
     let x = elements[1].x;
     for (let i = 2; i < count; i++) {
       x += (spacing[i - 1] || 0.4) * lam;
@@ -4239,7 +4242,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       elements.push({ type: "director", x, L: taper * lam * corr, d: diameter });
     }
     const fine = (v) => Math.round(v * 10) / 10;
-    for (const e of elements) { e.x = fine(e.x); e.L = fine(e.L); e.material = material; }
+    for (const e of elements) { e.x = fine(e.x); e.L = fine(e.L); e.material = e.type === "driven" ? drivenMetal : material; }
     return makeDesign({ name: `${count}-element ${Math.round(f0)} MHz`, f0, band: [f0 * 0.992, f0 * 1.008], material, elements });
   }
 
@@ -4526,6 +4529,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const TOUCH = 0.01;           // far below what a printer can draw
   const BAR = { length: 100, width: 12, height: 5 };    // the calibration test bar
   const BED_DEFAULT = 256;      // mm, the longest part a Bambu X2D prints; users can change it
+  const CORNER_STEP = 0.25;        // degrees between the angles tried when a part lies corner to corner
   const SHRINK_LIMIT = 0.03;    // a measured bar more than this share off is probably a mistake
 
   /* 5 x 7 lettering, as rows of bits, for labels only. */
@@ -4698,13 +4702,53 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return lines.join("\n") + "\n";
   }
 
-  /** Whether the guide fits a printer's bed, with a little room to spare. */
-  function guideFits(guide, bed) {
-    const b = bed || BED_DEFAULT;
-    return guide.modelLength <= b - 4 && guide.modelWidth <= b - 4;
+  /* ---------- the printer's build space ---------- */
+
+  /** { x, y, z, corner } from what's given: a bed as one number means that much each way, as it did before there were three. */
+  function bedOf(bed) {
+    if (bed && typeof bed === "object") return { x: bed.x || BED_DEFAULT, y: bed.y || bed.x || BED_DEFAULT, z: bed.z || bed.x || BED_DEFAULT, corner: !!bed.corner };
+    const n = bed || BED_DEFAULT;
+    return { x: n, y: n, z: n, corner: false };
   }
 
-  Object.assign(YS, { GUIDE: { BAR, BED_DEFAULT }, guideChannels, guideScale, buildGuide, buildBar, meshToStl: toStl, guideFits });
+  /** How long a part `across` wide can be, lying at an angle to the bed's x side: the tighter of the x and y limits. */
+  function reachAt(b, across, deg) {
+    const c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180);
+    if (across * s > b.x + 1e-9 || across * c > b.y + 1e-9) return 0;
+    return Math.min(c > 1e-9 ? (b.x - across * s) / c : Infinity, s > 1e-9 ? (b.y - across * c) / s : Infinity);
+  }
+
+  /** The longest part `across` wide that fits: straight along either side or, if allowed, at any angle between. */
+  function longestOn(bed, across) {
+    const b = bedOf(bed);
+    let best = Math.max(reachAt(b, across, 0), reachAt(b, across, 90));
+    if (b.corner) for (let q = 1; q < 360; q++) best = Math.max(best, reachAt(b, across, q * CORNER_STEP));
+    return best;
+  }
+
+  /**
+   * Where a part goes, its sizes already including any margin: { fits, how: "x" | "y" | "corner" | null, angle, why }.
+   * Straight is preferred. Corner to corner takes the middle of the angles that fit, which leaves the most room at the corners.
+   */
+  function placeOn(bed, length, across, height) {
+    const b = bedOf(bed), L = Math.max(length, across), t = Math.min(length, across);
+    if (height > b.z + 1e-9) return { fits: false, how: null, angle: 0, why: "height" };
+    if (L <= reachAt(b, t, 0) + 1e-9) return { fits: true, how: "x", angle: 0 };
+    if (L <= reachAt(b, t, 90) + 1e-9) return { fits: true, how: "y", angle: 90 };
+    if (b.corner) {
+      const ok = [];
+      for (let q = 1; q < 360; q++) if (L <= reachAt(b, t, q * CORNER_STEP) + 1e-9) ok.push(q * CORNER_STEP);
+      if (ok.length) return { fits: true, how: "corner", angle: ok[Math.floor(ok.length / 2)] };
+    }
+    return { fits: false, how: null, angle: 0, why: "size" };
+  }
+
+  /** Whether the guide fits a printer's bed, with a little room to spare. */
+  function guideFits(guide, bed) {
+    return placeOn(bed, guide.modelLength + 4, guide.modelWidth + 4, 0).fits;
+  }
+
+  Object.assign(YS, { GUIDE: { BAR, BED_DEFAULT }, guideChannels, guideScale, buildGuide, buildBar, meshToStl: toStl, guideFits, bedOf, longestOn, placeOn });
 })(typeof globalThis !== "undefined" ? globalThis : this);
 
 /*
@@ -4747,9 +4791,23 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const HOLE_COMP = 0.125;         // the slicer's X-Y hole compensation these are modelled for, per side
   const CLEAR = 3.6;               // over a 3 mm rod's size: a mount's holes, which the rod passes loosely
   const M3 = 3.4, M3_BOOM = 3.0;   // M3 clearance in a mount, without compensation; in the boom, with it
-  const NUT_FLATS = 5.45, NUT_DEPTH = 3.6, HEAD_BORE = 5.6, HEAD_DEPTH = 3;   // M3 nut trap and socket-head counterbore
-  const LAP = 30, GAP = 0.2;       // the half-lap joint's length, and the play at its shoulders
-  const LAP_CLEAR = 8;             // from a rod to the joint's nearest end
+  const NUT_FLATS = 5.45, NUT_DEPTH = 3.6;   // M3 nut trap
+  /* The fork and tongue joining two sections, as lengths back from the tongue's tip. Its faces run along the rods, so a rod on the
+     boom's centre line passes through the tongue alone and crosses no joint face. Widths are for a 16 mm boom, and grow with it. */
+  const JOINT = {
+    tongue: 4, play: 0.15, thick: 11.6,   // half widths, mm: the tongue, the room each side of it, and across the prongs
+    flare: [54.8, 34.8],                  // the tongue's root narrows from the boom's width between these
+    forkTip: 47.3, up: 27.3,              // the prongs' tips, and where they've reached full thickness
+    crotch: 0.55,                         // the fork's inside end, past the tip
+    down: [2.2, 27.2],                    // past the tip, where the fork's outside comes back to the boom's width
+    bolts: [23.8, 5.8],                   // the two M3 bolts, across the boom, where nothing's in their way
+    boltMin: 12,                          // the closest they're moved together
+    rodClear: 2,                          // plastic left between a rod's hole and a bolt's, or a hole and the tongue's tip or the crotch at 3
+    v: { depth: 1, half: 1, gap: 0.05, tipOut: 0.8, full: [28.8, 8.8], ease: [34.8, 3.8] },   // the centring V: a ridge on the tongue, a groove in each prong. Depth, half height, room at the flats when seated, the ridge's reach, where it's full, where it eases out
+    tipClear: 3, sectionMin: 30,          // mm of plastic from a rod's hole to the tip and crotch; the shortest a rear section's plain boom can be
+    bolt: { hole: 3.2, head: 5.8, headDepth: 3, nutFlats: 5.6, nutDepth: 3.6, nut: 2.4 },     // the bolts' holes, and the recesses in the prongs
+  };
+  const GAUGE_WALL = 8;            // from the V's end wall to the tongue's root or the boom's front end
   const BRIM = 16;                 // bed length a section can't use: a brim on both ends, and a margin
   const GROOVE = 3;                // the coax's groove, for RG178 and the like, on the +y face
   const WINDOW = [12, 10];         // the solder window at the driven element (x, z)
@@ -4758,7 +4816,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const WALL = 3, PLAY = 0.2;      // a mount's socket: its walls, and the room around the boom
   const SEGMENTS = 64;             // round holes: 0.002 mm under a 3 mm rod's radius
   const FLOPPY = 1200;             // mm of boom past which a printed one sags too much to recommend
-  const STOP = 4;                  // from the boom's rear end to the wall a rod butts against
+  const MARK_FROM = 1;             // the first a mark can be from the boom's rear end, where the V runs off it
   const TICK = 0.6;                // a length mark's width: the narrowest a 0.4 mm nozzle draws cleanly
   const DEEP = 0.6;                // how deep marks are cut: three 0.2 mm layers
   const CAL_SPAN = 100;            // between the notches' far walls, to check with calipers
@@ -4832,6 +4890,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       },
       /* A solid of revolution around z, from its outline as [radius, z]. */
       revolve: (outline) => keep(Manifold.revolve([outline], SEGMENTS)),
+      hull: (pts) => keep(Manifold.hull(pts)),
+      /* A shape drawn in (x, z), run across the boom from y0 to y1. */
+      acrossY: (pts, y0, y1) => {
+        const cs = keep(new CrossSection([pts], "NonZero"));
+        return K.at(K.turn(keep(cs.extrude(y1 - y0)), [90, 0, 0]), [0, y1, 0]);
+      },
       turn: (m, r) => keep(m.rotate(r)),
       at: (m, t) => keep(m.translate(t)),
       /* A solid from base-64 Float32 positions and Uint32 triangles. */
@@ -4866,35 +4930,76 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return sorted.map((e) => ({ x: e.x - x0, d: e.d, L: e.L, name: e.name, driven: e.type === "driven", hole: e.d + fit, material: e.material || design.material }));
   }
 
+  /* The joint's widths for a boom this wide. */
+  const jointY = (w) => { const k = w / BOOM_W; return { hb: w / 2, tongue: JOINT.tongue * k, thick: JOINT.thick * k }; };
+  /* How the widths run along the boom, at x from a tongue whose tip is at t. */
+  const ease = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return (1 - Math.cos(Math.PI * u)) / 2; };
+  const tongueY = (J, t, x) => J.hb - (J.hb - J.tongue) * ease(t - JOINT.flare[0], t - JOINT.flare[1], x);
+  const outerY = (J, t, x) => (x <= t + JOINT.down[0] ? J.hb + (J.thick - J.hb) * ease(t - JOINT.forkTip, t - JOINT.up, x) : J.thick - (J.thick - J.hb) * ease(t + JOINT.down[0], t + JOINT.down[1], x));
+  /* A prong's tip is round, as wide as what's left beyond the tongue there. */
+  const prongTipR = (J, t) => (outerY(J, t, t - JOINT.forkTip) - tongueY(J, t, t - JOINT.forkTip) - JOINT.play) / 2;
+
   /**
-   * Where the half-lap joints go. Each section takes as much as fits the bed, so that the first is long enough for the
-   * gauge, with the joint's whole length clear of the rods.
+   * Where a joint's two bolts go with a tongue tip at t, or null if rods leave no room. They stay on the prongs' full thickness,
+   * as near their usual places as the rods allow, with a rod's hole and a bolt's kept apart.
    */
-  function planSections(rods, bed, scale) {
-    const front = rods[rods.length - 1].x + FRONT, usable = (bed - BRIM) / scale;
-    const starts = [], laps = [];
-    let at = REAR;
-    while (front - at > usable) {
-      let a = at + usable - LAP;
-      for (;;) {
-        const bad = rods.find((r) => r.x > a - LAP_CLEAR && r.x < a + LAP + LAP_CLEAR);
-        if (!bad) break;
-        a = bad.x - LAP - LAP_CLEAR;
+  function placeBolts(t, rods) {
+    const lo = t - JOINT.up, hi = t - JOINT.bolts[1], want = [t - JOINT.bolts[0], t - JOINT.bolts[1]];
+    const free = (x) => rods.every((r) => Math.abs(r.x - x) >= r.hole / 2 + JOINT.bolt.hole / 2 + JOINT.rodClear);
+    let best = null;
+    for (let a = lo; a <= hi; a += 0.5) {
+      if (!free(a)) continue;
+      for (let b = a + JOINT.boltMin; b <= hi + 1e-9; b += 0.5) {
+        if (!free(b)) continue;
+        const cost = Math.abs(a - want[0]) + Math.abs(b - want[1]);
+        if (!best || cost < best.cost) best = { cost, x: [a, b] };
       }
-      if (a < at + LAP + 20) throw new Error(`There's nowhere to join the boom within a ${Math.round(bed)} mm bed: the rods leave no ${LAP + 2 * LAP_CLEAR} mm gap in reach. Try a bigger bed or wider spacing.`);
-      laps.push(a);
-      at = a;
     }
-    starts.push(REAR);
-    const sections = [];
-    for (let i = 0; i <= laps.length; i++) {
-      const prev = i ? laps[i - 1] : null, next = i < laps.length ? laps[i] : null;
-      sections.push({ i, x0: prev === null ? REAR : prev + GAP, x1: next === null ? front : next + LAP - GAP, prev, next, upper: i % 2 === 1 });
-    }
-    return sections;
+    return best && best.x;
   }
 
-  /** A section's tabs alternate: the lower half of the joint on odd ones, upper on even, so each prints with them on the bed. */
+  /** Whether a joint can go with its tongue's tip at t. Returns its bolts and the rods through its tongue, or null. */
+  function jointAt(t, rods, J, cleanOnly) {
+    const root = t - JOINT.flare[0], out = t + JOINT.down[1];
+    const driven = rods.find((r) => r.driven);
+    if (driven && driven.x > root - WINDOW[0] / 2 - 4 && driven.x < out + WINDOW[0] / 2 + 4) return null;        // its window would cut the joint away
+    const through = rods.filter((r) => r.x + r.hole / 2 + 2 > root && r.x - r.hole / 2 - JOINT.tipClear < t + JOINT.crotch);
+    if (cleanOnly && through.length) return null;
+    // the rods that would stay: through the tongue, short of its tip, or past the fork's crotch
+    const fine = through.every((r) => (r.x + r.hole / 2 + JOINT.tipClear <= t || r.x - r.hole / 2 - JOINT.tipClear >= t + JOINT.crotch) && r.hole <= 2 * J.tongue - 4);
+    if (!fine) return null;
+    const bolts = placeBolts(t, rods);
+    return bolts && { t, bolts, through: through.filter((r) => r.x <= t) };
+  }
+
+  /**
+   * Where the joints go. Each section takes as much as fits the bed, so that the first is long enough for the gauge. A place
+   * with no rod in the tongue comes first, however far back that is. If there's none, a rod goes through the tongue.
+   */
+  function planSections(rods, bed, scale, sizes) {
+    const J = jointY(sizes.w), front = rods[rods.length - 1].x + FRONT;
+    const usableFor = (w) => (YS.longestOn(bed, w * scale + BRIM) - BRIM) / scale;
+    const rear = usableFor(sizes.w), rest = usableFor(2 * J.thick);
+    const size = YS.bedOf(bed);
+    if (rear <= 0) throw new Error(`A boom ${sizes.w} mm wide doesn't fit a bed ${size.x} x ${size.y} mm, with room for a brim.`);
+    const joints = [];
+    let x0 = REAR, usable = rear, floor = rods[0].x + JOINT.sectionMin + JOINT.flare[0];
+    while (front - x0 > usable) {
+      const top = Math.min(x0 + usable - 0.2, front - JOINT.down[1] - 2);
+      const scan = (clean) => { for (let t = top; t >= floor; t -= 0.5) { const j = jointAt(t, rods, J, clean); if (j) return j; } return null; };
+      const j = rest > 0 ? scan(true) || scan(false) : null;
+      if (!j) throw new Error(`There's nowhere to join the boom within a ${size.x} x ${size.y} mm bed: a section can't reach far enough, the driven element's window is in the way, or the rods leave no room for the joint's two bolts. Try a bigger bed, corner to corner printing, or wider spacing.`);
+      joints.push(j);
+      x0 = j.t - JOINT.forkTip - prongTipR(J, j.t);
+      usable = rest;
+      floor = j.t + JOINT.down[1] + JOINT.flare[0];       // the next tongue's root starts where this fork has come back to the boom's width
+    }
+    return joints.concat([null]).map((next, i) => {
+      const prev = i ? joints[i - 1] : null;
+      return { i, x0: prev ? prev.t - JOINT.forkTip - prongTipR(J, prev.t) : REAR, x1: next ? next.t : front, prev, next, wide: prev ? 2 * J.thick : sizes.w };
+    });
+  }
+
   function sectionRods(rods, s) { return rods.filter((r) => r.x >= s.x0 && r.x <= s.x1); }
 
   /**
@@ -4903,14 +5008,15 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
    */
   function planGauge(design, rods, section, sizes, allowance) {
     const channels = YS.guideChannels(design, allowance);
-    const stop = REAR + STOP, end = section.next === null ? section.x1 : section.next;
-    const fits = channels.filter((c) => stop + c.length < end - 2);
+    // a rod butts against the wall at the V's front end, and the V runs off the boom's rear end, so that an uncut rod of any length lies in it
+    const stop = REAR + MARK_FROM, end = (section.next === null ? section.x1 : section.next.t - JOINT.flare[0]) - GAUGE_WALL;
+    const fits = channels.filter((c) => end - c.length > stop);
     if (!fits.length) return { fits: false, reason: "The rods are longer than this boom section, so the gauge doesn't fit. The Cut list's guide still works." };
     const missing = channels.length - fits.length;
     const k = 0.7, pitch = 3.2, labelY = sizes.w / 2 - 4.4;
     const marks = fits.map((c) => {
       const label = engravable(c.label), width = textWidth(label, k, pitch);
-      return { rod: c.label, label, length: c.length, x: stop + c.length, width };
+      return { rod: c.label, label, length: c.length, x: end - c.length, width };
     }).sort((a, b) => a.x - b.x);
     // spread the labels until they stop overlapping, keeping each group centred on its marks
     marks.forEach((m) => { m.lx = m.x; });
@@ -4963,41 +5069,77 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   /* ---------- the boom ---------- */
+  const steps = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + (b - a) * i / n);
+  const arc = (cx, cy, r, a0, a1, n) => steps(a0, a1, n).map((d) => [cx + r * Math.cos(d * Math.PI / 180), cy + r * Math.sin(d * Math.PI / 180)]);
+
+  /* The tongue, from the boom's full width at its root to its round tip, with a ridge on each face to centre it in the prongs' grooves. */
+  function tongue(K, t, J, z) {
+    const from = t - JOINT.flare[0] - 1, r = t - J.tongue, side = (s) => steps(from, r, 90).map((x) => [x, s * tongueY(J, t, x)]);
+    const body = K.prism([...side(-1), ...arc(r, 0, J.tongue, -90, 90, 16), ...side(1).reverse()], -z, z);
+    const V = JOINT.v, seat = J.tongue + V.gap, base = J.tongue - 0.3, hb = V.half + (seat - base), ht = V.half - (J.tongue + V.tipOut - seat);
+    const ridge = (s) => {
+      const at = (x) => [[x, s * base, hb], [x, s * base, -hb], [x, s * (J.tongue + V.tipOut), ht], [x, s * (J.tongue + V.tipOut), -ht]];
+      const end = (x) => [[x, s * J.tongue, 0.01], [x, s * J.tongue, -0.01], [x, s * base, hb], [x, s * base, -hb]];
+      return K.hull([...at(t - V.full[0]), ...at(t - V.full[1]), ...end(t - V.ease[0]), ...end(t - V.ease[1])]);
+    };
+    return K.fuse([body, ridge(-1), ridge(1)]);
+  }
+
+  /* The fork, from its prongs' round tips to where its outside has come back to the boom's width, with the grooves for the tongue's ridges. */
+  function fork(K, t, J, z, end) {
+    const tip = t - JOINT.forkTip, r = t + JOINT.crotch - J.tongue - JOINT.play, tipR = prongTipR(J, t);
+    const inner = (s) => steps(tip, r, 60).map((x) => [x, s * (tongueY(J, t, x) + JOINT.play)]);
+    const outer = (s) => [...steps(tip, t + JOINT.down[1], 90), end].map((x) => [x, s * outerY(J, t, x)]);
+    const tipY = tongueY(J, t, tip) + JOINT.play + tipR;
+    const pts = [...outer(-1), ...outer(1).reverse(), ...arc(tip, tipY, tipR, 90, 270, 8).slice(1, -1), ...inner(1),
+      ...arc(r, 0, J.tongue + JOINT.play, 90, -90, 24).slice(1, -1), ...inner(-1).reverse(), ...arc(tip, -tipY, tipR, 90, 270, 8).slice(1, -1)];
+    const V = JOINT.v, face = J.tongue + JOINT.play, h = V.half + 0.25;
+    const groove = (s) => {
+      const at = (x) => [[x, s * (face + V.depth), 0], [x, s * (face - 0.25), h], [x, s * (face - 0.25), -h]];
+      return K.hull([...at(tip - 2), ...at(t + JOINT.crotch - 3.5), [t + JOINT.crotch - 1, s * face, 0], [t + JOINT.crotch - 1, s * (face - 0.25), h / 3], [t + JOINT.crotch - 1, s * (face - 0.25), -h / 3]]);
+    };
+    return K.cut(K.prism(pts, -z, z), [groove(-1), groove(1)]);
+  }
+
+  /* A bolt's hole, across the boom, with a 45 degree point on top so it prints without sagging. */
+  const teardrop = (x, d) => [...arc(x, 0, d / 2, -225, 45, 32), [x, d / 2 * Math.SQRT2]];
+  const hexUp = (x, flats) => { const r = flats / Math.sqrt(3); return [0, 1, 2, 3, 4, 5].map((k) => [x + r * Math.sin(k * Math.PI / 3), r * Math.cos(k * Math.PI / 3)]); };
+
   function boomSection(K, sec, rods, sizes, opts) {
-    const { w, h } = sizes;
+    const { w, h } = sizes, J = jointY(w);
     const y = w / 2, z = h / 2;
-    // the body, then the half of the joint at each end. Lower halves on section 0, 2 ..., upper on the others
-    const tabZ = sec.upper ? [0, z] : [-z, 0];
-    const parts = [K.box(sec.prev === null ? REAR : sec.prev + LAP, sec.next === null ? sec.x1 : sec.next, -y, y, -z, z)];
-    if (sec.prev !== null) parts.push(K.box(sec.prev + GAP, sec.prev + LAP, -y, y, tabZ[0], tabZ[1]));
-    if (sec.next !== null) parts.push(K.box(sec.next, sec.next + LAP - GAP, -y, y, tabZ[0], tabZ[1]));
+    // the plain boom between the joint at each end
+    const a = sec.prev ? sec.prev.t + JOINT.down[1] : REAR, b = sec.next ? sec.next.t - JOINT.flare[0] : sec.x1;
+    const parts = [K.box(a, b, -y, y, -z, z)];
+    if (sec.prev) parts.push(fork(K, sec.prev.t, J, z, a + 1));
+    if (sec.next) parts.push(tongue(K, sec.next.t, J, z));
     let s = K.fuse(parts);
     const cuts = [];
+    const B = JOINT.bolt;
+    if (sec.next) sec.next.bolts.forEach((x) => cuts.push(K.acrossY(teardrop(x, B.hole), -J.thick - 1, J.thick + 1)));
+    if (sec.prev) sec.prev.bolts.forEach((x) => {
+      cuts.push(K.acrossY(teardrop(x, B.hole), -J.thick - 1, J.thick + 1));
+      cuts.push(K.acrossY(teardrop(x, B.head), J.thick - B.headDepth, J.thick + 1));       // the head sits in this prong
+      cuts.push(K.acrossY(hexUp(x, B.nutFlats), -J.thick - 1, -J.thick + B.nutDepth));     // and the nut in that one
+    });
     sectionRods(rods, sec).forEach((r) => cuts.push(K.cyl(r.x, 0, -z - 5, r.hole, h + 10)));
     const driven = rods.find((r) => r.driven);
     if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) cuts.push(K.box(driven.x - WINDOW[0] / 2, driven.x + WINDOW[0] / 2, -2, y + 1, -WINDOW[1] / 2, WINDOW[1] / 2));
     // the coax runs from the driven element back to the rear end, on any section it reaches
-    if (driven && sec.x0 < driven.x) cuts.push(K.box(sec.x0 - 1, Math.min(driven.x, sec.x1 + 1), y - 2.5, y + 1, -GROOVE / 2, GROOVE / 2));
+    // but not through a joint, where there are bolts and a prong's wall in its way: there it runs outside
+    if (driven && sec.x0 < driven.x) cuts.push(K.box(sec.prev ? a : sec.x0 - 1, Math.min(driven.x, b), y - 2.5, y + 1, -GROOVE / 2, GROOVE / 2));
     if (sec.i === 0) cuts.push(K.cyl(REAR + 7, 0, -z - 5, M3_BOOM, h + 10));      // pins a mount
-    [[sec.prev, true], [sec.next, false]].forEach(([lap]) => {
-      if (lap === null) return;
-      [lap + 8, lap + LAP - 8].forEach((x) => {
-        cuts.push(K.cyl(x, 0, -z - 5, M3_BOOM, h + 10));
-        if (sec.upper) cuts.push(K.cyl(x, 0, z - HEAD_DEPTH, HEAD_BORE, HEAD_DEPTH + 1));     // the head sits flush on an upper half
-        else cuts.push(K.hex(x, 0, NUT_FLATS, -z - 1, -z + NUT_DEPTH));                       // the nut in a lower half
-      });
-    });
     s = K.cut(s, cuts);
     if (sec.i === 0 && opts.gauge) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
     if (sec.i === 0 && opts.label) s = K.cut(s, labelCuts(K, sec, rods, sizes));
     return s;
   }
 
-  /* A V along the top, so it prints without supports and a rod lies true in it. Open at the far end, like the marks,
-     so that hole compensation can't move what sets a rod's length. */
+  /* A V along the top, so it prints without supports and a rod lies true in it. Open along its top and off the rear end, like the
+     marks, so that hole compensation can't move what sets a rod's length, and an uncut rod of any length can lie in it. */
   function gaugeCuts(K, g, notches, sizes) {
     const { w, h, chY, chHalf } = sizes, top = h / 2, out = [];
-    const v = K.prism([[chY - chHalf - 0.5, top + 0.5], [chY + chHalf + 0.5, top + 0.5], [chY, top - chHalf]], g.stop, g.end + 1);
+    const v = K.prism([[chY - chHalf - 0.5, top + 0.5], [chY + chHalf + 0.5, top + 0.5], [chY, top - chHalf]], REAR - 1, g.end);
     out.push(K.turn(v, [90, 0, 90]));     // drawn in (y, z), and pushed along x
     g.marks.forEach((m) => {
       out.push(K.box(m.x - TICK / 2, m.x + TICK / 2, -w / 2 - 1, g.inner, top - DEEP, top + 1));
@@ -5017,7 +5159,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   function labelCuts(K, sec, rods, sizes) {
     const y = sizes.w / 2, z = sizes.h / 2;
     const text = "THIS SIDE UP", depth0 = y - DEEP, depth1 = y + 1;
-    const clearOfMount = rods[0].x + 14, end = sec.next === null ? sec.x1 : sec.next;
+    const clearOfMount = rods[0].x + 14, end = sec.next === null ? sec.x1 : sec.next.t - JOINT.flare[0];
     const room = end - clearOfMount - 4;
     const k = Math.min(0.12 * sizes.h / 2 * 1, 1.2 * sizes.h / BOOM_H), pitch = 5 * k;
     const width = textWidth(text, k, pitch) + 12;
@@ -5209,7 +5351,21 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     rods.forEach((r, i) => {
       if (i && r.x - rods[i - 1].x < r.hole / 2 + rods[i - 1].hole / 2 + 4) throw new Error(`${r.name} is too close to ${rods[i - 1].name} for the boom to hold them both.`);
     });
-    const sections = planSections(rods, o.bed, o.scale);
+    const bed = YS.bedOf(o.bed);
+    if (sizes.h > bed.z) throw new Error(`The boom stands ${sizes.h} mm tall as it prints, and your printer's height is ${bed.z} mm.`);
+    const sections = planSections(rods, bed, o.scale, sizes);
+    sections.forEach((s) => { s.place = YS.placeOn(bed, (s.x1 - s.x0) * o.scale + BRIM, s.wide * o.scale + BRIM, sizes.h); });
+    sections.forEach((s) => {
+      if (!s.next || !s.next.through.length) return;
+      warnings.push(`There was no clear place for a joint, so ${s.next.through.map((r) => r.name).join(" and ")} ${s.next.through.length > 1 ? "go" : "goes"} through its tongue, between the prongs, and its bolts have moved to clear ${s.next.through.length > 1 ? "them" : "it"}. Glue ${s.next.through.length > 1 ? "those rods" : "that rod"} in with CA, or use a wider spacing or a bigger bed to avoid it.`);
+    });
+    const driven0 = rods.find((r) => r.driven);
+    if (driven0 && sections.some((s) => s.next && s.next.t < driven0.x)) warnings.push("A joint falls behind the driven element, so the coax's groove stops at it. Tape the coax along the outside of the joint.");
+    // what the other choice would do, so the page can say when corner to corner is worth trying
+    let cornerPieces = null;
+    if (!bed.corner) {
+      try { cornerPieces = planSections(rods, Object.assign({}, bed, { corner: true }), o.scale, sizes).length; } catch (e) { cornerPieces = null; }
+    }
     const boom = rods[rods.length - 1].x - REAR + FRONT;
     if (boom > FLOPPY) warnings.push(`At ${Math.round(boom)} mm, a printed boom will sag and flex. A metal or fibreglass boom suits this better, and metal changes the tuning.`);
     if (sizes.w > BOOM_W) warnings.push(`These rods are thick, so the boom grows to ${sizes.w} x ${sizes.h} mm, a size nobody has printed and tried yet.`);
@@ -5220,7 +5376,15 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (gauge && gauge.fits && gauge.missing) warnings.push(`${gauge.missing} rod${gauge.missing > 1 ? "s are" : " is"} too long for the gauge. Use the Cut list's guide for ${gauge.missing > 1 ? "those" : "it"}.`);
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
     if (gauge && gauge.fits && !notches) warnings.push(`The first section is too short for the ${CAL_SPAN} mm check notches.`);
-    return { o, rods, sizes, sections, gauge: gauge && gauge.fits ? gauge : null, notches, warnings, boom };
+    return { o, rods, sizes, sections, gauge: gauge && gauge.fits ? gauge : null, notches, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
+  }
+
+  /** How to lay a part on the bed, in words, when the file as it opens won't do. Files always lie along x. */
+  function placing(place, bed) {
+    if (!place.fits) return place.why === "height" ? `It's too tall for your printer's ${bed.z} mm height.` : `It doesn't fit your ${bed.x} x ${bed.y} mm bed.`;
+    if (place.how === "y") return `Turn it 90 degrees in the slicer, to lie along the bed's ${bed.y} mm side.`;
+    if (place.how === "corner") return `Turn it ${+place.angle.toFixed(2)} degrees in the slicer, to lie corner to corner.`;
+    return "";
   }
 
   /** Makes the solids. Returns [{ id, name, file, mesh, size, volume, print }] and the same plan as planParts. */
@@ -5233,13 +5397,16 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       if (placed.status() !== "NoError") throw new Error(`${name} didn't come out as a solid: ${placed.status()}`);
       out.push({ id, name, file: `${safe}_${id}.stl`, mesh: K.mesh(placed), volume: placed.volume(), genus: placed.genus(),
         size: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]], print });
+      const p = out[out.length - 1];
+      p.place = YS.placeOn(plan.bed, p.size[0] + BRIM, p.size[1] + BRIM, p.size[2]);
+      p.placing = placing(p.place, plan.bed);
     };
     try {
       sections.forEach((sec) => {
         const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, label: o.label });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
-        add(id, nameIt, solid, sec.upper ? [180, 0, 0] : null, sec.upper ? "As the file has it, already upside down so its joint lies on the bed. A brim helps." : "As the file has it, with the joint on the bed. A brim helps.");
+        add(id, nameIt, solid, null, "As the file has it, lying flat with its side up, and the joint's faces standing. A brim helps.");
       });
       const roll = rollFor(design.polarization), soft = o.soft !== false;
       if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.mast.print);
@@ -5266,15 +5433,20 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     L.push(`${design.name}: printing and building`, "", "NEW AND UNTESTED: nothing from Yagi Studio's 3D print tab has been printed yet. Print one, measure it and test-fit it before you rely on it.", "", "PRINTING", `0.2 mm layers, 5 walls, 15% gyroid infill, in PETG or ASA, no supports.`,
       `X-Y hole compensation ${HOLE_COMP} mm for the boom and coupon: their holes are modelled for it and come out too small without it. A mount's fine with or without it.`,
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
-    parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}`));
+    parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
+    if (parts.some((p) => p.place && p.place.how === "corner")) L.push("", "CORNER TO CORNER: check that your slicer lets you use the plate's corners. Some printers keep an edge or a corner clear for purge lines, clips or the wipe tower.");
     if (plan.notches) L.push("", "CHECK THE PRINT BEFORE USING THE GAUGE", `Spread your calipers' inside jaws between the far walls of the two notches on the boom's top. It should read ${CAL_SPAN.toFixed(2)} mm, within about 0.15 mm. If it's off, the gauge's marks are off by about the same share, so fix the shrinkage and reprint, or cut with calipers instead.`);
     if (plan.gauge) {
-      L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, against the wall at the rear. Cut a little past its mark, then file to the mark. Measure the first rod with calipers before you trust the rest.");
+      L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, with its end against the wall at the V's front end. It can run off the boom's rear end. Cut a little past its mark, toward the rear, then file to the mark. Measure the first rod with calipers before you trust the rest.");
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));
     }
+    if (joints) L.push("", "THE JOINT" + (joints > 1 ? "S" : ""), "Slide the tongue into the fork, ridges into grooves, until it stops. If it binds, sand the ridges, not the tongue's faces. Tighten the bolts only until the prongs close on the V: too much bends them. A little glue on the faces makes it stronger if you'll never take it apart. If a rod passes through the tongue, slide the joint together before fitting that rod.");
     L.push("", "HARDWARE");
     rods.forEach((r) => L.push(`  ${r.driven ? `${r.name}: 2 rods` : `${r.name}: 1 rod`}, ${r.d} mm ${r.material === "aluminium" ? "aluminum" : r.material}`));
-    if (joints) L.push(`  ${2 * joints} M3 x 16 socket-head bolts with 2.5 mm nuts, for the joint${joints > 1 ? "s" : ""}`);
+    if (joints) {
+      const grip = 2 * jointY(plan.sizes.w).thick - JOINT.bolt.headDepth - JOINT.bolt.nutDepth + JOINT.bolt.nut, bolt = [20, 25, 30, 35, 40, 50].find((n) => n >= grip) || Math.ceil(grip);
+      L.push(`  ${2 * joints} M3 x ${bolt} socket-head bolts with nuts, across the joint${joints > 1 ? "s" : ""}. The heads and nuts sit in the recesses in the prongs`);
+    }
     if (driven) L.push("  Coax, soldered at the window at the driven element, running back along the groove");
     (MOUNTS[o.mount].hardware || []).forEach((h) => L.push("  " + h));
     L.push("", "IF IT GOES ON A ROOF OR A MAST", "Look up first and stay well clear of power lines, including while raising it. Ground the mast and coax as your local rules require, and check any permits. Don't raise it in wind or near storms.");
@@ -5304,7 +5476,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return loading;
   }
 
-  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt }, planParts, buildParts, partsNotes, mastBehind, loadManifold });
+  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt }, planParts, buildParts, partsNotes, mastBehind, loadManifold, partPlacing: placing });
+  YS.PARTS.JOINT = JOINT;
 })(typeof globalThis !== "undefined" ? globalThis : this);
 
 /*
@@ -6935,7 +7108,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
    * With top, boom is only where it starts from, and it's free to settle anywhere up to top.
    */
   async function boomRun(pool, template, goals, n, boom, gens, hooks, top) {
-    const start = YS.startingDesign(template.f0, n, template.d, template.material);
+    const start = YS.startingDesign(template.f0, n, template.d, template.material, template.driven);
     const span = YS.boomLength(start), k = boom / span;
     start.elements.forEach((e) => { e.x = Math.round(e.x * k * 10) / 10; });
     Object.assign(start, template.settings || {});
@@ -7180,6 +7353,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   /* Plain-language meanings, shown from the small ? buttons. */
   const GLOSSARY = {
     swr: ["SWR", "How well the antenna takes power from the cable. 1.0 is perfect. Under 1.5 is good, and under 2 is usable. At SWR 2, about 11% of the power bounces back, a 0.5 dB loss."],
+    bedcorner: ["Corner to corner", "A long part can lie across the bed's diagonal, which is longer than either side: about 360 mm on a 256 mm square bed, less what the part's width and brim need. Turn it in your slicer by the angle the file list gives. The corners have to be usable, and on some printers they aren't: purge lines, clips and the wipe tower can take them. A long part on the diagonal is also likelier to lift at its ends, so give it a brim."],
     printfit: ["Rod holes", "How much wider than the rod to model each hole, before the slicer's hole compensation. Print the coupon first: it has holes from 0.10 under to 0.10 over each rod's size. Use the one that grips the rod without bending it, and allow a little more, as a boom's longer holes print tighter than the coupon's."],
     printcheck: ["The check notches", "Two notches on the top of the boom, 100 mm apart between their far walls. Spread your calipers' inside jaws between those walls. If it reads 100.00 mm, within about 0.15 mm, the print is true and so are the gauge's marks. They're open to the boom's edge so that hole compensation can't move them."],
     favor: ["Make the best of", "Once a design has the gain you asked for and stays within your limits, this is what the search spends what's left on. Lowest SWR gives the best match. Highest F/B rejects most from behind. Both raises whichever of the two is worse, with SWR counted as return loss. A longer boom or another rod pays for them. SWR stops counting at 1.04 and F/B at 40 dB, as past those a real build can't hold on to them."],
@@ -9308,7 +9482,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     A.renderGainCards();
     const started = performance.now();
     try {
-      const res = await YS.exploreBooms(A.pool, { f0: d.f0, d: firstDir.d, material: firstDir.material || d.material, gap: d.gap },
+      const res = await YS.exploreBooms(A.pool, { f0: d.f0, d: firstDir.d, material: firstDir.material || d.material, gap: d.gap, driven: { d: drivenRod().d, material: drivenRod().material || d.material } },
         { band: g.band, fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7 },
         { rods, booms, gens: 90 }, {
           cancelled: () => OPT.cancel,
@@ -9335,9 +9509,11 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 
   const firstDirector = () => S.design.elements.find((e) => e.type === "director") || S.design.elements[0];
   const rodSize = () => (FIND.rod && FIND.rodFor === S.design.name ? FIND.rod : firstDirector().d);
+  const drivenRod = () => S.design.elements.find((e) => e.type === "driven") || firstDirector();
+  const drivenSize = () => (FIND.driven && FIND.drivenFor === S.design.name ? FIND.driven : drivenRod().d);
   const metalName = (m) => ({ aluminium: "aluminum" }[m] || m);
   /* What an answer depends on: when this changes, the answers on show are out of date. */
-  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, FIND.gainTo, g.favor, g.favor === "gain" ? 0 : FIND.boomTop, rodSize(), firstDirector().material].join(); };
+  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, FIND.gainTo, g.favor, g.favor === "gain" ? 0 : FIND.boomTop, rodSize(), firstDirector().material, drivenSize(), drivenRod().material].join(); };
   /* An optional number: blank means no limit, and is stored as 0. */
   const optionalNum = (get, set) => ({ get: () => get() || NaN, set, min: 0, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)) });
 
@@ -9348,7 +9524,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <div class="field-grid">
           <div class="field"><label for="${at}-gf-target">Gain, dBd</label><input class="num" id="${at}-gf-target" data-gf="target" inputmode="decimal"></div>
           <div class="field"><label for="${at}-gf-to">up to, if it matters</label><input class="num" id="${at}-gf-to" data-gf="to" inputmode="decimal" placeholder="any"></div>
-          <div class="field"><label for="${at}-gf-rod">Rod diameter, mm</label><input class="num" id="${at}-gf-rod" data-gf="rod" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-rod">Other rods' diameter, mm</label><input class="num" id="${at}-gf-rod" data-gf="rod" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-driven">Driven diameter, mm</label><input class="num" id="${at}-gf-driven" data-gf="driven" inputmode="decimal"></div>
           <div class="field"><label for="${at}-gf-favor">Make the best of ${A.help("favor")}</label><select class="sel" id="${at}-gf-favor" data-gf="favor"><option value="gain">Shortest boom</option><option value="swr">Lowest SWR</option><option value="fb">Highest F/B</option><option value="both">Both SWR and F/B</option></select></div>
           ${at === "design" ? `<div class="field"><label for="${at}-gf-swr">SWR under ${A.help("swr")}</label><input class="num" id="${at}-gf-swr" data-gf="swr" inputmode="decimal"></div>
           <div class="field"><label for="${at}-gf-fb">F/B over, dB ${A.help("fb")}</label><input class="num" id="${at}-gf-fb" data-gf="fb" inputmode="decimal"></div>` : ""}
@@ -9366,6 +9543,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const q = (k) => card.querySelector(`[data-gf="${k}"]`);
     A.bindNum(q("target"), { get: () => FIND.target, min: 0.5, max: 30, decimals: 2, set: (v) => { FIND.target = v; A.renderGainCards(card); } });
     A.bindNum(q("rod"), { get: rodSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.rod = v; FIND.rodFor = S.design.name; A.renderGainCards(card); } });
+    A.bindNum(q("driven"), { get: drivenSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.driven = v; FIND.drivenFor = S.design.name; A.renderGainCards(card); } });
     A.bindNum(q("to"), Object.assign(optionalNum(() => FIND.gainTo, (v) => { FIND.gainTo = v; A.renderGainCards(card); }), { decimals: 2 }));
     A.bindNum(q("top"), Object.assign(optionalNum(() => FIND.boomTop, (v) => { FIND.boomTop = v; A.renderGainCards(card); }), { decimals: 0 }));
     if (q("swr")) {
@@ -9387,10 +9565,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       : `It works on ${FAVOR_NAMES[g.favor]} while holding the gain in the card above, ${fmt(FIND.target, 2)} dBd or more, and the limits below.`;
     $$(".gain-card").forEach((card) => {
       const q = (k) => card.querySelector(`[data-gf="${k}"]`), onDesign = !!card.closest("#view-design");
-      if (card !== typing) ["target", "to", "rod", "top", "swr", "fb"].forEach((k) => { if (q(k)) q(k)._refresh(); });
+      if (card !== typing) ["target", "to", "rod", "driven", "top", "swr", "fb"].forEach((k) => { if (q(k)) q(k)._refresh(); });
       q("favor").value = g.favor;
       q("topwrap").hidden = g.favor === "gain";
-      q("limits").textContent = `Worst gain across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, in ${metalName(firstDirector().material)} rods.${onDesign ? "" : ` With SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, set below.`}`;
+      q("limits").textContent = `Worst gain across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, in ${metalName(firstDirector().material)} rods with a driven element in ${metalName(drivenRod().material)}. The Rods table sets the metals.${onDesign ? "" : ` With SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, set below.`}`;
       q("run").disabled = OPT.running;
       q("stop").disabled = !FIND.running;
       q("bar").style.width = FIND.bar + "%";
@@ -9429,7 +9607,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       // the model's settings come along, so that the design found is the one you'll then see
       const settings = {};
       ["f0", "z0", "polarization", "endCap", "feedWire", "boomFace", "mast", "cable", "ground", "radio"].forEach((k) => { if (d[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(d[k])); });
-      const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rod.material || d.material, gap: d.gap, settings },
+      const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rod.material || d.material, gap: d.gap, driven: { d: drivenSize(), material: drivenRod().material || d.material }, settings },
         { band: g.band.slice(), fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7, favor: g.favor, gainMax: FIND.gainTo, boomTop: FIND.boomTop }, FIND.target, {
           cancelled: () => OPT.cancel,
           onProgress: (p) => {
@@ -9455,7 +9633,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     delete next.tune;      // any readings were of the antenna this replaces
     const g = goals();
     Object.assign(g, { forDesign: name, boomMax: Math.round(row.boom) });
-    FIND.rodFor = name;
+    FIND.rodFor = name; FIND.drivenFor = name;
     A.loadDesign(next, true);
     g.bandWas = next.f0 + ":" + next.band;
     FIND.key = findKey();
@@ -9683,7 +9861,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const cal = YS.guideScale(st.measured);
     const channels = YS.guideChannels(S.design, CUT.allowance);
     const guide = YS.buildGuide(channels, cal ? cal.scale : 1);
-    const fits = YS.guideFits(guide, st.bed);
+    const bed = bedNow(), fits = YS.guideFits(guide, bed), lay = YS.placeOn(bed, guide.modelLength + 4, guide.modelWidth + 4, 0);
     box.innerHTML = `
       <p class="note">A block with a channel for each rod. Lay a rod in its channel against the far stop, then cut it a little long and file it flush with the front.</p>
       <div>
@@ -9705,8 +9883,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <div style="font-weight:600;margin-bottom:3px">2. Print the guide</div>
         <p class="note">${guide.channels.length} channels: ${esc(guide.channels.map((c) => `${c.label} ${fmt(c.length, 1)}`).join(", "))} mm. Print it flat, channels up, with no supports, in the same filament and settings as the bar.</p>
         <div class="row" style="margin-top:4px"><button class="btn primary" id="g-guide" ${cal && fits ? "" : "disabled"}>Download the guide</button></div>
-        <p class="note" id="g-why" style="margin-top:6px">${!cal ? "This unlocks once you've entered what the test bar measures." : !fits ? `It would be ${fmt(guide.modelLength, 0)} mm long, too long for a ${st.bed || YS.GUIDE.BED_DEFAULT} mm bed. For rods this long, use a tape and a stop block instead.` : `It's made ${fmt(guide.modelLength, 1)} mm long so that it prints at ${fmt(guide.length, 1)} mm.`}</p>
-        <div class="field" style="margin-top:4px"><label for="g-bed">Your printer's bed, mm</label><input class="num" id="g-bed" inputmode="decimal" style="max-width:110px"></div>
+        <p class="note" id="g-why" style="margin-top:6px">${!cal ? "This unlocks once you've entered what the test bar measures." : !fits ? `It would be ${fmt(guide.modelLength, 0)} mm long, too long for a ${bed.x} x ${bed.y} mm bed. For rods this long, use a tape and a stop block instead.` : `It's made ${fmt(guide.modelLength, 1)} mm long so that it prints at ${fmt(guide.length, 1)} mm. ${esc(YS.partPlacing(lay, bed))}`}</p>
+        <div style="margin-top:6px">${bedFields("g")}</div>
       </div>
       <div>
         <div style="font-weight:600;margin-bottom:3px">3. Check it before you trust it</div>
@@ -9728,8 +9906,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       save({ measured: v > 0 ? v : null });
       renderGuide();
     };
-    A.bindNum($("#g-bed"), { get: () => st.bed || YS.GUIDE.BED_DEFAULT, min: 50, max: 2000, decimals: 0, set: (v) => { save({ bed: v }); }, });
-    $("#g-bed").addEventListener("change", () => renderGuide());
+    bindBed("g", () => renderGuide());
     $("#g-guide").onclick = () => {
       const name = `${S.design.name.replace(/[^\w-]+/g, "_")}_cutting_guide.stl`;
       A.download(name, YS.meshToStl(guide.mesh, "cutting-guide"), "model/stl");
@@ -9754,10 +9931,34 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
   const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, label: true, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
+  /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
+  function bedNow() {
+    const st = A.storage.read().guide || {}, x = st.bed || YS.GUIDE.BED_DEFAULT;
+    return { x, y: st.bedY || x, z: st.bedZ || x, corner: !!st.bedCorner };
+  }
+  const bedFields = (at) => `
+    <div style="font-weight:500;margin-bottom:4px">Your printer's build size, mm</div>
+    <div class="field-grid three">
+      <div class="field"><label for="${at}-bed">Width (X)</label><input class="num" id="${at}-bed" inputmode="decimal"></div>
+      <div class="field"><label for="${at}-bed-y">Depth (Y)</label><input class="num" id="${at}-bed-y" inputmode="decimal"></div>
+      <div class="field"><label for="${at}-bed-z">Height (Z)</label><input class="num" id="${at}-bed-z" inputmode="decimal"></div>
+    </div>
+    <label class="check" style="margin-top:6px"><input type="checkbox" id="${at}-corner"> Allow printing corner to corner ${A.help("bedcorner")}</label>`;
+  /* All three written out at the first change, so that widening X doesn't drag the other two along with it. */
+  const bedStored = () => { const b = bedNow(); return { bed: b.x, bedY: b.y, bedZ: b.z, bedCorner: b.corner }; };
+  function bindBed(at, changed) {
+    const save = (o) => { A.storage.write({ guide: Object.assign({}, A.storage.read().guide, bedStored(), o) }); changed(); };
+    A.bindNum($(`#${at}-bed`), { get: () => bedNow().x, min: 50, max: 2000, decimals: 0, set: (v) => save({ bed: v }) });
+    A.bindNum($(`#${at}-bed-y`), { get: () => bedNow().y, min: 50, max: 2000, decimals: 0, set: (v) => save({ bedY: v }) });
+    A.bindNum($(`#${at}-bed-z`), { get: () => bedNow().z, min: 10, max: 2000, decimals: 0, set: (v) => save({ bedZ: v }) });
+    $(`#${at}-corner`).checked = bedNow().corner;
+    $(`#${at}-corner`).onchange = (e) => save({ bedCorner: e.target.checked });
+  }
+
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: st.bed || YS.GUIDE.BED_DEFAULT, scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -9769,11 +9970,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom follows the DuvYagi's printed one, but its cutting marks, check notches and label are new, and so are the hand grip, the tripod mount and the painter pole's arm. Print one and check it before you rely on it.</p>
+            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom's fork-and-tongue joint, cutting marks, check notches and label are new, and so are the hand grip, the tripod mount and the painter pole's arm. Print one and check it before you rely on it.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
+            <div>${bedFields("p")}</div>
+            <p id="p-pieces" role="status" style="font-weight:600"></p>
             <div class="field-grid">
               <div class="field"><label for="p-mount">Mount</label><select class="sel" id="p-mount">${Object.keys(YS.PARTS.MOUNTS).map((k) => `<option value="${k}">${esc(YS.PARTS.MOUNTS[k].name)}</option>`).join("")}</select></div>
-              <div class="field"><label for="p-bed">Printer's bed, mm</label><input class="num" id="p-bed" inputmode="decimal"></div>
               <div class="field"><label for="p-fit">Rod holes over the rod, mm ${A.help("printfit")}</label><input class="num" id="p-fit" inputmode="decimal"></div>
               <div class="field"><label for="p-shrink">Shrinkage</label><select class="sel" id="p-shrink"><option value="slicer">My slicer handles it</option><option value="bar">Scale from a test bar</option></select></div>
               <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
@@ -9804,11 +10006,18 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       plan = YS.planParts(d, printOptions());
     } catch (e) {
       host.innerHTML = `<p class="note"><span class="pill warn">Check that</span> ${esc(e.message)}</p>`;
+      $("#p-pieces").textContent = "This design won't print on that printer as it stands.";
       run.disabled = true;
       return;
     }
     run.disabled = PRINT.busy;
-    const lines = [`A ${fmt(plan.boom, 0)} mm boom in ${plan.sections.length === 1 ? "one piece" : plan.sections.length + " sections"}.`];
+    const b = plan.bed, count = plan.sections.length;
+    $("#p-pieces").textContent = `On your ${b.x} x ${b.y} x ${b.z} mm printer, this ${fmt(plan.boom, 0)} mm boom prints in ${count === 1 ? "one piece" : count + " pieces"}.`;
+    const lines = [];
+    const lay = plan.sections.map((s) => s.place).find((p) => p.how !== "x");
+    if (lay) lines.push(esc(YS.partPlacing(lay, b)).replace("Turn it", count > 1 ? "Turn the long pieces" : "Turn it"));
+    if (plan.cornerPieces && plan.cornerPieces < count) lines.push(`Corner to corner, it would take ${plan.cornerPieces === 1 ? "one piece" : plan.cornerPieces + " pieces"} instead. You can allow that above.`);
+    if (count > 1) lines.push(`In one straight piece it needs a printer about ${fmt(Math.ceil(plan.onePiece), 0)} mm long, with room for a brim.`);
     if (plan.gauge) lines.push(`Gauge marks, from these lengths: ${plan.gauge.marks.map((m) => `${esc(m.rod)} ${fmt(m.length, 1)}`).join(", ")} mm. If tuning changes a rod, make the boom again.`);
     if (PRINT.useBar && printOptions().scale === 1) lines.push("Enter what the test bar measures, or these files won't be scaled. The bar is on the Cut list tab.");
     if (PRINT.mount === "mast") {
@@ -9830,7 +10039,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     }
     host.innerHTML = `
       <table class="tbl"><tbody>
-        ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
+        ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm${p.placing ? `. ${p.place.fits ? "" : '<span class="pill warn">Check that</span> '}${esc(p.placing)}` : ""}</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
       </tbody></table>
       <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
       <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. They've only been checked as models, not printed, so measure the check notches and test-fit the parts before you rely on them.</p>`;
@@ -9904,7 +10113,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       const changed = () => { renderPrintPlan(); drawPart(); };
       $("#p-mount").value = PRINT.mount;
       $("#p-mount").onchange = (e) => { PRINT.mount = e.target.value; changed(); };
-      A.bindNum($("#p-bed"), { get: () => (A.storage.read().guide || {}).bed || YS.GUIDE.BED_DEFAULT, min: 50, max: 2000, decimals: 0, set: (v) => { saveGuide({ bed: v }); changed(); } });
+      bindBed("p", changed);
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });
       $("#p-shrink").onchange = (e) => { PRINT.useBar = e.target.value === "bar"; changed(); };
@@ -9926,7 +10135,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       c.style.width = "100%"; c.style.height = "100%";
       if (root.ResizeObserver) new ResizeObserver(() => { if (S.view === "print") drawPart(); }).observe(c.parentElement);
     },
-    show() { $("#p-bed")._refresh(); renderPrintPlan(); drawPart(); },
+    show() { ["#p-bed", "#p-bed-y", "#p-bed-z"].forEach((q) => $(q)._refresh()); $("#p-corner").checked = bedNow().corner; renderPrintPlan(); drawPart(); },
     refreshDesign() { renderPrintPlan(); drawPart(); },
     refreshResults() {},
     retheme() { drawPart(); },
@@ -10067,7 +10276,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     A.menu(btn, `
       <h3>Start from</h3>
       ${PRESET_INFO.map(([k, t, s]) => `<button data-preset="${k}">${esc(t)}<small>${esc(s)}</small></button>`).join("")}
-      <button data-new>Any frequency…<small>A starting design for your band, rods and rod size</small></button>
+      <button data-new>New design…<small>A starting design for your band, rods and rod sizes</small></button>
       <h3>Your saved designs</h3>
       ${names.length ? names.map((n) => `<div style="display:flex"><button data-saved="${esc(n)}">${esc(n)}</button><button data-del="${esc(n)}" aria-label="Remove ${esc(n)}" style="width:32px;text-align:center;color:var(--muted)">×</button></div>`).join("") : `<button disabled><small>Nothing saved yet. Use Save to keep a design.</small></button>`}
       <h3>From a file</h3>
@@ -10107,22 +10316,28 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   function newDesignDialog() {
+    const metals = `<option value="aluminium">Aluminum</option><option value="brass">Brass</option><option value="copper">Copper</option><option value="steel">Stainless</option>`;
     A.modal(`<h2>Start a new design</h2>
-      <p>This gives you a sensible starting point using a standard spacing recipe. Then use Optimize to tune it.</p>
+      <p>This gives you a sensible starting point using a standard spacing recipe. Then use Optimize to tune it. Undo brings back the design you have open.</p>
       <div class="field-grid">
         <div class="field"><label for="n-f">Frequency, MHz</label><input class="num" id="n-f" value="915" inputmode="decimal"></div>
         <div class="field"><label for="n-c">Rods</label><input class="num" id="n-c" value="6" inputmode="numeric"></div>
-        <div class="field"><label for="n-d">Rod diameter, mm</label><input class="num" id="n-d" value="3" inputmode="decimal"></div>
-        <div class="field"><label for="n-m">Metal</label><select class="sel" id="n-m"><option value="aluminium">Aluminum</option><option value="brass">Brass</option><option value="copper">Copper</option><option value="steel">Stainless</option></select></div>
+        <div class="field"><label for="n-d">Other rods' diameter, mm</label><input class="num" id="n-d" value="3" inputmode="decimal"></div>
+        <div class="field"><label for="n-m">Other rods' metal</label><select class="sel" id="n-m">${metals}</select></div>
+        <div class="field"><label for="n-dd">Driven diameter, mm</label><input class="num" id="n-dd" value="3" inputmode="decimal"></div>
+        <div class="field"><label for="n-dm">Driven metal</label><select class="sel" id="n-dm">${metals}</select></div>
       </div>
       <p class="note" id="n-err" style="margin-top:6px"></p>
       <div class="row" style="margin-top:8px"><button class="btn primary" id="n-go">Create it</button><button class="btn" id="n-no">Cancel</button></div>`, (b, close) => {
       $("#n-no", b).onclick = close;
+      // the driven element follows the other rods until it's changed, so that a plain design takes no extra typing
+      const follow = (from, to) => { $(from, b).addEventListener("input", () => { if (!$(to, b).dataset.own) $(to, b).value = $(from, b).value; }); $(to, b).addEventListener("input", () => { $(to, b).dataset.own = "1"; }); };
+      follow("#n-d", "#n-dd"); follow("#n-m", "#n-dm");
       $("#n-go", b).onclick = () => {
-        const f = parseFloat($("#n-f", b).value), c = parseInt($("#n-c", b).value, 10), d = A.parseLen($("#n-d", b).value);
-        if (!(f > 1) || !(c >= 2 && c <= 40) || !(d > 0)) { $("#n-err", b).textContent = "Enter a frequency above 1 MHz, 2 to 40 rods, and a rod diameter."; return; }
+        const f = parseFloat($("#n-f", b).value), c = parseInt($("#n-c", b).value, 10), d = A.parseLen($("#n-d", b).value), dd = A.parseLen($("#n-dd", b).value);
+        if (!(f > 1) || !(c >= 2 && c <= 40) || !(d > 0) || !(dd > 0)) { $("#n-err", b).textContent = "Enter a frequency above 1 MHz, 2 to 40 rods, and both rod diameters."; return; }
         close();
-        A.loadDesign(YS.startingDesign(f, c, d, $("#n-m", b).value), true);
+        A.loadDesign(YS.startingDesign(f, c, d, $("#n-m", b).value, { d: dd, material: $("#n-dm", b).value }), true);
         A.go(S.view);
       };
     });
@@ -10186,6 +10401,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       A.loadDesign(YS.PRESETS.duvyagi());
       withExampleReadings();
     }
+    $("#new-design").onclick = newDesignDialog;
     $("#open").onclick = (e) => openMenu(e.currentTarget);
     $("#save").onclick = saveDesign;
     $("#undo").onclick = A.undo;

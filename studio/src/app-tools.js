@@ -295,7 +295,7 @@
     A.renderGainCards();
     const started = performance.now();
     try {
-      const res = await YS.exploreBooms(A.pool, { f0: d.f0, d: firstDir.d, material: firstDir.material || d.material, gap: d.gap },
+      const res = await YS.exploreBooms(A.pool, { f0: d.f0, d: firstDir.d, material: firstDir.material || d.material, gap: d.gap, driven: { d: drivenRod().d, material: drivenRod().material || d.material } },
         { band: g.band, fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7 },
         { rods, booms, gens: 90 }, {
           cancelled: () => OPT.cancel,
@@ -322,9 +322,11 @@
 
   const firstDirector = () => S.design.elements.find((e) => e.type === "director") || S.design.elements[0];
   const rodSize = () => (FIND.rod && FIND.rodFor === S.design.name ? FIND.rod : firstDirector().d);
+  const drivenRod = () => S.design.elements.find((e) => e.type === "driven") || firstDirector();
+  const drivenSize = () => (FIND.driven && FIND.drivenFor === S.design.name ? FIND.driven : drivenRod().d);
   const metalName = (m) => ({ aluminium: "aluminum" }[m] || m);
   /* What an answer depends on: when this changes, the answers on show are out of date. */
-  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, FIND.gainTo, g.favor, g.favor === "gain" ? 0 : FIND.boomTop, rodSize(), firstDirector().material].join(); };
+  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, FIND.gainTo, g.favor, g.favor === "gain" ? 0 : FIND.boomTop, rodSize(), firstDirector().material, drivenSize(), drivenRod().material].join(); };
   /* An optional number: blank means no limit, and is stored as 0. */
   const optionalNum = (get, set) => ({ get: () => get() || NaN, set, min: 0, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)) });
 
@@ -335,7 +337,8 @@
         <div class="field-grid">
           <div class="field"><label for="${at}-gf-target">Gain, dBd</label><input class="num" id="${at}-gf-target" data-gf="target" inputmode="decimal"></div>
           <div class="field"><label for="${at}-gf-to">up to, if it matters</label><input class="num" id="${at}-gf-to" data-gf="to" inputmode="decimal" placeholder="any"></div>
-          <div class="field"><label for="${at}-gf-rod">Rod diameter, mm</label><input class="num" id="${at}-gf-rod" data-gf="rod" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-rod">Other rods' diameter, mm</label><input class="num" id="${at}-gf-rod" data-gf="rod" inputmode="decimal"></div>
+          <div class="field"><label for="${at}-gf-driven">Driven diameter, mm</label><input class="num" id="${at}-gf-driven" data-gf="driven" inputmode="decimal"></div>
           <div class="field"><label for="${at}-gf-favor">Make the best of ${A.help("favor")}</label><select class="sel" id="${at}-gf-favor" data-gf="favor"><option value="gain">Shortest boom</option><option value="swr">Lowest SWR</option><option value="fb">Highest F/B</option><option value="both">Both SWR and F/B</option></select></div>
           ${at === "design" ? `<div class="field"><label for="${at}-gf-swr">SWR under ${A.help("swr")}</label><input class="num" id="${at}-gf-swr" data-gf="swr" inputmode="decimal"></div>
           <div class="field"><label for="${at}-gf-fb">F/B over, dB ${A.help("fb")}</label><input class="num" id="${at}-gf-fb" data-gf="fb" inputmode="decimal"></div>` : ""}
@@ -353,6 +356,7 @@
     const q = (k) => card.querySelector(`[data-gf="${k}"]`);
     A.bindNum(q("target"), { get: () => FIND.target, min: 0.5, max: 30, decimals: 2, set: (v) => { FIND.target = v; A.renderGainCards(card); } });
     A.bindNum(q("rod"), { get: rodSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.rod = v; FIND.rodFor = S.design.name; A.renderGainCards(card); } });
+    A.bindNum(q("driven"), { get: drivenSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.driven = v; FIND.drivenFor = S.design.name; A.renderGainCards(card); } });
     A.bindNum(q("to"), Object.assign(optionalNum(() => FIND.gainTo, (v) => { FIND.gainTo = v; A.renderGainCards(card); }), { decimals: 2 }));
     A.bindNum(q("top"), Object.assign(optionalNum(() => FIND.boomTop, (v) => { FIND.boomTop = v; A.renderGainCards(card); }), { decimals: 0 }));
     if (q("swr")) {
@@ -374,10 +378,10 @@
       : `It works on ${FAVOR_NAMES[g.favor]} while holding the gain in the card above, ${fmt(FIND.target, 2)} dBd or more, and the limits below.`;
     $$(".gain-card").forEach((card) => {
       const q = (k) => card.querySelector(`[data-gf="${k}"]`), onDesign = !!card.closest("#view-design");
-      if (card !== typing) ["target", "to", "rod", "top", "swr", "fb"].forEach((k) => { if (q(k)) q(k)._refresh(); });
+      if (card !== typing) ["target", "to", "rod", "driven", "top", "swr", "fb"].forEach((k) => { if (q(k)) q(k)._refresh(); });
       q("favor").value = g.favor;
       q("topwrap").hidden = g.favor === "gain";
-      q("limits").textContent = `Worst gain across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, in ${metalName(firstDirector().material)} rods.${onDesign ? "" : ` With SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, set below.`}`;
+      q("limits").textContent = `Worst gain across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, in ${metalName(firstDirector().material)} rods with a driven element in ${metalName(drivenRod().material)}. The Rods table sets the metals.${onDesign ? "" : ` With SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, set below.`}`;
       q("run").disabled = OPT.running;
       q("stop").disabled = !FIND.running;
       q("bar").style.width = FIND.bar + "%";
@@ -416,7 +420,7 @@
       // the model's settings come along, so that the design found is the one you'll then see
       const settings = {};
       ["f0", "z0", "polarization", "endCap", "feedWire", "boomFace", "mast", "cable", "ground", "radio"].forEach((k) => { if (d[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(d[k])); });
-      const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rod.material || d.material, gap: d.gap, settings },
+      const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rod.material || d.material, gap: d.gap, driven: { d: drivenSize(), material: drivenRod().material || d.material }, settings },
         { band: g.band.slice(), fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7, favor: g.favor, gainMax: FIND.gainTo, boomTop: FIND.boomTop }, FIND.target, {
           cancelled: () => OPT.cancel,
           onProgress: (p) => {
@@ -442,7 +446,7 @@
     delete next.tune;      // any readings were of the antenna this replaces
     const g = goals();
     Object.assign(g, { forDesign: name, boomMax: Math.round(row.boom) });
-    FIND.rodFor = name;
+    FIND.rodFor = name; FIND.drivenFor = name;
     A.loadDesign(next, true);
     g.bandWas = next.f0 + ":" + next.band;
     FIND.key = findKey();
@@ -670,7 +674,7 @@
     const cal = YS.guideScale(st.measured);
     const channels = YS.guideChannels(S.design, CUT.allowance);
     const guide = YS.buildGuide(channels, cal ? cal.scale : 1);
-    const fits = YS.guideFits(guide, st.bed);
+    const bed = bedNow(), fits = YS.guideFits(guide, bed), lay = YS.placeOn(bed, guide.modelLength + 4, guide.modelWidth + 4, 0);
     box.innerHTML = `
       <p class="note">A block with a channel for each rod. Lay a rod in its channel against the far stop, then cut it a little long and file it flush with the front.</p>
       <div>
@@ -692,8 +696,8 @@
         <div style="font-weight:600;margin-bottom:3px">2. Print the guide</div>
         <p class="note">${guide.channels.length} channels: ${esc(guide.channels.map((c) => `${c.label} ${fmt(c.length, 1)}`).join(", "))} mm. Print it flat, channels up, with no supports, in the same filament and settings as the bar.</p>
         <div class="row" style="margin-top:4px"><button class="btn primary" id="g-guide" ${cal && fits ? "" : "disabled"}>Download the guide</button></div>
-        <p class="note" id="g-why" style="margin-top:6px">${!cal ? "This unlocks once you've entered what the test bar measures." : !fits ? `It would be ${fmt(guide.modelLength, 0)} mm long, too long for a ${st.bed || YS.GUIDE.BED_DEFAULT} mm bed. For rods this long, use a tape and a stop block instead.` : `It's made ${fmt(guide.modelLength, 1)} mm long so that it prints at ${fmt(guide.length, 1)} mm.`}</p>
-        <div class="field" style="margin-top:4px"><label for="g-bed">Your printer's bed, mm</label><input class="num" id="g-bed" inputmode="decimal" style="max-width:110px"></div>
+        <p class="note" id="g-why" style="margin-top:6px">${!cal ? "This unlocks once you've entered what the test bar measures." : !fits ? `It would be ${fmt(guide.modelLength, 0)} mm long, too long for a ${bed.x} x ${bed.y} mm bed. For rods this long, use a tape and a stop block instead.` : `It's made ${fmt(guide.modelLength, 1)} mm long so that it prints at ${fmt(guide.length, 1)} mm. ${esc(YS.partPlacing(lay, bed))}`}</p>
+        <div style="margin-top:6px">${bedFields("g")}</div>
       </div>
       <div>
         <div style="font-weight:600;margin-bottom:3px">3. Check it before you trust it</div>
@@ -715,8 +719,7 @@
       save({ measured: v > 0 ? v : null });
       renderGuide();
     };
-    A.bindNum($("#g-bed"), { get: () => st.bed || YS.GUIDE.BED_DEFAULT, min: 50, max: 2000, decimals: 0, set: (v) => { save({ bed: v }); }, });
-    $("#g-bed").addEventListener("change", () => renderGuide());
+    bindBed("g", () => renderGuide());
     $("#g-guide").onclick = () => {
       const name = `${S.design.name.replace(/[^\w-]+/g, "_")}_cutting_guide.stl`;
       A.download(name, YS.meshToStl(guide.mesh, "cutting-guide"), "model/stl");
@@ -741,10 +744,34 @@
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
   const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, label: true, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
+  /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
+  function bedNow() {
+    const st = A.storage.read().guide || {}, x = st.bed || YS.GUIDE.BED_DEFAULT;
+    return { x, y: st.bedY || x, z: st.bedZ || x, corner: !!st.bedCorner };
+  }
+  const bedFields = (at) => `
+    <div style="font-weight:500;margin-bottom:4px">Your printer's build size, mm</div>
+    <div class="field-grid three">
+      <div class="field"><label for="${at}-bed">Width (X)</label><input class="num" id="${at}-bed" inputmode="decimal"></div>
+      <div class="field"><label for="${at}-bed-y">Depth (Y)</label><input class="num" id="${at}-bed-y" inputmode="decimal"></div>
+      <div class="field"><label for="${at}-bed-z">Height (Z)</label><input class="num" id="${at}-bed-z" inputmode="decimal"></div>
+    </div>
+    <label class="check" style="margin-top:6px"><input type="checkbox" id="${at}-corner"> Allow printing corner to corner ${A.help("bedcorner")}</label>`;
+  /* All three written out at the first change, so that widening X doesn't drag the other two along with it. */
+  const bedStored = () => { const b = bedNow(); return { bed: b.x, bedY: b.y, bedZ: b.z, bedCorner: b.corner }; };
+  function bindBed(at, changed) {
+    const save = (o) => { A.storage.write({ guide: Object.assign({}, A.storage.read().guide, bedStored(), o) }); changed(); };
+    A.bindNum($(`#${at}-bed`), { get: () => bedNow().x, min: 50, max: 2000, decimals: 0, set: (v) => save({ bed: v }) });
+    A.bindNum($(`#${at}-bed-y`), { get: () => bedNow().y, min: 50, max: 2000, decimals: 0, set: (v) => save({ bedY: v }) });
+    A.bindNum($(`#${at}-bed-z`), { get: () => bedNow().z, min: 10, max: 2000, decimals: 0, set: (v) => save({ bedZ: v }) });
+    $(`#${at}-corner`).checked = bedNow().corner;
+    $(`#${at}-corner`).onchange = (e) => save({ bedCorner: e.target.checked });
+  }
+
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: st.bed || YS.GUIDE.BED_DEFAULT, scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -756,11 +783,12 @@
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom follows the DuvYagi's printed one, but its cutting marks, check notches and label are new, and so are the hand grip, the tripod mount and the painter pole's arm. Print one and check it before you rely on it.</p>
+            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom's fork-and-tongue joint, cutting marks, check notches and label are new, and so are the hand grip, the tripod mount and the painter pole's arm. Print one and check it before you rely on it.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
+            <div>${bedFields("p")}</div>
+            <p id="p-pieces" role="status" style="font-weight:600"></p>
             <div class="field-grid">
               <div class="field"><label for="p-mount">Mount</label><select class="sel" id="p-mount">${Object.keys(YS.PARTS.MOUNTS).map((k) => `<option value="${k}">${esc(YS.PARTS.MOUNTS[k].name)}</option>`).join("")}</select></div>
-              <div class="field"><label for="p-bed">Printer's bed, mm</label><input class="num" id="p-bed" inputmode="decimal"></div>
               <div class="field"><label for="p-fit">Rod holes over the rod, mm ${A.help("printfit")}</label><input class="num" id="p-fit" inputmode="decimal"></div>
               <div class="field"><label for="p-shrink">Shrinkage</label><select class="sel" id="p-shrink"><option value="slicer">My slicer handles it</option><option value="bar">Scale from a test bar</option></select></div>
               <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
@@ -791,11 +819,18 @@
       plan = YS.planParts(d, printOptions());
     } catch (e) {
       host.innerHTML = `<p class="note"><span class="pill warn">Check that</span> ${esc(e.message)}</p>`;
+      $("#p-pieces").textContent = "This design won't print on that printer as it stands.";
       run.disabled = true;
       return;
     }
     run.disabled = PRINT.busy;
-    const lines = [`A ${fmt(plan.boom, 0)} mm boom in ${plan.sections.length === 1 ? "one piece" : plan.sections.length + " sections"}.`];
+    const b = plan.bed, count = plan.sections.length;
+    $("#p-pieces").textContent = `On your ${b.x} x ${b.y} x ${b.z} mm printer, this ${fmt(plan.boom, 0)} mm boom prints in ${count === 1 ? "one piece" : count + " pieces"}.`;
+    const lines = [];
+    const lay = plan.sections.map((s) => s.place).find((p) => p.how !== "x");
+    if (lay) lines.push(esc(YS.partPlacing(lay, b)).replace("Turn it", count > 1 ? "Turn the long pieces" : "Turn it"));
+    if (plan.cornerPieces && plan.cornerPieces < count) lines.push(`Corner to corner, it would take ${plan.cornerPieces === 1 ? "one piece" : plan.cornerPieces + " pieces"} instead. You can allow that above.`);
+    if (count > 1) lines.push(`In one straight piece it needs a printer about ${fmt(Math.ceil(plan.onePiece), 0)} mm long, with room for a brim.`);
     if (plan.gauge) lines.push(`Gauge marks, from these lengths: ${plan.gauge.marks.map((m) => `${esc(m.rod)} ${fmt(m.length, 1)}`).join(", ")} mm. If tuning changes a rod, make the boom again.`);
     if (PRINT.useBar && printOptions().scale === 1) lines.push("Enter what the test bar measures, or these files won't be scaled. The bar is on the Cut list tab.");
     if (PRINT.mount === "mast") {
@@ -817,7 +852,7 @@
     }
     host.innerHTML = `
       <table class="tbl"><tbody>
-        ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
+        ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm${p.placing ? `. ${p.place.fits ? "" : '<span class="pill warn">Check that</span> '}${esc(p.placing)}` : ""}</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
       </tbody></table>
       <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
       <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. They've only been checked as models, not printed, so measure the check notches and test-fit the parts before you rely on them.</p>`;
@@ -891,7 +926,7 @@
       const changed = () => { renderPrintPlan(); drawPart(); };
       $("#p-mount").value = PRINT.mount;
       $("#p-mount").onchange = (e) => { PRINT.mount = e.target.value; changed(); };
-      A.bindNum($("#p-bed"), { get: () => (A.storage.read().guide || {}).bed || YS.GUIDE.BED_DEFAULT, min: 50, max: 2000, decimals: 0, set: (v) => { saveGuide({ bed: v }); changed(); } });
+      bindBed("p", changed);
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });
       $("#p-shrink").onchange = (e) => { PRINT.useBar = e.target.value === "bar"; changed(); };
@@ -913,7 +948,7 @@
       c.style.width = "100%"; c.style.height = "100%";
       if (root.ResizeObserver) new ResizeObserver(() => { if (S.view === "print") drawPart(); }).observe(c.parentElement);
     },
-    show() { $("#p-bed")._refresh(); renderPrintPlan(); drawPart(); },
+    show() { ["#p-bed", "#p-bed-y", "#p-bed-z"].forEach((q) => $(q)._refresh()); $("#p-corner").checked = bedNow().corner; renderPrintPlan(); drawPart(); },
     refreshDesign() { renderPrintPlan(); drawPart(); },
     refreshResults() {},
     retheme() { drawPart(); },

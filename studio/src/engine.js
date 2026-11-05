@@ -226,7 +226,7 @@
    * With top, boom is only where it starts from, and it's free to settle anywhere up to top.
    */
   async function boomRun(pool, template, goals, n, boom, gens, hooks, top) {
-    const start = YS.startingDesign(template.f0, n, template.d, template.material);
+    const start = YS.startingDesign(template.f0, n, template.d, template.material, template.driven);
     const span = YS.boomLength(start), k = boom / span;
     start.elements.forEach((e) => { e.x = Math.round(e.x * k * 10) / 10; });
     Object.assign(start, template.settings || {});

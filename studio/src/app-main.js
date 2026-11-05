@@ -114,7 +114,7 @@
     A.menu(btn, `
       <h3>Start from</h3>
       ${PRESET_INFO.map(([k, t, s]) => `<button data-preset="${k}">${esc(t)}<small>${esc(s)}</small></button>`).join("")}
-      <button data-new>Any frequency…<small>A starting design for your band, rods and rod size</small></button>
+      <button data-new>New design…<small>A starting design for your band, rods and rod sizes</small></button>
       <h3>Your saved designs</h3>
       ${names.length ? names.map((n) => `<div style="display:flex"><button data-saved="${esc(n)}">${esc(n)}</button><button data-del="${esc(n)}" aria-label="Remove ${esc(n)}" style="width:32px;text-align:center;color:var(--muted)">×</button></div>`).join("") : `<button disabled><small>Nothing saved yet. Use Save to keep a design.</small></button>`}
       <h3>From a file</h3>
@@ -154,22 +154,28 @@
   }
 
   function newDesignDialog() {
+    const metals = `<option value="aluminium">Aluminum</option><option value="brass">Brass</option><option value="copper">Copper</option><option value="steel">Stainless</option>`;
     A.modal(`<h2>Start a new design</h2>
-      <p>This gives you a sensible starting point using a standard spacing recipe. Then use Optimize to tune it.</p>
+      <p>This gives you a sensible starting point using a standard spacing recipe. Then use Optimize to tune it. Undo brings back the design you have open.</p>
       <div class="field-grid">
         <div class="field"><label for="n-f">Frequency, MHz</label><input class="num" id="n-f" value="915" inputmode="decimal"></div>
         <div class="field"><label for="n-c">Rods</label><input class="num" id="n-c" value="6" inputmode="numeric"></div>
-        <div class="field"><label for="n-d">Rod diameter, mm</label><input class="num" id="n-d" value="3" inputmode="decimal"></div>
-        <div class="field"><label for="n-m">Metal</label><select class="sel" id="n-m"><option value="aluminium">Aluminum</option><option value="brass">Brass</option><option value="copper">Copper</option><option value="steel">Stainless</option></select></div>
+        <div class="field"><label for="n-d">Other rods' diameter, mm</label><input class="num" id="n-d" value="3" inputmode="decimal"></div>
+        <div class="field"><label for="n-m">Other rods' metal</label><select class="sel" id="n-m">${metals}</select></div>
+        <div class="field"><label for="n-dd">Driven diameter, mm</label><input class="num" id="n-dd" value="3" inputmode="decimal"></div>
+        <div class="field"><label for="n-dm">Driven metal</label><select class="sel" id="n-dm">${metals}</select></div>
       </div>
       <p class="note" id="n-err" style="margin-top:6px"></p>
       <div class="row" style="margin-top:8px"><button class="btn primary" id="n-go">Create it</button><button class="btn" id="n-no">Cancel</button></div>`, (b, close) => {
       $("#n-no", b).onclick = close;
+      // the driven element follows the other rods until it's changed, so that a plain design takes no extra typing
+      const follow = (from, to) => { $(from, b).addEventListener("input", () => { if (!$(to, b).dataset.own) $(to, b).value = $(from, b).value; }); $(to, b).addEventListener("input", () => { $(to, b).dataset.own = "1"; }); };
+      follow("#n-d", "#n-dd"); follow("#n-m", "#n-dm");
       $("#n-go", b).onclick = () => {
-        const f = parseFloat($("#n-f", b).value), c = parseInt($("#n-c", b).value, 10), d = A.parseLen($("#n-d", b).value);
-        if (!(f > 1) || !(c >= 2 && c <= 40) || !(d > 0)) { $("#n-err", b).textContent = "Enter a frequency above 1 MHz, 2 to 40 rods, and a rod diameter."; return; }
+        const f = parseFloat($("#n-f", b).value), c = parseInt($("#n-c", b).value, 10), d = A.parseLen($("#n-d", b).value), dd = A.parseLen($("#n-dd", b).value);
+        if (!(f > 1) || !(c >= 2 && c <= 40) || !(d > 0) || !(dd > 0)) { $("#n-err", b).textContent = "Enter a frequency above 1 MHz, 2 to 40 rods, and both rod diameters."; return; }
         close();
-        A.loadDesign(YS.startingDesign(f, c, d, $("#n-m", b).value), true);
+        A.loadDesign(YS.startingDesign(f, c, d, $("#n-m", b).value, { d: dd, material: $("#n-dm", b).value }), true);
         A.go(S.view);
       };
     });
@@ -233,6 +239,7 @@
       A.loadDesign(YS.PRESETS.duvyagi());
       withExampleReadings();
     }
+    $("#new-design").onclick = newDesignDialog;
     $("#open").onclick = (e) => openMenu(e.currentTarget);
     $("#save").onclick = saveDesign;
     $("#undo").onclick = A.undo;

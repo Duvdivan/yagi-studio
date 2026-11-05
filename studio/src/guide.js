@@ -29,6 +29,7 @@
   const TOUCH = 0.01;           // far below what a printer can draw
   const BAR = { length: 100, width: 12, height: 5 };    // the calibration test bar
   const BED_DEFAULT = 256;      // mm, the longest part a Bambu X2D prints; users can change it
+  const CORNER_STEP = 0.25;        // degrees between the angles tried when a part lies corner to corner
   const SHRINK_LIMIT = 0.03;    // a measured bar more than this share off is probably a mistake
 
   /* 5 x 7 lettering, as rows of bits, for labels only. */
@@ -201,11 +202,51 @@
     return lines.join("\n") + "\n";
   }
 
-  /** Whether the guide fits a printer's bed, with a little room to spare. */
-  function guideFits(guide, bed) {
-    const b = bed || BED_DEFAULT;
-    return guide.modelLength <= b - 4 && guide.modelWidth <= b - 4;
+  /* ---------- the printer's build space ---------- */
+
+  /** { x, y, z, corner } from what's given: a bed as one number means that much each way, as it did before there were three. */
+  function bedOf(bed) {
+    if (bed && typeof bed === "object") return { x: bed.x || BED_DEFAULT, y: bed.y || bed.x || BED_DEFAULT, z: bed.z || bed.x || BED_DEFAULT, corner: !!bed.corner };
+    const n = bed || BED_DEFAULT;
+    return { x: n, y: n, z: n, corner: false };
   }
 
-  Object.assign(YS, { GUIDE: { BAR, BED_DEFAULT }, guideChannels, guideScale, buildGuide, buildBar, meshToStl: toStl, guideFits });
+  /** How long a part `across` wide can be, lying at an angle to the bed's x side: the tighter of the x and y limits. */
+  function reachAt(b, across, deg) {
+    const c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180);
+    if (across * s > b.x + 1e-9 || across * c > b.y + 1e-9) return 0;
+    return Math.min(c > 1e-9 ? (b.x - across * s) / c : Infinity, s > 1e-9 ? (b.y - across * c) / s : Infinity);
+  }
+
+  /** The longest part `across` wide that fits: straight along either side or, if allowed, at any angle between. */
+  function longestOn(bed, across) {
+    const b = bedOf(bed);
+    let best = Math.max(reachAt(b, across, 0), reachAt(b, across, 90));
+    if (b.corner) for (let q = 1; q < 360; q++) best = Math.max(best, reachAt(b, across, q * CORNER_STEP));
+    return best;
+  }
+
+  /**
+   * Where a part goes, its sizes already including any margin: { fits, how: "x" | "y" | "corner" | null, angle, why }.
+   * Straight is preferred. Corner to corner takes the middle of the angles that fit, which leaves the most room at the corners.
+   */
+  function placeOn(bed, length, across, height) {
+    const b = bedOf(bed), L = Math.max(length, across), t = Math.min(length, across);
+    if (height > b.z + 1e-9) return { fits: false, how: null, angle: 0, why: "height" };
+    if (L <= reachAt(b, t, 0) + 1e-9) return { fits: true, how: "x", angle: 0 };
+    if (L <= reachAt(b, t, 90) + 1e-9) return { fits: true, how: "y", angle: 90 };
+    if (b.corner) {
+      const ok = [];
+      for (let q = 1; q < 360; q++) if (L <= reachAt(b, t, q * CORNER_STEP) + 1e-9) ok.push(q * CORNER_STEP);
+      if (ok.length) return { fits: true, how: "corner", angle: ok[Math.floor(ok.length / 2)] };
+    }
+    return { fits: false, how: null, angle: 0, why: "size" };
+  }
+
+  /** Whether the guide fits a printer's bed, with a little room to spare. */
+  function guideFits(guide, bed) {
+    return placeOn(bed, guide.modelLength + 4, guide.modelWidth + 4, 0).fits;
+  }
+
+  Object.assign(YS, { GUIDE: { BAR, BED_DEFAULT }, guideChannels, guideScale, buildGuide, buildBar, meshToStl: toStl, guideFits, bedOf, longestOn, placeOn });
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -23,9 +23,23 @@
   const HOLE_COMP = 0.125;         // the slicer's X-Y hole compensation these are modelled for, per side
   const CLEAR = 3.6;               // over a 3 mm rod's size: a mount's holes, which the rod passes loosely
   const M3 = 3.4, M3_BOOM = 3.0;   // M3 clearance in a mount, without compensation; in the boom, with it
-  const NUT_FLATS = 5.45, NUT_DEPTH = 3.6, HEAD_BORE = 5.6, HEAD_DEPTH = 3;   // M3 nut trap and socket-head counterbore
-  const LAP = 30, GAP = 0.2;       // the half-lap joint's length, and the play at its shoulders
-  const LAP_CLEAR = 8;             // from a rod to the joint's nearest end
+  const NUT_FLATS = 5.45, NUT_DEPTH = 3.6;   // M3 nut trap
+  /* The fork and tongue joining two sections, as lengths back from the tongue's tip. Its faces run along the rods, so a rod on the
+     boom's centre line passes through the tongue alone and crosses no joint face. Widths are for a 16 mm boom, and grow with it. */
+  const JOINT = {
+    tongue: 4, play: 0.15, thick: 11.6,   // half widths, mm: the tongue, the room each side of it, and across the prongs
+    flare: [54.8, 34.8],                  // the tongue's root narrows from the boom's width between these
+    forkTip: 47.3, up: 27.3,              // the prongs' tips, and where they've reached full thickness
+    crotch: 0.55,                         // the fork's inside end, past the tip
+    down: [2.2, 27.2],                    // past the tip, where the fork's outside comes back to the boom's width
+    bolts: [23.8, 5.8],                   // the two M3 bolts, across the boom, where nothing's in their way
+    boltMin: 12,                          // the closest they're moved together
+    rodClear: 2,                          // plastic left between a rod's hole and a bolt's, or a hole and the tongue's tip or the crotch at 3
+    v: { depth: 1, half: 1, gap: 0.05, tipOut: 0.8, full: [28.8, 8.8], ease: [34.8, 3.8] },   // the centring V: a ridge on the tongue, a groove in each prong. Depth, half height, room at the flats when seated, the ridge's reach, where it's full, where it eases out
+    tipClear: 3, sectionMin: 30,          // mm of plastic from a rod's hole to the tip and crotch; the shortest a rear section's plain boom can be
+    bolt: { hole: 3.2, head: 5.8, headDepth: 3, nutFlats: 5.6, nutDepth: 3.6, nut: 2.4 },     // the bolts' holes, and the recesses in the prongs
+  };
+  const GAUGE_WALL = 8;            // from the V's end wall to the tongue's root or the boom's front end
   const BRIM = 16;                 // bed length a section can't use: a brim on both ends, and a margin
   const GROOVE = 3;                // the coax's groove, for RG178 and the like, on the +y face
   const WINDOW = [12, 10];         // the solder window at the driven element (x, z)
@@ -34,7 +48,7 @@
   const WALL = 3, PLAY = 0.2;      // a mount's socket: its walls, and the room around the boom
   const SEGMENTS = 64;             // round holes: 0.002 mm under a 3 mm rod's radius
   const FLOPPY = 1200;             // mm of boom past which a printed one sags too much to recommend
-  const STOP = 4;                  // from the boom's rear end to the wall a rod butts against
+  const MARK_FROM = 1;             // the first a mark can be from the boom's rear end, where the V runs off it
   const TICK = 0.6;                // a length mark's width: the narrowest a 0.4 mm nozzle draws cleanly
   const DEEP = 0.6;                // how deep marks are cut: three 0.2 mm layers
   const CAL_SPAN = 100;            // between the notches' far walls, to check with calipers
@@ -108,6 +122,12 @@
       },
       /* A solid of revolution around z, from its outline as [radius, z]. */
       revolve: (outline) => keep(Manifold.revolve([outline], SEGMENTS)),
+      hull: (pts) => keep(Manifold.hull(pts)),
+      /* A shape drawn in (x, z), run across the boom from y0 to y1. */
+      acrossY: (pts, y0, y1) => {
+        const cs = keep(new CrossSection([pts], "NonZero"));
+        return K.at(K.turn(keep(cs.extrude(y1 - y0)), [90, 0, 0]), [0, y1, 0]);
+      },
       turn: (m, r) => keep(m.rotate(r)),
       at: (m, t) => keep(m.translate(t)),
       /* A solid from base-64 Float32 positions and Uint32 triangles. */
@@ -142,35 +162,76 @@
     return sorted.map((e) => ({ x: e.x - x0, d: e.d, L: e.L, name: e.name, driven: e.type === "driven", hole: e.d + fit, material: e.material || design.material }));
   }
 
+  /* The joint's widths for a boom this wide. */
+  const jointY = (w) => { const k = w / BOOM_W; return { hb: w / 2, tongue: JOINT.tongue * k, thick: JOINT.thick * k }; };
+  /* How the widths run along the boom, at x from a tongue whose tip is at t. */
+  const ease = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return (1 - Math.cos(Math.PI * u)) / 2; };
+  const tongueY = (J, t, x) => J.hb - (J.hb - J.tongue) * ease(t - JOINT.flare[0], t - JOINT.flare[1], x);
+  const outerY = (J, t, x) => (x <= t + JOINT.down[0] ? J.hb + (J.thick - J.hb) * ease(t - JOINT.forkTip, t - JOINT.up, x) : J.thick - (J.thick - J.hb) * ease(t + JOINT.down[0], t + JOINT.down[1], x));
+  /* A prong's tip is round, as wide as what's left beyond the tongue there. */
+  const prongTipR = (J, t) => (outerY(J, t, t - JOINT.forkTip) - tongueY(J, t, t - JOINT.forkTip) - JOINT.play) / 2;
+
   /**
-   * Where the half-lap joints go. Each section takes as much as fits the bed, so that the first is long enough for the
-   * gauge, with the joint's whole length clear of the rods.
+   * Where a joint's two bolts go with a tongue tip at t, or null if rods leave no room. They stay on the prongs' full thickness,
+   * as near their usual places as the rods allow, with a rod's hole and a bolt's kept apart.
    */
-  function planSections(rods, bed, scale) {
-    const front = rods[rods.length - 1].x + FRONT, usable = (bed - BRIM) / scale;
-    const starts = [], laps = [];
-    let at = REAR;
-    while (front - at > usable) {
-      let a = at + usable - LAP;
-      for (;;) {
-        const bad = rods.find((r) => r.x > a - LAP_CLEAR && r.x < a + LAP + LAP_CLEAR);
-        if (!bad) break;
-        a = bad.x - LAP - LAP_CLEAR;
+  function placeBolts(t, rods) {
+    const lo = t - JOINT.up, hi = t - JOINT.bolts[1], want = [t - JOINT.bolts[0], t - JOINT.bolts[1]];
+    const free = (x) => rods.every((r) => Math.abs(r.x - x) >= r.hole / 2 + JOINT.bolt.hole / 2 + JOINT.rodClear);
+    let best = null;
+    for (let a = lo; a <= hi; a += 0.5) {
+      if (!free(a)) continue;
+      for (let b = a + JOINT.boltMin; b <= hi + 1e-9; b += 0.5) {
+        if (!free(b)) continue;
+        const cost = Math.abs(a - want[0]) + Math.abs(b - want[1]);
+        if (!best || cost < best.cost) best = { cost, x: [a, b] };
       }
-      if (a < at + LAP + 20) throw new Error(`There's nowhere to join the boom within a ${Math.round(bed)} mm bed: the rods leave no ${LAP + 2 * LAP_CLEAR} mm gap in reach. Try a bigger bed or wider spacing.`);
-      laps.push(a);
-      at = a;
     }
-    starts.push(REAR);
-    const sections = [];
-    for (let i = 0; i <= laps.length; i++) {
-      const prev = i ? laps[i - 1] : null, next = i < laps.length ? laps[i] : null;
-      sections.push({ i, x0: prev === null ? REAR : prev + GAP, x1: next === null ? front : next + LAP - GAP, prev, next, upper: i % 2 === 1 });
-    }
-    return sections;
+    return best && best.x;
   }
 
-  /** A section's tabs alternate: the lower half of the joint on odd ones, upper on even, so each prints with them on the bed. */
+  /** Whether a joint can go with its tongue's tip at t. Returns its bolts and the rods through its tongue, or null. */
+  function jointAt(t, rods, J, cleanOnly) {
+    const root = t - JOINT.flare[0], out = t + JOINT.down[1];
+    const driven = rods.find((r) => r.driven);
+    if (driven && driven.x > root - WINDOW[0] / 2 - 4 && driven.x < out + WINDOW[0] / 2 + 4) return null;        // its window would cut the joint away
+    const through = rods.filter((r) => r.x + r.hole / 2 + 2 > root && r.x - r.hole / 2 - JOINT.tipClear < t + JOINT.crotch);
+    if (cleanOnly && through.length) return null;
+    // the rods that would stay: through the tongue, short of its tip, or past the fork's crotch
+    const fine = through.every((r) => (r.x + r.hole / 2 + JOINT.tipClear <= t || r.x - r.hole / 2 - JOINT.tipClear >= t + JOINT.crotch) && r.hole <= 2 * J.tongue - 4);
+    if (!fine) return null;
+    const bolts = placeBolts(t, rods);
+    return bolts && { t, bolts, through: through.filter((r) => r.x <= t) };
+  }
+
+  /**
+   * Where the joints go. Each section takes as much as fits the bed, so that the first is long enough for the gauge. A place
+   * with no rod in the tongue comes first, however far back that is. If there's none, a rod goes through the tongue.
+   */
+  function planSections(rods, bed, scale, sizes) {
+    const J = jointY(sizes.w), front = rods[rods.length - 1].x + FRONT;
+    const usableFor = (w) => (YS.longestOn(bed, w * scale + BRIM) - BRIM) / scale;
+    const rear = usableFor(sizes.w), rest = usableFor(2 * J.thick);
+    const size = YS.bedOf(bed);
+    if (rear <= 0) throw new Error(`A boom ${sizes.w} mm wide doesn't fit a bed ${size.x} x ${size.y} mm, with room for a brim.`);
+    const joints = [];
+    let x0 = REAR, usable = rear, floor = rods[0].x + JOINT.sectionMin + JOINT.flare[0];
+    while (front - x0 > usable) {
+      const top = Math.min(x0 + usable - 0.2, front - JOINT.down[1] - 2);
+      const scan = (clean) => { for (let t = top; t >= floor; t -= 0.5) { const j = jointAt(t, rods, J, clean); if (j) return j; } return null; };
+      const j = rest > 0 ? scan(true) || scan(false) : null;
+      if (!j) throw new Error(`There's nowhere to join the boom within a ${size.x} x ${size.y} mm bed: a section can't reach far enough, the driven element's window is in the way, or the rods leave no room for the joint's two bolts. Try a bigger bed, corner to corner printing, or wider spacing.`);
+      joints.push(j);
+      x0 = j.t - JOINT.forkTip - prongTipR(J, j.t);
+      usable = rest;
+      floor = j.t + JOINT.down[1] + JOINT.flare[0];       // the next tongue's root starts where this fork has come back to the boom's width
+    }
+    return joints.concat([null]).map((next, i) => {
+      const prev = i ? joints[i - 1] : null;
+      return { i, x0: prev ? prev.t - JOINT.forkTip - prongTipR(J, prev.t) : REAR, x1: next ? next.t : front, prev, next, wide: prev ? 2 * J.thick : sizes.w };
+    });
+  }
+
   function sectionRods(rods, s) { return rods.filter((r) => r.x >= s.x0 && r.x <= s.x1); }
 
   /**
@@ -179,14 +240,15 @@
    */
   function planGauge(design, rods, section, sizes, allowance) {
     const channels = YS.guideChannels(design, allowance);
-    const stop = REAR + STOP, end = section.next === null ? section.x1 : section.next;
-    const fits = channels.filter((c) => stop + c.length < end - 2);
+    // a rod butts against the wall at the V's front end, and the V runs off the boom's rear end, so that an uncut rod of any length lies in it
+    const stop = REAR + MARK_FROM, end = (section.next === null ? section.x1 : section.next.t - JOINT.flare[0]) - GAUGE_WALL;
+    const fits = channels.filter((c) => end - c.length > stop);
     if (!fits.length) return { fits: false, reason: "The rods are longer than this boom section, so the gauge doesn't fit. The Cut list's guide still works." };
     const missing = channels.length - fits.length;
     const k = 0.7, pitch = 3.2, labelY = sizes.w / 2 - 4.4;
     const marks = fits.map((c) => {
       const label = engravable(c.label), width = textWidth(label, k, pitch);
-      return { rod: c.label, label, length: c.length, x: stop + c.length, width };
+      return { rod: c.label, label, length: c.length, x: end - c.length, width };
     }).sort((a, b) => a.x - b.x);
     // spread the labels until they stop overlapping, keeping each group centred on its marks
     marks.forEach((m) => { m.lx = m.x; });
@@ -239,41 +301,77 @@
   }
 
   /* ---------- the boom ---------- */
+  const steps = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + (b - a) * i / n);
+  const arc = (cx, cy, r, a0, a1, n) => steps(a0, a1, n).map((d) => [cx + r * Math.cos(d * Math.PI / 180), cy + r * Math.sin(d * Math.PI / 180)]);
+
+  /* The tongue, from the boom's full width at its root to its round tip, with a ridge on each face to centre it in the prongs' grooves. */
+  function tongue(K, t, J, z) {
+    const from = t - JOINT.flare[0] - 1, r = t - J.tongue, side = (s) => steps(from, r, 90).map((x) => [x, s * tongueY(J, t, x)]);
+    const body = K.prism([...side(-1), ...arc(r, 0, J.tongue, -90, 90, 16), ...side(1).reverse()], -z, z);
+    const V = JOINT.v, seat = J.tongue + V.gap, base = J.tongue - 0.3, hb = V.half + (seat - base), ht = V.half - (J.tongue + V.tipOut - seat);
+    const ridge = (s) => {
+      const at = (x) => [[x, s * base, hb], [x, s * base, -hb], [x, s * (J.tongue + V.tipOut), ht], [x, s * (J.tongue + V.tipOut), -ht]];
+      const end = (x) => [[x, s * J.tongue, 0.01], [x, s * J.tongue, -0.01], [x, s * base, hb], [x, s * base, -hb]];
+      return K.hull([...at(t - V.full[0]), ...at(t - V.full[1]), ...end(t - V.ease[0]), ...end(t - V.ease[1])]);
+    };
+    return K.fuse([body, ridge(-1), ridge(1)]);
+  }
+
+  /* The fork, from its prongs' round tips to where its outside has come back to the boom's width, with the grooves for the tongue's ridges. */
+  function fork(K, t, J, z, end) {
+    const tip = t - JOINT.forkTip, r = t + JOINT.crotch - J.tongue - JOINT.play, tipR = prongTipR(J, t);
+    const inner = (s) => steps(tip, r, 60).map((x) => [x, s * (tongueY(J, t, x) + JOINT.play)]);
+    const outer = (s) => [...steps(tip, t + JOINT.down[1], 90), end].map((x) => [x, s * outerY(J, t, x)]);
+    const tipY = tongueY(J, t, tip) + JOINT.play + tipR;
+    const pts = [...outer(-1), ...outer(1).reverse(), ...arc(tip, tipY, tipR, 90, 270, 8).slice(1, -1), ...inner(1),
+      ...arc(r, 0, J.tongue + JOINT.play, 90, -90, 24).slice(1, -1), ...inner(-1).reverse(), ...arc(tip, -tipY, tipR, 90, 270, 8).slice(1, -1)];
+    const V = JOINT.v, face = J.tongue + JOINT.play, h = V.half + 0.25;
+    const groove = (s) => {
+      const at = (x) => [[x, s * (face + V.depth), 0], [x, s * (face - 0.25), h], [x, s * (face - 0.25), -h]];
+      return K.hull([...at(tip - 2), ...at(t + JOINT.crotch - 3.5), [t + JOINT.crotch - 1, s * face, 0], [t + JOINT.crotch - 1, s * (face - 0.25), h / 3], [t + JOINT.crotch - 1, s * (face - 0.25), -h / 3]]);
+    };
+    return K.cut(K.prism(pts, -z, z), [groove(-1), groove(1)]);
+  }
+
+  /* A bolt's hole, across the boom, with a 45 degree point on top so it prints without sagging. */
+  const teardrop = (x, d) => [...arc(x, 0, d / 2, -225, 45, 32), [x, d / 2 * Math.SQRT2]];
+  const hexUp = (x, flats) => { const r = flats / Math.sqrt(3); return [0, 1, 2, 3, 4, 5].map((k) => [x + r * Math.sin(k * Math.PI / 3), r * Math.cos(k * Math.PI / 3)]); };
+
   function boomSection(K, sec, rods, sizes, opts) {
-    const { w, h } = sizes;
+    const { w, h } = sizes, J = jointY(w);
     const y = w / 2, z = h / 2;
-    // the body, then the half of the joint at each end. Lower halves on section 0, 2 ..., upper on the others
-    const tabZ = sec.upper ? [0, z] : [-z, 0];
-    const parts = [K.box(sec.prev === null ? REAR : sec.prev + LAP, sec.next === null ? sec.x1 : sec.next, -y, y, -z, z)];
-    if (sec.prev !== null) parts.push(K.box(sec.prev + GAP, sec.prev + LAP, -y, y, tabZ[0], tabZ[1]));
-    if (sec.next !== null) parts.push(K.box(sec.next, sec.next + LAP - GAP, -y, y, tabZ[0], tabZ[1]));
+    // the plain boom between the joint at each end
+    const a = sec.prev ? sec.prev.t + JOINT.down[1] : REAR, b = sec.next ? sec.next.t - JOINT.flare[0] : sec.x1;
+    const parts = [K.box(a, b, -y, y, -z, z)];
+    if (sec.prev) parts.push(fork(K, sec.prev.t, J, z, a + 1));
+    if (sec.next) parts.push(tongue(K, sec.next.t, J, z));
     let s = K.fuse(parts);
     const cuts = [];
+    const B = JOINT.bolt;
+    if (sec.next) sec.next.bolts.forEach((x) => cuts.push(K.acrossY(teardrop(x, B.hole), -J.thick - 1, J.thick + 1)));
+    if (sec.prev) sec.prev.bolts.forEach((x) => {
+      cuts.push(K.acrossY(teardrop(x, B.hole), -J.thick - 1, J.thick + 1));
+      cuts.push(K.acrossY(teardrop(x, B.head), J.thick - B.headDepth, J.thick + 1));       // the head sits in this prong
+      cuts.push(K.acrossY(hexUp(x, B.nutFlats), -J.thick - 1, -J.thick + B.nutDepth));     // and the nut in that one
+    });
     sectionRods(rods, sec).forEach((r) => cuts.push(K.cyl(r.x, 0, -z - 5, r.hole, h + 10)));
     const driven = rods.find((r) => r.driven);
     if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) cuts.push(K.box(driven.x - WINDOW[0] / 2, driven.x + WINDOW[0] / 2, -2, y + 1, -WINDOW[1] / 2, WINDOW[1] / 2));
     // the coax runs from the driven element back to the rear end, on any section it reaches
-    if (driven && sec.x0 < driven.x) cuts.push(K.box(sec.x0 - 1, Math.min(driven.x, sec.x1 + 1), y - 2.5, y + 1, -GROOVE / 2, GROOVE / 2));
+    // but not through a joint, where there are bolts and a prong's wall in its way: there it runs outside
+    if (driven && sec.x0 < driven.x) cuts.push(K.box(sec.prev ? a : sec.x0 - 1, Math.min(driven.x, b), y - 2.5, y + 1, -GROOVE / 2, GROOVE / 2));
     if (sec.i === 0) cuts.push(K.cyl(REAR + 7, 0, -z - 5, M3_BOOM, h + 10));      // pins a mount
-    [[sec.prev, true], [sec.next, false]].forEach(([lap]) => {
-      if (lap === null) return;
-      [lap + 8, lap + LAP - 8].forEach((x) => {
-        cuts.push(K.cyl(x, 0, -z - 5, M3_BOOM, h + 10));
-        if (sec.upper) cuts.push(K.cyl(x, 0, z - HEAD_DEPTH, HEAD_BORE, HEAD_DEPTH + 1));     // the head sits flush on an upper half
-        else cuts.push(K.hex(x, 0, NUT_FLATS, -z - 1, -z + NUT_DEPTH));                       // the nut in a lower half
-      });
-    });
     s = K.cut(s, cuts);
     if (sec.i === 0 && opts.gauge) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
     if (sec.i === 0 && opts.label) s = K.cut(s, labelCuts(K, sec, rods, sizes));
     return s;
   }
 
-  /* A V along the top, so it prints without supports and a rod lies true in it. Open at the far end, like the marks,
-     so that hole compensation can't move what sets a rod's length. */
+  /* A V along the top, so it prints without supports and a rod lies true in it. Open along its top and off the rear end, like the
+     marks, so that hole compensation can't move what sets a rod's length, and an uncut rod of any length can lie in it. */
   function gaugeCuts(K, g, notches, sizes) {
     const { w, h, chY, chHalf } = sizes, top = h / 2, out = [];
-    const v = K.prism([[chY - chHalf - 0.5, top + 0.5], [chY + chHalf + 0.5, top + 0.5], [chY, top - chHalf]], g.stop, g.end + 1);
+    const v = K.prism([[chY - chHalf - 0.5, top + 0.5], [chY + chHalf + 0.5, top + 0.5], [chY, top - chHalf]], REAR - 1, g.end);
     out.push(K.turn(v, [90, 0, 90]));     // drawn in (y, z), and pushed along x
     g.marks.forEach((m) => {
       out.push(K.box(m.x - TICK / 2, m.x + TICK / 2, -w / 2 - 1, g.inner, top - DEEP, top + 1));
@@ -293,7 +391,7 @@
   function labelCuts(K, sec, rods, sizes) {
     const y = sizes.w / 2, z = sizes.h / 2;
     const text = "THIS SIDE UP", depth0 = y - DEEP, depth1 = y + 1;
-    const clearOfMount = rods[0].x + 14, end = sec.next === null ? sec.x1 : sec.next;
+    const clearOfMount = rods[0].x + 14, end = sec.next === null ? sec.x1 : sec.next.t - JOINT.flare[0];
     const room = end - clearOfMount - 4;
     const k = Math.min(0.12 * sizes.h / 2 * 1, 1.2 * sizes.h / BOOM_H), pitch = 5 * k;
     const width = textWidth(text, k, pitch) + 12;
@@ -485,7 +583,21 @@
     rods.forEach((r, i) => {
       if (i && r.x - rods[i - 1].x < r.hole / 2 + rods[i - 1].hole / 2 + 4) throw new Error(`${r.name} is too close to ${rods[i - 1].name} for the boom to hold them both.`);
     });
-    const sections = planSections(rods, o.bed, o.scale);
+    const bed = YS.bedOf(o.bed);
+    if (sizes.h > bed.z) throw new Error(`The boom stands ${sizes.h} mm tall as it prints, and your printer's height is ${bed.z} mm.`);
+    const sections = planSections(rods, bed, o.scale, sizes);
+    sections.forEach((s) => { s.place = YS.placeOn(bed, (s.x1 - s.x0) * o.scale + BRIM, s.wide * o.scale + BRIM, sizes.h); });
+    sections.forEach((s) => {
+      if (!s.next || !s.next.through.length) return;
+      warnings.push(`There was no clear place for a joint, so ${s.next.through.map((r) => r.name).join(" and ")} ${s.next.through.length > 1 ? "go" : "goes"} through its tongue, between the prongs, and its bolts have moved to clear ${s.next.through.length > 1 ? "them" : "it"}. Glue ${s.next.through.length > 1 ? "those rods" : "that rod"} in with CA, or use a wider spacing or a bigger bed to avoid it.`);
+    });
+    const driven0 = rods.find((r) => r.driven);
+    if (driven0 && sections.some((s) => s.next && s.next.t < driven0.x)) warnings.push("A joint falls behind the driven element, so the coax's groove stops at it. Tape the coax along the outside of the joint.");
+    // what the other choice would do, so the page can say when corner to corner is worth trying
+    let cornerPieces = null;
+    if (!bed.corner) {
+      try { cornerPieces = planSections(rods, Object.assign({}, bed, { corner: true }), o.scale, sizes).length; } catch (e) { cornerPieces = null; }
+    }
     const boom = rods[rods.length - 1].x - REAR + FRONT;
     if (boom > FLOPPY) warnings.push(`At ${Math.round(boom)} mm, a printed boom will sag and flex. A metal or fibreglass boom suits this better, and metal changes the tuning.`);
     if (sizes.w > BOOM_W) warnings.push(`These rods are thick, so the boom grows to ${sizes.w} x ${sizes.h} mm, a size nobody has printed and tried yet.`);
@@ -496,7 +608,15 @@
     if (gauge && gauge.fits && gauge.missing) warnings.push(`${gauge.missing} rod${gauge.missing > 1 ? "s are" : " is"} too long for the gauge. Use the Cut list's guide for ${gauge.missing > 1 ? "those" : "it"}.`);
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
     if (gauge && gauge.fits && !notches) warnings.push(`The first section is too short for the ${CAL_SPAN} mm check notches.`);
-    return { o, rods, sizes, sections, gauge: gauge && gauge.fits ? gauge : null, notches, warnings, boom };
+    return { o, rods, sizes, sections, gauge: gauge && gauge.fits ? gauge : null, notches, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
+  }
+
+  /** How to lay a part on the bed, in words, when the file as it opens won't do. Files always lie along x. */
+  function placing(place, bed) {
+    if (!place.fits) return place.why === "height" ? `It's too tall for your printer's ${bed.z} mm height.` : `It doesn't fit your ${bed.x} x ${bed.y} mm bed.`;
+    if (place.how === "y") return `Turn it 90 degrees in the slicer, to lie along the bed's ${bed.y} mm side.`;
+    if (place.how === "corner") return `Turn it ${+place.angle.toFixed(2)} degrees in the slicer, to lie corner to corner.`;
+    return "";
   }
 
   /** Makes the solids. Returns [{ id, name, file, mesh, size, volume, print }] and the same plan as planParts. */
@@ -509,13 +629,16 @@
       if (placed.status() !== "NoError") throw new Error(`${name} didn't come out as a solid: ${placed.status()}`);
       out.push({ id, name, file: `${safe}_${id}.stl`, mesh: K.mesh(placed), volume: placed.volume(), genus: placed.genus(),
         size: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]], print });
+      const p = out[out.length - 1];
+      p.place = YS.placeOn(plan.bed, p.size[0] + BRIM, p.size[1] + BRIM, p.size[2]);
+      p.placing = placing(p.place, plan.bed);
     };
     try {
       sections.forEach((sec) => {
         const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, label: o.label });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
-        add(id, nameIt, solid, sec.upper ? [180, 0, 0] : null, sec.upper ? "As the file has it, already upside down so its joint lies on the bed. A brim helps." : "As the file has it, with the joint on the bed. A brim helps.");
+        add(id, nameIt, solid, null, "As the file has it, lying flat with its side up, and the joint's faces standing. A brim helps.");
       });
       const roll = rollFor(design.polarization), soft = o.soft !== false;
       if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.mast.print);
@@ -542,15 +665,20 @@
     L.push(`${design.name}: printing and building`, "", "NEW AND UNTESTED: nothing from Yagi Studio's 3D print tab has been printed yet. Print one, measure it and test-fit it before you rely on it.", "", "PRINTING", `0.2 mm layers, 5 walls, 15% gyroid infill, in PETG or ASA, no supports.`,
       `X-Y hole compensation ${HOLE_COMP} mm for the boom and coupon: their holes are modelled for it and come out too small without it. A mount's fine with or without it.`,
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
-    parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}`));
+    parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
+    if (parts.some((p) => p.place && p.place.how === "corner")) L.push("", "CORNER TO CORNER: check that your slicer lets you use the plate's corners. Some printers keep an edge or a corner clear for purge lines, clips or the wipe tower.");
     if (plan.notches) L.push("", "CHECK THE PRINT BEFORE USING THE GAUGE", `Spread your calipers' inside jaws between the far walls of the two notches on the boom's top. It should read ${CAL_SPAN.toFixed(2)} mm, within about 0.15 mm. If it's off, the gauge's marks are off by about the same share, so fix the shrinkage and reprint, or cut with calipers instead.`);
     if (plan.gauge) {
-      L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, against the wall at the rear. Cut a little past its mark, then file to the mark. Measure the first rod with calipers before you trust the rest.");
+      L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, with its end against the wall at the V's front end. It can run off the boom's rear end. Cut a little past its mark, toward the rear, then file to the mark. Measure the first rod with calipers before you trust the rest.");
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));
     }
+    if (joints) L.push("", "THE JOINT" + (joints > 1 ? "S" : ""), "Slide the tongue into the fork, ridges into grooves, until it stops. If it binds, sand the ridges, not the tongue's faces. Tighten the bolts only until the prongs close on the V: too much bends them. A little glue on the faces makes it stronger if you'll never take it apart. If a rod passes through the tongue, slide the joint together before fitting that rod.");
     L.push("", "HARDWARE");
     rods.forEach((r) => L.push(`  ${r.driven ? `${r.name}: 2 rods` : `${r.name}: 1 rod`}, ${r.d} mm ${r.material === "aluminium" ? "aluminum" : r.material}`));
-    if (joints) L.push(`  ${2 * joints} M3 x 16 socket-head bolts with 2.5 mm nuts, for the joint${joints > 1 ? "s" : ""}`);
+    if (joints) {
+      const grip = 2 * jointY(plan.sizes.w).thick - JOINT.bolt.headDepth - JOINT.bolt.nutDepth + JOINT.bolt.nut, bolt = [20, 25, 30, 35, 40, 50].find((n) => n >= grip) || Math.ceil(grip);
+      L.push(`  ${2 * joints} M3 x ${bolt} socket-head bolts with nuts, across the joint${joints > 1 ? "s" : ""}. The heads and nuts sit in the recesses in the prongs`);
+    }
     if (driven) L.push("  Coax, soldered at the window at the driven element, running back along the groove");
     (MOUNTS[o.mount].hardware || []).forEach((h) => L.push("  " + h));
     L.push("", "IF IT GOES ON A ROOF OR A MAST", "Look up first and stay well clear of power lines, including while raising it. Ground the mast and coax as your local rules require, and check any permits. Don't raise it in wind or near storms.");
@@ -580,5 +708,6 @@
     return loading;
   }
 
-  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt }, planParts, buildParts, partsNotes, mastBehind, loadManifold });
+  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt }, planParts, buildParts, partsNotes, mastBehind, loadManifold, partPlacing: placing });
+  YS.PARTS.JOINT = JOINT;
 })(typeof globalThis !== "undefined" ? globalThis : this);

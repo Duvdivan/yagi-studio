@@ -287,12 +287,13 @@
 
   /* ------------ starting designs ------------ */
   /** DL6WU-style spacings and lengths, as a starting point for any band and rod count. */
-  function startingDesign(f0, count, diameter, material) {
+  function startingDesign(f0, count, diameter, material, driven) {
     const lam = 299792.458 / f0;
     const spacing = [0.2, 0.075, 0.18, 0.215, 0.25, 0.28, 0.3, 0.315, 0.33, 0.345, 0.36, 0.375, 0.39, 0.4];
     // thinner rods resonate longer: a log correction around 1% of a wavelength in diameter
     const corr = 1 + 0.03 * Math.log10(0.0096 * lam / diameter);
-    const elements = [{ type: "reflector", x: 0, L: 0.495 * lam * corr, d: diameter }, { type: "driven", x: spacing[0] * lam, L: 0.46 * lam * corr, d: diameter }];
+    const drivenD = (driven && driven.d) || diameter, drivenMetal = (driven && driven.material) || material;   // often not the same rod as the others
+    const elements = [{ type: "reflector", x: 0, L: 0.495 * lam * corr, d: diameter }, { type: "driven", x: spacing[0] * lam, L: 0.46 * lam * (1 + 0.03 * Math.log10(0.0096 * lam / drivenD)), d: drivenD }];
     let x = elements[1].x;
     for (let i = 2; i < count; i++) {
       x += (spacing[i - 1] || 0.4) * lam;
@@ -300,7 +301,7 @@
       elements.push({ type: "director", x, L: taper * lam * corr, d: diameter });
     }
     const fine = (v) => Math.round(v * 10) / 10;
-    for (const e of elements) { e.x = fine(e.x); e.L = fine(e.L); e.material = material; }
+    for (const e of elements) { e.x = fine(e.x); e.L = fine(e.L); e.material = e.type === "driven" ? drivenMetal : material; }
     return makeDesign({ name: `${count}-element ${Math.round(f0)} MHz`, f0, band: [f0 * 0.992, f0 * 1.008], material, elements });
   }
 

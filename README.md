@@ -15,6 +15,8 @@ Open it once with a network, then install it, and it runs with no network after 
 
 Designs stay in your browser on that device, so use Save to keep a copy.
 
+**Privacy:** the site counts visits with [GoatCounter](https://www.goatcounter.com/), which uses no cookies and keeps nothing that identifies you: the page, the referring site, the screen size, the browser and the country. It sends nothing else, as your designs and readings never leave your device. If your browser asks sites not to track you (Do Not Track or Global Privacy Control), it isn't counted at all. The Android app counts nothing; it doesn't even ask for network access.
+
 ## What to know first
 
 - **Trust a VNA over any model.** The solver matches other references closely, but it hasn't been proven against built hardware. The one antenna measured so far has its best match about 9 MHz above the prediction, and the cause isn't known yet. "How far to trust it" in the app has the details.

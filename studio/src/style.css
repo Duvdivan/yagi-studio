@@ -273,6 +273,15 @@ input::placeholder { color: var(--muted); opacity: .75; }
   .progress i { transition: none; }
 }
 @media print {
+  /* Paper is white whatever the screen's theme: the dark tokens printed the sheet in black and dark blue. These selectors
+     match the dark ones' weight and come after them, so they win. */
+  :root, :root[data-theme="dark"], :root:not([data-theme="light"]) {
+    --bg: #ffffff; --panel: #ffffff; --raised: #ffffff; --sunken: #eef2f6; --ink: #0f1c29; --ink2: #3f4f5e; --muted: #5f6f7e;
+    --line: #d5dde4; --line2: #b6c2cc; --accent: #1a5bb5; --accent-ink: #ffffff; --accent-soft: #dce8f7; --marker: #c04a17;
+    --s1: #1f6fd1; --s2: #e0602c; --s3: #16a06f; --pin: #7a8895; --good: #0a8a3a; --warn: #a86b00; --bad: #c43232;
+    --grid: #e3e9ee; --axis: #b6c2cc; --band: rgba(31, 111, 209, 0.08); --shadow: none;
+    color-scheme: light;
+  }
   body { background: #fff; color: #000; padding: 0; }
   .top, .no-print { display: none !important; }
   .card { border: 0; }

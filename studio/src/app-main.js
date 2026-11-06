@@ -165,6 +165,7 @@
         <div class="field"><label for="n-dd">Driven diameter, mm</label><input class="num" id="n-dd" value="3" inputmode="decimal"></div>
         <div class="field"><label for="n-dm">Driven metal</label><select class="sel" id="n-dm">${metals}</select></div>
       </div>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="n-screws"> I'll hold the rods in the boom with M3 screws. You can change this on the 3D print tab.</label>
       <p class="note" id="n-err" style="margin-top:6px"></p>
       <div class="row" style="margin-top:8px"><button class="btn primary" id="n-go">Create it</button><button class="btn" id="n-no">Cancel</button></div>`, (b, close) => {
       $("#n-no", b).onclick = close;
@@ -175,7 +176,9 @@
         const f = parseFloat($("#n-f", b).value), c = parseInt($("#n-c", b).value, 10), d = A.parseLen($("#n-d", b).value), dd = A.parseLen($("#n-dd", b).value);
         if (!(f > 1) || !(c >= 2 && c <= 40) || !(d > 0) || !(dd > 0)) { $("#n-err", b).textContent = "Enter a frequency above 1 MHz, 2 to 40 rods, and both rod diameters."; return; }
         close();
-        A.loadDesign(YS.startingDesign(f, c, d, $("#n-m", b).value, { d: dd, material: $("#n-dm", b).value }), true);
+        const made = YS.startingDesign(f, c, d, $("#n-m", b).value, { d: dd, material: $("#n-dm", b).value });
+        made.screws = $("#n-screws", b).checked;
+        A.loadDesign(made, true);
         A.go(S.view);
       };
     });

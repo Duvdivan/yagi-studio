@@ -37,7 +37,7 @@
       mast: { on: false, d: 42, behind: 100, length: 2000 },
       cable: { on: false, kind: "rg178", length: 150, vf: 0.695, lossAt1G: 1.6 },
       ground: { on: false, height: 6000, kind: "average" },
-      asBuilt: null, notes: "",
+      asBuilt: null, notes: "", screws: false,   // screws: M3 screws will hold the rods, which the 3D print tab makes holes for
     }, o, { elements: renameElements(o.elements.map((e) => Object.assign({ id: newId() }, e))) });
   }
 

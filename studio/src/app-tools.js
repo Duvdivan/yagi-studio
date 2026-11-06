@@ -742,7 +742,7 @@
   }
 
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
-  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, label: true, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, label: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
   /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
   function bedNow() {
@@ -771,7 +771,7 @@
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -794,7 +794,9 @@
               <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
             </div>
             <label class="check"><input type="checkbox" id="p-gauge"> Rod-cutting gauge and check notches on top of the boom ${A.help("printcheck")}</label>
-            <label class="check"><input type="checkbox" id="p-label"> THIS SIDE UP on the boom's side</label>
+            <label class="check"><input type="checkbox" id="p-label"> Label the boom's side THIS SIDE UP, with an up arrow</label>
+            <label class="check"><input type="checkbox" id="p-screws"> Holes for M3 screws to hold the rods ${A.help("printscrews")}</label>
+            <div class="field-grid" id="p-pilot-wrap"><div class="field"><label for="p-pilot">Screw holes, mm</label><select class="sel" id="p-pilot">${YS.PARTS.SCREW.pilots.map((v) => `<option value="${v}">${v.toFixed(1)}</option>`).join("")}</select></div></div>
             <div class="row"><button class="btn primary" id="p-run">Make the files</button></div>
             <p class="note" id="p-status" role="status"></p>
             <div class="stack" id="p-plan"></div>
@@ -814,6 +816,8 @@
   function renderPrintPlan() {
     const d = S.design, host = $("#p-plan"), run = $("#p-run");
     $("#p-bar-wrap").hidden = !PRINT.useBar;
+    $("#p-screws").checked = !!d.screws;
+    $("#p-pilot-wrap").hidden = !d.screws;
     let plan;
     try {
       plan = YS.planParts(d, printOptions());
@@ -840,6 +844,7 @@
     }
     if (PRINT.mount === "pole") lines.push(`The pole's thread is from a socket proven on one real painter pole, in the USA. Check it fits yours. The pole sits ${fmt(YS.PARTS.POLE_BEHIND, 0)} mm behind the reflector, and a metal one can change the tuning, so sweep it on the pole. Look up first: a pole can reach overhead power lines. Don't raise it in wind or near storms.`);
     if (PRINT.mount === "grip") lines.push("A hand near the rods detunes them. Sweep the antenna the way you'll hold it.");
+    lines.push("Print it in plain PETG or ASA. Not carbon fiber filled: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.");
     host.innerHTML = lines.map((l) => `<p class="note">${l}</p>`).join("") + plan.warnings.map((w) => `<p class="note"><span class="pill warn">Note</span> ${esc(w)}</p>`).join("");
     renderPrintFiles();
   }
@@ -933,6 +938,10 @@
       $("#p-gauge").checked = PRINT.gauge; $("#p-label").checked = PRINT.label;
       $("#p-gauge").onchange = (e) => { PRINT.gauge = e.target.checked; changed(); };
       $("#p-label").onchange = (e) => { PRINT.label = e.target.checked; changed(); };
+      // screws belong to the design, as the New design dialog asks about them, so that they're remembered with it
+      $("#p-screws").onchange = (e) => { S.design.screws = e.target.checked; A.commit(); changed(); };
+      $("#p-pilot").value = String(PRINT.pilot);
+      $("#p-pilot").onchange = (e) => { PRINT.pilot = +e.target.value; changed(); };
       $("#p-run").onclick = runPrint;
       const c = $("#p-view");
       let from = null;

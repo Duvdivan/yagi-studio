@@ -95,11 +95,13 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
   });
   truth("the V ends in a wall square to it", inR(g.end + 1, S.chY, T.hz(g.end) - 1) && !inR(g.end - 1, S.chY, T.hz(g.end) - 1));
   truth("and stops at the socket's mouth, leaving the tail's top whole in the socket", inR(MOUTH - 8, S.chY, T.zb(MOUTH - 8) + T.Ht - 0.3));
-  truth("the notches are 100 mm apart between far walls, along the slope", n && near(n.to - n.from, 100, 1e-9), n && `${n.from.toFixed(1)} to ${n.to.toFixed(1)}`);
+  truth("the notches are 100 mm apart between inner walls, along the slope", n && near(n.to - n.from, 100, 1e-9), n && `${n.from.toFixed(1)} to ${n.to.toFixed(1)}`);
   if (n) {
     const y = S.w / 2 - 0.5, z = (x) => T.hz(x) - 1;
     const a = onBoom(n.from), b = onBoom(n.to);
-    truth("  each wall is where it says, in the solid", inR(a - 0.1, y, z(a)) && !inR(a + 0.1, y, z(a)) && !inR(b - 0.1, y, z(b)) && inR(b + 0.1, y, z(b)));
+    truth("  each inner wall is where it says, in the solid, with the notches outside them", !inR(a - 0.1, y, z(a)) && inR(a + 0.1, y, z(a)) && inR(b - 0.1, y, z(b)) && !inR(b + 0.1, y, z(b)));
+    const drivenAt = duv.elements.find((e) => e.type === "driven").x;
+    truth("  and both notches stay 10 mm clear of the driven element's window", [n.from - 4, n.from, n.to, n.to + 4].every((x) => Math.abs(onBoom(x) - drivenAt) >= YS.PARTS.WINDOW[0] / 2 + 10 - 0.5), `${n.from.toFixed(1)}, ${n.to.toFixed(1)}`);
   }
   const noLabel = by(YS.buildParts(wasm, duv, { mount: "none", label: false, bed: BED, screws: true }), "boom_rear");
   truth("the label is cut in", noLabel.volume - rear.volume > 30 && noLabel.volume - rear.volume < 150, `${(noLabel.volume - rear.volume).toFixed(0)} mm3`);

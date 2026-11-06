@@ -55,8 +55,10 @@
   const MARK_FROM = 1;             // the first a mark can be from the boom's rear end, where the V runs off it
   const TICK = 0.6;                // a length mark's width: the narrowest a 0.4 mm nozzle draws cleanly
   const DEEP = 0.6;                // how deep marks are cut: three 0.2 mm layers
-  const CAL_SPAN = 100;            // between the notches' far walls, to check with calipers
+  const CAL_SPAN = 100;            // between the notches' inner walls, across the land between them, to check with calipers' outside jaws
   const CAL_NOTCH = [4, 2.5];      // each notch's width (x) and depth (z)
+  const NOTCH_CLEAR = 2;           // mm of top face kept between a notch and a rod's hole
+  const NOTCH_CLEAR_DRIVEN = 10;   // mm kept between a notch and the driven element's window, whose plastic is all that holds its halves
   const GRIP = { width: 30, depth: 34, length: 115, back: 60, chamfer: 5 };   // the hand grip, and how far it's held behind the reflector
   const TRIPOD = { size: 36, back: 34, flats: 11.2, nut: 5.6, shelf: 5, bolt: 6.6 };   // block, and a 1/4-20 nut
   const POLE = { plate: 8, bolts: 14, tilt: 30 };          // the pole socket's plate, and its four M3 bolts either side of centre, and how many degrees the thread's axis rises above the bed
@@ -296,15 +298,23 @@
   }
 
   /** The two notches: as near the middle of the boom's top as they'll go, clear of the labels. */
-  function planNotches(gauge, sizes) {
+  function planNotches(gauge, sizes, rods) {
     const [w] = CAL_NOTCH;
-    const hit = (a, b) => gauge.marks.some((m) => m.labelled && a < m.lx + m.width / 2 + 1 && b > m.lx - m.width / 2 - 1);
-    const lo = gauge.stop, hi = gauge.end - CAL_SPAN - 2;
-    const middle = (lo + hi) / 2;
+    // Clear of the labels, of every rod's hole, and well clear of the driven element: there the window leaves only the plastic
+    // gripping its halves, and a notch would cut into it (the owner's catch, 2026-11-06). Rods are placed in the gauge's level
+    // layout, as the notches are.
+    const flat = (x) => gauge.end - (gauge.end - x) / Math.cos((gauge.ang || 0) * Math.PI / 180);
+    const keep = rods.map((r) => { const c = flat(r.x), half = r.driven ? WINDOW[0] / 2 + NOTCH_CLEAR_DRIVEN : r.hole / 2 + NOTCH_CLEAR; return [c - half, c + half]; });
+    const hit = (a, b) => gauge.marks.some((m) => m.labelled && a < m.lx + m.width / 2 + 1 && b > m.lx - m.width / 2 - 1) || keep.some(([c0, c1]) => a < c1 && b > c0);
+    // from and to are the inner walls, CAL_SPAN apart; each notch lies outside them
+    const lo = gauge.stop + w, hi = gauge.end - CAL_SPAN - w - 2;
+    // as far from the driven element as they'll go; with no driven element, as near the middle
+    const driven = rods.find((r) => r.driven), middle = (lo + hi) / 2;
+    const away = (q) => driven ? -Math.min(Math.abs(q - w - flat(driven.x)), Math.abs(q - flat(driven.x)), Math.abs(q + CAL_SPAN - flat(driven.x)), Math.abs(q + CAL_SPAN + w - flat(driven.x))) : Math.abs(q - middle);
     const tries = [];
     for (let p = lo; p <= hi; p += 1) tries.push(p);
-    tries.sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle));
-    const p = tries.find((q) => !hit(q, q + w) && !hit(q + CAL_SPAN - w, q + CAL_SPAN));
+    tries.sort((a, b) => away(a) - away(b));
+    const p = tries.find((q) => !hit(q - w, q) && !hit(q + CAL_SPAN, q + CAL_SPAN + w));
     return p === undefined ? null : { from: p, to: p + CAL_SPAN, y0: sizes.w / 2 - 4 };
   }
 
@@ -458,8 +468,8 @@
     });
     if (notches) {
       const [nw, nd] = CAL_NOTCH;
-      out.push(K.box(notches.from, notches.from + nw, notches.y0, w / 2 + 1, top - nd, top + 1));
-      out.push(K.box(notches.to - nw, notches.to, notches.y0, w / 2 + 1, top - nd, top + 1));
+      out.push(K.box(notches.from - nw, notches.from, notches.y0, w / 2 + 1, top - nd, top + 1));
+      out.push(K.box(notches.to, notches.to + nw, notches.y0, w / 2 + 1, top - nd, top + 1));
     }
     // laid out level, then turned onto the sloped top about the V's front wall, which stays square to the V
     return g.ang ? [K.tilt(K.fuse(out), g.end, top, g.ang)] : out;
@@ -723,11 +733,11 @@
     if (boom > FLOPPY) warnings.push(`At ${Math.round(boom)} mm, a printed boom will sag and flex. A metal or fibreglass boom suits this better, and metal changes the tuning.`);
     if (sizes.w > BOOM_W) warnings.push(`These rods are thick, so the boom grows to ${sizes.w} x ${sizes.h} mm, a size nobody has printed and tried yet.`);
     const gauge = o.gauge ? planGauge(design, rods, sections[0], sizes, o.allowance, taper) : null;
-    const notches = gauge && gauge.fits ? planNotches(gauge, sizes) : null;
+    const notches = gauge && gauge.fits ? planNotches(gauge, sizes, rods) : null;
     if (gauge && !gauge.fits) warnings.push(gauge.reason);
     if (gauge && gauge.fits && gauge.missing) warnings.push(`${gauge.missing} rod${gauge.missing > 1 ? "s are" : " is"} too long for the gauge. Use the Cut list's guide for ${gauge.missing > 1 ? "those" : "it"}.`);
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
-    if (gauge && gauge.fits && !notches) warnings.push(`The first section is too short for the ${CAL_SPAN} mm check notches.`);
+    if (gauge && gauge.fits && !notches) warnings.push(`There's no clear ${CAL_SPAN} mm stretch on the first piece's top for the check notches, away from the gauge's labels, the rods and the driven element's window. To check the print's size instead, measure with calipers between the outsides of two rods' holes far apart, and compare with their spacing plus a hole's width.`);
     return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
   }
 
@@ -792,7 +802,7 @@
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
     parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
     if (parts.some((p) => p.place && p.place.how === "corner")) L.push("", "CORNER TO CORNER: check that your slicer lets you use the plate's corners. Some printers keep an edge or a corner clear for purge lines, clips or the wipe tower.");
-    if (plan.notches) L.push("", "CHECK THE PRINT BEFORE USING THE GAUGE", `Spread your calipers' inside jaws between the far walls of the two notches on the boom's top. It should read ${CAL_SPAN.toFixed(2)} mm, within about 0.15 mm. If it's off, the gauge's marks are off by about the same share, so fix the shrinkage and reprint, or cut with calipers instead.`);
+    if (plan.notches) L.push("", "CHECK THE PRINT BEFORE USING THE GAUGE", `Set your calipers' outside jaws into the two notches on the boom's top and close them on the stretch of top between the notches, against the notches' inner walls. It should read ${CAL_SPAN.toFixed(2)} mm, within about 0.15 mm. If it's off, the gauge's marks are off by about the same share, so fix the shrinkage and reprint, or cut with calipers instead.`);
     if (plan.gauge) {
       L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, with its end against the wall at the V's front end. It can run off the boom's rear end. Cut a little past its mark, toward the rear, then file to the mark. Measure the first rod with calipers before you trust the rest.");
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));

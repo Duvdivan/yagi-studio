@@ -104,6 +104,19 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
     truth("  and both notches stay 10 mm clear of the driven element's window", [n.from - 4, n.from, n.to, n.to + 4].every((x) => Math.abs(onBoom(x) - drivenAt) >= YS.PARTS.WINDOW[0] / 2 + 10 - 0.5), `${n.from.toFixed(1)}, ${n.to.toFixed(1)}`);
   }
   const noLabel = by(YS.buildParts(wasm, duv, { mount: "none", label: false, bed: BED, screws: true }), "boom_rear");
+  {
+    // the gauge and the notches are separate choices
+    const only = (o) => YS.buildParts(wasm, duv, Object.assign({ mount: "none", bed: BED, screws: true, inPlace: true }, o));
+    const nG = only({ gauge: false }), nN = only({ notches: false }), RG = by(nG, "boom_rear"), RN = by(nN, "boom_rear"), y = S.w / 2 - 0.5;
+    const notchAt = (R, x) => !inside(R.mesh, onBoom(x), y, T.hz(onBoom(x)) - 1), m = nN.plan.gauge && nN.plan.gauge.marks[0];
+    truth("gauge off, notches on: no V and no marks, the notches where they were, and the notes say to check the print's size",
+      !nG.plan.gauge && nG.plan.notches && nG.plan.notches.from === n.from && inR(g.end - 1, S.chY, T.hz(g.end) - 1) !== inside(RG.mesh, g.end - 1, S.chY, T.hz(g.end) - 1) &&
+      notchAt(RG, n.from - 2) && notchAt(RG, n.to + 2) && /CHECK THE PRINT'S SIZE/.test(YS.partsNotes(duv, nG)) && !/GAUGE/.test(YS.partsNotes(duv, nG)));
+    truth("gauge on, notches off: the V and marks, and no notches or notch notes",
+      nN.plan.gauge && !nN.plan.notches && !inside(RN.mesh, g.end - 1, S.chY, T.hz(g.end) - 1) && !notchAt(RN, n.from - 2) && !notchAt(RN, n.to + 2) && !/CHECK THE PRINT/.test(YS.partsNotes(duv, nN)) && !!m);
+    const none = only({ gauge: false, notches: false });
+    truth("both off: a plain top", !none.plan.gauge && !none.plan.notches && inside(by(none, "boom_rear").mesh, g.end - 1, S.chY, T.hz(g.end) - 1));
+  }
   truth("the label is cut in", noLabel.volume - rear.volume > 30 && noLabel.volume - rear.volume < 150, `${(noLabel.volume - rear.volume).toFixed(0)} mm3`);
   duv.elements.slice(0, 4).forEach((e) => truth(`the hole for ${e.name} is open and walled`, !inR(e.x, 0, 0.5 + (e.type === "driven" ? 9 : 0)) && inR(e.x, e.d / 2 + 0.5, 9.5)));
   // screws: from the back (-y), at each rod's middle, and the driven element's either side of its window

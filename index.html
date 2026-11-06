@@ -5060,7 +5060,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const cos = Math.cos(Math.atan(taper.m)), flat = (x) => end - (end - x) / cos;
     const stop = taper.m ? flat(MOUTH + MARK_FROM) : REAR + MARK_FROM, vFrom = taper.m ? flat(MOUTH - 1) : REAR - 1;
     const fits = channels.filter((c) => end - c.length > stop);
-    if (!fits.length) return { fits: false, reason: "The rods are longer than this boom section, so the gauge doesn't fit. The Cut list's guide still works." };
+    // the layout alone, which the check notches use with or without the gauge
+    const layout = { stop, end, vFrom, top: taper.hz(end), ang: taper.ang, marks: [] };
+    if (!fits.length) return Object.assign(layout, { fits: false, reason: "The rods are longer than this boom section, so the gauge doesn't fit. The Cut list's guide still works." });
     const missing = channels.length - fits.length;
     const k = 0.7, pitch = 3.2, labelY = sizes.w / 2 - 4.4;
     const marks = fits.map((c) => {
@@ -5097,7 +5099,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return { fits: true, stop, end, vFrom, top: taper.hz(end), ang: taper.ang, marks, inner, labelY, k, pitch, unlabelled: marks.filter((m) => !m.labelled).map((m) => m.rod), missing };
   }
 
-  /** The two notches: as near the middle of the boom's top as they'll go, clear of the labels. */
+  /** The two notches, placed in the gauge's level layout, clear of its labels if it has any. Carries the layout's tilt, to cut them with or without the gauge. */
   function planNotches(gauge, sizes, rods) {
     const [w] = CAL_NOTCH;
     // Clear of the labels, of every rod's hole, and well clear of the driven element: there the window leaves only the plastic
@@ -5115,7 +5117,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     for (let p = lo; p <= hi; p += 1) tries.push(p);
     tries.sort((a, b) => away(a) - away(b));
     const p = tries.find((q) => !hit(q - w, q) && !hit(q + CAL_SPAN, q + CAL_SPAN + w));
-    return p === undefined ? null : { from: p, to: p + CAL_SPAN, y0: sizes.w / 2 - 4 };
+    return p === undefined ? null : { from: p, to: p + CAL_SPAN, y0: sizes.w / 2 - 4, end: gauge.end, top: gauge.top, ang: gauge.ang };
   }
 
   function boomSizes(rods) {
@@ -5249,7 +5251,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       });
     }
     s = K.cut(s, cuts);
-    if (sec.i === 0 && opts.gauge) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
+    if (sec.i === 0 && (opts.gauge || opts.notches)) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
     if (sec.i === 0 && opts.label) s = K.cut(s, labelCuts(K, sec, rods, sizes, opts.screws));
     return s;
   }
@@ -5257,10 +5259,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   /* A V along the top, so it prints without supports and a rod lies true in it. Open along its top and off the rear end, like the
      marks, so that hole compensation can't move what sets a rod's length, and an uncut rod of any length can lie in it. */
   function gaugeCuts(K, g, notches, sizes) {
-    const { w, chY, chHalf } = sizes, top = g.top, out = [];
-    const v = K.prism([[chY - chHalf - 0.5, top + 0.5], [chY + chHalf + 0.5, top + 0.5], [chY, top - chHalf]], g.vFrom, g.end);
-    out.push(K.turn(v, [90, 0, 90]));     // drawn in (y, z), and pushed along x
-    g.marks.forEach((m) => {
+    // either may be off: g is the gauge, notches the check notches, and both share the same level layout and tilt
+    const { w, chY, chHalf } = sizes, L = g || notches, top = L.top, out = [];
+    if (g) out.push(K.turn(K.prism([[chY - chHalf - 0.5, top + 0.5], [chY + chHalf + 0.5, top + 0.5], [chY, top - chHalf]], g.vFrom, g.end), [90, 0, 90]));     // drawn in (y, z), and pushed along x
+    if (g) g.marks.forEach((m) => {
       out.push(K.box(m.x - TICK / 2, m.x + TICK / 2, -w / 2 - 1, g.inner, top - DEEP, top + 1));
       if (!m.labelled) return;
       out.push(K.bar(m.x, g.inner, m.lx, g.labelY - 0.6, top - DEEP, top + 1, TICK));
@@ -5272,7 +5274,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       out.push(K.box(notches.to, notches.to + nw, notches.y0, w / 2 + 1, top - nd, top + 1));
     }
     // laid out level, then turned onto the sloped top about the V's front wall, which stays square to the V
-    return g.ang ? [K.tilt(K.fuse(out), g.end, top, g.ang)] : out;
+    return L.ang ? [K.tilt(K.fuse(out), L.end, top, L.ang)] : out;
   }
 
   /* On the boom's -y side. It reads upright only with the rods vertical, and on horizontal rods it's the side that faces up. */
@@ -5480,7 +5482,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
    * opts: { bed, fit, scale, allowance, gauge, label, mount, screws, pilot }
    */
   function planParts(design, opts) {
-    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, label: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
+    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
     const rods = rodsOf(design, o.fit), sizes = boomSizes(rods), warnings = [];
     if (rods.length < 2) throw new Error("A boom needs at least two rods.");
     rods.forEach((r, i) => {
@@ -5532,12 +5534,14 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const boom = rods[rods.length - 1].x - REAR + FRONT;
     if (boom > FLOPPY) warnings.push(`At ${Math.round(boom)} mm, a printed boom will sag and flex. A metal or fibreglass boom suits this better, and metal changes the tuning.`);
     if (sizes.w > BOOM_W) warnings.push(`These rods are thick, so the boom grows to ${sizes.w} x ${sizes.h} mm, a size nobody has printed and tried yet.`);
-    const gauge = o.gauge ? planGauge(design, rods, sections[0], sizes, o.allowance, taper) : null;
-    const notches = gauge && gauge.fits ? planNotches(gauge, sizes, rods) : null;
+    // the gauge and the notches are separate choices; the notches use the gauge's layout, and its labels only if it's on
+    const top = o.gauge || o.notches ? planGauge(design, rods, sections[0], sizes, o.allowance, taper) : null;
+    const gauge = o.gauge ? top : null;
+    const notches = o.notches ? planNotches(gauge && gauge.fits ? gauge : Object.assign({}, top, { marks: [] }), sizes, rods) : null;
     if (gauge && !gauge.fits) warnings.push(gauge.reason);
     if (gauge && gauge.fits && gauge.missing) warnings.push(`${gauge.missing} rod${gauge.missing > 1 ? "s are" : " is"} too long for the gauge. Use the Cut list's guide for ${gauge.missing > 1 ? "those" : "it"}.`);
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
-    if (gauge && gauge.fits && !notches) warnings.push(`There's no clear ${CAL_SPAN} mm stretch on the first piece's top for the check notches, away from the gauge's labels, the rods and the driven element's window. To check the print's size instead, measure with calipers between the outsides of two rods' holes far apart, and compare with their spacing plus a hole's width.`);
+    if (o.notches && !notches) warnings.push(`There's no clear ${CAL_SPAN} mm stretch on the first piece's top for the check notches, away from the gauge's labels, the rods and the driven element's window. To check the print's size instead, measure with calipers between the outsides of two rods' holes far apart, and compare with their spacing plus a hole's width.`);
     return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
   }
 
@@ -5602,7 +5606,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
     parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
     if (parts.some((p) => p.place && p.place.how === "corner")) L.push("", "CORNER TO CORNER: check that your slicer lets you use the plate's corners. Some printers keep an edge or a corner clear for purge lines, clips or the wipe tower.");
-    if (plan.notches) L.push("", "CHECK THE PRINT BEFORE USING THE GAUGE", `Set your calipers' outside jaws into the two notches on the boom's top and close them on the stretch of top between the notches, against the notches' inner walls. It should read ${CAL_SPAN.toFixed(2)} mm, within about 0.15 mm. If it's off, the gauge's marks are off by about the same share, so fix the shrinkage and reprint, or cut with calipers instead.`);
+    if (plan.notches) L.push("", plan.gauge ? "CHECK THE PRINT BEFORE USING THE GAUGE" : "CHECK THE PRINT'S SIZE", `Set your calipers' outside jaws into the two notches on the boom's top and close them on the stretch of top between the notches, against the notches' inner walls. It should read ${CAL_SPAN.toFixed(2)} mm, within about 0.15 mm. If it's off, the gauge's marks are off by about the same share, so fix the shrinkage and reprint, or cut with calipers instead.`);
     if (plan.gauge) {
       L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, with its end against the wall at the V's front end. It can run off the boom's rear end. Cut a little past its mark, toward the rear, then file to the mark. Measure the first rod with calipers before you trust the rest.");
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));
@@ -7544,6 +7548,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     bedcorner: ["Corner to corner", "A long part can lie across the bed's diagonal, which is longer than either side: about 360 mm on a 256 mm square bed, less what the part's width and brim need. Turn it in your slicer by the angle the file list gives. The corners have to be usable, and on some printers they aren't: purge lines, clips and the wipe tower can take them. A long part on the diagonal is also likelier to lift at its ends, so give it a brim."],
     printfit: ["Rod holes", "How much wider than the rod to model each hole, before the slicer's hole compensation. Print the coupon first: it has holes from 0.10 under to 0.10 over each rod's size. Use the one that grips the rod without bending it, and allow a little more, as a boom's longer holes print tighter than the coupon's."],
     printscrews: ["Screws holding the rods", "A hole in the boom's back at each rod's middle, a little under M3, so that an M3 x 8 screw cuts its own thread in the plastic and presses on the rod. The driven element's two halves get one each, either side of the solder window. Print the coupon first and try the three screw holes on its end, with a rod in place: use the smallest one the screw goes into without splitting the plastic. In the models, a screw at a rod's middle changes nothing, because it sits where the rod's field across it is zero. The two on the driven element move the tuning by about 1 MHz, so fit them before you trim on the VNA, and leave them in."],
+    printgauge: ["The rod-cutting gauge", "A V along the top of the boom with a mark for each rod's length. Lay a rod in the V against the wall at its front end, and cut it at its mark. The marks come from the design's lengths when you make the files, so make the boom again if tuning changes a rod. Leave it off to cut with calipers or the Cut list's guide instead."],
     printcheck: ["The check notches", "Two notches on the top of the boom, 100 mm apart between their inner walls. Set your calipers' outside jaws into the notches and close them on the top between them. If it reads 100.00 mm, within about 0.15 mm, the print is true and so are the gauge's marks. They're open to the boom's edge so that hole compensation can't move them."],
     favor: ["Make the best of", "Once a design has the gain you asked for and stays within your limits, this is what the search spends what's left on. Lowest SWR gives the best match. Highest F/B rejects most from behind. Both raises whichever of the two is worse, with SWR counted as return loss. A longer boom or another rod pays for them. SWR stops counting at 1.04 and F/B at 40 dB, as past those a real build can't hold on to them."],
     gain: ["Gain", "How much stronger the signal is straight ahead than from a reference antenna. dBd compares with a plain dipole, dBi with an ideal point source; dBi is always 2.15 higher. Every 3 dB doubles the power."],
@@ -10118,7 +10123,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
-  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, label: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
   /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
   function bedNow() {
@@ -10147,7 +10152,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, label: PRINT.label, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -10169,7 +10174,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
               <div class="field"><label for="p-shrink">Shrinkage</label><select class="sel" id="p-shrink"><option value="slicer">My slicer handles it</option><option value="bar">Scale from a test bar</option></select></div>
               <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
             </div>
-            <label class="check"><input type="checkbox" id="p-gauge"> Rod-cutting gauge and check notches on top of the boom ${A.help("printcheck")}</label>
+            <label class="check"><input type="checkbox" id="p-gauge"> Rod-cutting gauge on top of the boom ${A.help("printgauge")}</label>
+            <label class="check"><input type="checkbox" id="p-notches"> Check notches on top of the boom, 100 mm apart ${A.help("printcheck")}</label>
             <label class="check"><input type="checkbox" id="p-label"> Label the boom's side THIS SIDE UP, with an up arrow</label>
             <label class="check"><input type="checkbox" id="p-screws"> Holes for M3 screws to hold the rods ${A.help("printscrews")}</label>
             <div class="field-grid" id="p-pilot-wrap"><div class="field"><label for="p-pilot">Screw holes, mm</label><select class="sel" id="p-pilot">${YS.PARTS.SCREW.pilots.map((v) => `<option value="${v}">${v.toFixed(1)}</option>`).join("")}</select></div></div>
@@ -10311,8 +10317,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });
       $("#p-shrink").onchange = (e) => { PRINT.useBar = e.target.value === "bar"; changed(); };
-      $("#p-gauge").checked = PRINT.gauge; $("#p-label").checked = PRINT.label;
+      $("#p-gauge").checked = PRINT.gauge; $("#p-notches").checked = PRINT.notches; $("#p-label").checked = PRINT.label;
       $("#p-gauge").onchange = (e) => { PRINT.gauge = e.target.checked; changed(); };
+      $("#p-notches").onchange = (e) => { PRINT.notches = e.target.checked; changed(); };
       $("#p-label").onchange = (e) => { PRINT.label = e.target.checked; changed(); };
       // screws belong to the design, as the New design dialog asks about them, so that they're remembered with it
       $("#p-screws").onchange = (e) => { S.design.screws = e.target.checked; A.commit(); changed(); };

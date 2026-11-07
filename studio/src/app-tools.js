@@ -742,7 +742,7 @@
   }
 
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
-  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
   /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
   function bedNow() {
@@ -771,7 +771,7 @@
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -795,7 +795,8 @@
             </div>
             <label class="check"><input type="checkbox" id="p-gauge"> Rod-cutting gauge on top of the boom ${A.help("printgauge")}</label>
             <label class="check"><input type="checkbox" id="p-notches"> Check notches on top of the boom, 100 mm apart ${A.help("printcheck")}</label>
-            <label class="check"><input type="checkbox" id="p-label"> Label the boom's side THIS SIDE UP, with an up arrow</label>
+            <label class="check"><input type="checkbox" id="p-label"> Up arrows on both sides of the boom, and TOP on its top</label>
+            <label class="check"><input type="checkbox" id="p-brand"> Yagi Studio on the boom's side</label>
             <label class="check"><input type="checkbox" id="p-screws"> Holes for M3 screws to hold the rods ${A.help("printscrews")}</label>
             <div class="field-grid" id="p-pilot-wrap"><div class="field"><label for="p-pilot">Screw holes, mm</label><select class="sel" id="p-pilot">${YS.PARTS.SCREW.pilots.map((v) => `<option value="${v}">${v.toFixed(1)}</option>`).join("")}</select></div></div>
             <div class="row"><button class="btn primary" id="p-run">Make the files</button></div>
@@ -936,10 +937,11 @@
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });
       $("#p-shrink").onchange = (e) => { PRINT.useBar = e.target.value === "bar"; changed(); };
-      $("#p-gauge").checked = PRINT.gauge; $("#p-notches").checked = PRINT.notches; $("#p-label").checked = PRINT.label;
+      $("#p-gauge").checked = PRINT.gauge; $("#p-notches").checked = PRINT.notches; $("#p-label").checked = PRINT.label; $("#p-brand").checked = PRINT.brand;
       $("#p-gauge").onchange = (e) => { PRINT.gauge = e.target.checked; changed(); };
       $("#p-notches").onchange = (e) => { PRINT.notches = e.target.checked; changed(); };
       $("#p-label").onchange = (e) => { PRINT.label = e.target.checked; changed(); };
+      $("#p-brand").onchange = (e) => { PRINT.brand = e.target.checked; changed(); };
       // screws belong to the design, as the New design dialog asks about them, so that they're remembered with it
       $("#p-screws").onchange = (e) => { S.design.screws = e.target.checked; A.commit(); changed(); };
       $("#p-pilot").value = String(PRINT.pilot);

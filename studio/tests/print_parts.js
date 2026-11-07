@@ -113,7 +113,6 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
     const drivenAt = duv.elements.find((e) => e.type === "driven").x;
     truth("  and both notches stay 10 mm clear of the driven element's window", [n.from - 4, n.from, n.to, n.to + 4].every((x) => Math.abs(onBoom(x) - drivenAt) >= YS.PARTS.WINDOW[0] / 2 + 10 - 0.5), `${n.from.toFixed(1)}, ${n.to.toFixed(1)}`);
   }
-  const noLabel = by(YS.buildParts(wasm, duv, { mount: "none", label: false, bed: BED, screws: true }), "boom_rear");
   {
     // the gauge and the notches are separate choices
     const only = (o) => YS.buildParts(wasm, duv, Object.assign({ mount: "none", bed: BED, screws: true, inPlace: true }, o));
@@ -127,7 +126,6 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
     const none = only({ gauge: false, notches: false });
     truth("both off: a plain top", !none.plan.gauge && !none.plan.notches && inside(by(none, "boom_rear").mesh, g.end - 1, S.chY, T.hz(g.end) - 1));
   }
-  truth("the label is cut in", noLabel.volume - rear.volume > 30 && noLabel.volume - rear.volume < 150, `${(noLabel.volume - rear.volume).toFixed(0)} mm3`);
   duv.elements.slice(0, 4).forEach((e) => truth(`the hole for ${e.name} is open and walled`, !inR(e.x, 0, 0.5 + (e.type === "driven" ? 9 : 0)) && inR(e.x, e.d / 2 + 0.5, 9.5)));
   // screws: from the back (-y), at each rod's middle, and the driven element's either side of its window
   [0, 73.5, 163.8].forEach((x) => truth(`a screw hole at x ${x}'s middle, from the back to the rod, with plastic round it`, !inR(x, -S.w / 2 + 0.3, 0) && !inR(x, -3, 0) && inR(x, -5, 2.6) && inR(x, -5, -2.6) && inR(x, 5, 0)));
@@ -137,10 +135,35 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
   [272.4, 378.6].forEach((x) => truth(`the front piece's rod at ${x} has one too`, !inside(F0, x, -4, 0) && inside(F0, x, -4, 2.6)));
   const noScrews = by(YS.buildParts(wasm, duv, { mount: "none", bed: BED, inPlace: true, coupon: false }), "boom_rear").mesh;
   truth("and none without the option", inside(noScrews, 73.5, -5, 0) && inside(noScrews, xd, -5, T.zs));
-  truth("the label stays clear of the screws' heads", noLabel.volume > rear.volume && (() => {
-    const L = by(YS.buildParts(wasm, duv, { mount: "none", bed: BED, inPlace: true, coupon: false, screws: true }), "boom_rear").mesh;
-    return [0, 73.5, 163.8].every((x) => [-3.4, 3.4].every((dx) => [-3, 0, 3].every((z) => inside(L, x + dx, -S.w / 2 + 0.3, z))));
-  })());
+  // the rod's hole is 0.15 mm wider each side where a screw's hole meets it, as the slicer leaves out hole compensation there
+  truth("each rod's hole is wider where its screw's hole meets it, and only there", [0, 73.5, 163.8].every((x) => !inR(x, 1.525 + 0.09, 0) && inR(x, 1.525 + 0.09, 6) && inR(x, 1.525 + 0.25, 0)) &&
+    [-1, 1].every((k) => !inR(xd, 1.5875 + 0.09, k * T.zs) && inR(xd, 1.5875 + 0.09, k * (T.zs + 4.5))));
+  // the gauge's names are on the -y side, below the V, each with a mark running over the edge and a leader to it
+  {
+    const turned = (xf, zf) => { const a = T.ang * Math.PI / 180, dx = xf - g.end, dz = zf - g.top; return [g.end + dx * Math.cos(a) + dz * Math.sin(a), g.top - dx * Math.sin(a) + dz * Math.cos(a)]; };
+    const yS = -S.w / 2 + 0.3, open = (xf, zf) => { const [x, z] = turned(xf, zf); return !inR(x, yS, z); };
+    truth("every mark runs down the side", g.marks.every((m) => open(m.x, g.top - 1) && !open(m.x + 0.6, g.top - 1)));      // only 0.6 past, as D1's and D2's are 1.5 mm apart
+    truth("and every name is written below it, on the side", g.marks.every((m) => {
+      let n = 0;
+      for (let x = m.lx - m.width / 2; x <= m.lx + m.width / 2; x += 0.25) for (let z = g.rowTop - g.H; z <= g.rowTop; z += 0.25) if (open(x, z)) n++;
+      return m.labelled && n > 20;
+    }), g.marks.map((m) => `${m.rod} ${m.lx.toFixed(1)}`).join(", "));
+    truth("the top keeps no names: between the V and the edge it's whole", g.marks.every((m) => [2, 4, 6].every((y) => { const [x, z] = turned(m.lx, g.top - 0.3); return inR(x, y, z); })));
+  }
+  // nothing written covers a screw's head, on either piece
+  truth("nothing written covers a screw's head", [[R0, [0, 73.5, 163.8]], [by(here, "boom_front").mesh, [272.4, 378.6]]].every(([M, xs]) => xs.every((x) => [-3.4, 0, 3.4].every((dx) => [-3, 0, 3].every((z) => Math.abs(dx) < 1 && Math.abs(z) < 1.4 || inside(M, x + dx, -S.w / 2 + 0.3, z))))) &&
+    [-1, 1].every((k) => [-3.4, 3.4].every((dx) => [-3, 0, 3].every((dz) => inR(xd + dx, -S.w / 2 + 0.3, k * T.zs + dz)))));
+  // up arrows on both sides and TOP on the top, in place of THIS SIDE UP, and the name, on the front piece (the owner, 2026-11-07)
+  {
+    const Fc = here.plan.faces, FM = by(here, "boom_front").mesh, yS = S.w / 2 - 0.3, h2 = S.h / 2;
+    truth("the arrows, TOP and the name are planned on the front piece", Fc && Fc.section === 1 && Fc.arrows.length === 2 && Fc.top && Fc.brand && !here.plan.warnings.length, JSON.stringify(Fc && { arrows: Fc.arrows.map((a) => [a.side, a.x.toFixed(1)]), top: Fc.top && Fc.top.x.toFixed(1), brand: Fc.brand && [Fc.brand.side, Fc.brand.x.toFixed(1)] }));
+    truth("an arrow's shaft is cut in each side, pointing up to the top", Fc.arrows.every((a) => !inside(FM, a.x, a.side * yS, 0) && !inside(FM, a.x, a.side * yS, a.half - 0.5) && inside(FM, a.x + 2, a.side * yS, 0) && inside(FM, a.x, a.side * yS, -a.half - 1) && !inside(FM, a.x + 3.5 * 0.86 / 2, a.side * yS, a.half - 3.5 / 2)));
+    const someOpen = (x0, x1, f) => { for (let x = x0; x <= x1; x += 0.2) if (f(x)) return true; return false; };
+    truth("TOP is cut in the top", someOpen(Fc.top.x - Fc.top.W / 2, Fc.top.x + Fc.top.W / 2, (x) => !inside(FM, x, Fc.top.y0 + 0.4, h2 - 0.3)));
+    truth("and Yagi Studio on a side", someOpen(Fc.brand.x - Fc.brand.W / 2, Fc.brand.x + Fc.brand.W / 2, (x) => !inside(FM, x, Fc.brand.side * yS, 0)));
+    const off = (o) => YS.planParts(duv, Object.assign({ bed: BED, screws: true }, o)).faces;
+    truth("each can be left off", (() => { const a = off({ label: false }), b = off({ brand: false }); return a.arrows.length === 0 && !a.top && a.brand && b.arrows.length === 2 && b.top && !b.brand && off({ label: false, brand: false }) === null; })());
+  }
   // the tail in the socket: it seats with nothing overlapping and slides out along its faces
   {
     const { Manifold } = wasm;

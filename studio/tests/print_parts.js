@@ -94,7 +94,17 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
     truth(`the V's floor follows the slope, at x ${x.toFixed(0)}`, !inR(x + 0.3, S.chY, floor + 0.25) && inR(x + 0.3, S.chY, floor - 0.25));
   });
   truth("the V ends in a wall square to it", inR(g.end + 1, S.chY, T.hz(g.end) - 1) && !inR(g.end - 1, S.chY, T.hz(g.end) - 1));
-  truth("and stops at the socket's mouth, leaving the tail's top whole in the socket", inR(MOUTH - 8, S.chY, T.zb(MOUTH - 8) + T.Ht - 0.3));
+  // the V carries on along the tail's top to the rear end, so that its only end is the wall (the owner's catch, 2026-11-07)
+  [MOUTH - 3, MOUTH - 14, REAR + 1.5].forEach((x) => {
+    const tt = T.zb(x) + T.Ht, floor = tt - S.chHalf / cos;
+    truth(`the V runs on along the tail, at x ${x.toFixed(1)}`, !inR(x, S.chY, floor + 0.25) && inR(x, S.chY, floor - 0.25) && inR(x, S.chY + S.chHalf + 1.5, tt - 0.3));
+  });
+  truth("the gauge has a 0 just past its wall, on the V's line", (() => {
+    const z0 = g.zero, xm = z0.x + 1.5 * z0.k, ym = z0.y + 2.5 * z0.k, xb = g.end + (z0.x - g.end) * cos, zt = (x) => T.hz(g.end) + (g.end - x) * Math.tan(T.ang * Math.PI / 180);
+    return !inR(xb, ym, zt(xb) - 0.3) && inR(xm, ym, zt(xm) - 0.3) && !inR(xm, z0.y, zt(xm) - 0.3);
+  })());
+  // the coax's groove has a flat floor and a 45 degree roof, so it prints without supports (the owner's catch, 2026-11-07)
+  truth("the coax's groove has a flat floor and a 45 degree roof", [[S.w / 2 - 0.2, 2.4, 2.8], [S.w / 2 - 1.2, 1.4, 1.8], [S.w / 2 - 2.3, 0.3, 0.7]].every(([y, open, solid]) => !inR(20, y, open) && inR(20, y, solid) && !inR(20, y, -1.3) && inR(20, y, -1.7)) && inR(20, S.w / 2 - 2.7, 0));
   truth("the notches are 100 mm apart between inner walls, along the slope", n && near(n.to - n.from, 100, 1e-9), n && `${n.from.toFixed(1)} to ${n.to.toFixed(1)}`);
   if (n) {
     const y = S.w / 2 - 0.5, z = (x) => T.hz(x) - 1;

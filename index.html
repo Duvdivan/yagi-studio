@@ -4842,7 +4842,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   };
   const GAUGE_WALL = 8;            // from the V's end wall to the tongue's root or the boom's front end
   const BRIM = 16;                 // bed length a section can't use: a brim on both ends, and a margin
-  const GROOVE = 3;                // the coax's groove, for RG178 and the like, on the +y face
+  const GROOVE = 3;                // the coax's slot through a mount's socket and along its arm, which print standing, for RG178 and the like
+  const COAX = { depth: 2.5, floor: -1.5, inner: 1.6 };   // the coax's groove along the boom's +y face, mm: how deep, its flat floor's z, and its inside wall's height, under a 45 degree roof
   const WINDOW = [12, 15];         // the solder window at the driven element (x, z): long enough along the rods for a heat-sink clip beside the joint
   const WINDOW_SHORT = 10;         // its length along the rods where the boom can't widen there
   const TAPER_MAX = 5;             // degrees: the steepest the boom's faces slope toward the driven element, so its holes stay near vertical as it prints
@@ -5061,7 +5062,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const stop = taper.m ? flat(MOUTH + MARK_FROM) : REAR + MARK_FROM, vFrom = taper.m ? flat(MOUTH - 1) : REAR - 1;
     const fits = channels.filter((c) => end - c.length > stop);
     // the layout alone, which the check notches use with or without the gauge
-    const layout = { stop, end, vFrom, top: taper.hz(end), ang: taper.ang, marks: [] };
+    // On a tapered boom the tail's top slopes down behind the socket's mouth, so the V carries on along it to the rear end, as a
+    // second V: then its only end is the wall, and nobody measures from the wrong end (the owner's catch, 2026-11-07).
+    const tail = taper.m ? { x0: REAR - 1, x1: MOUTH + 0.5, px: MOUTH, pz: taper.hz(MOUTH), ang: -taper.ang } : null;
+    // a 0 on the top just past the wall, on the V's line, where lengths are measured from
+    const zero = { x: end + 1.2, y: sizes.chY - 1.75, k: 0.7 };
+    const layout = { stop, end, vFrom, top: taper.hz(end), ang: taper.ang, marks: [], tail, zero };
     if (!fits.length) return Object.assign(layout, { fits: false, reason: "The rods are longer than this boom section, so the gauge doesn't fit. The Cut list's guide still works." });
     const missing = channels.length - fits.length;
     const k = 0.7, pitch = 3.2, labelY = sizes.w / 2 - 4.4;
@@ -5096,7 +5102,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         }
       }
     });
-    return { fits: true, stop, end, vFrom, top: taper.hz(end), ang: taper.ang, marks, inner, labelY, k, pitch, unlabelled: marks.filter((m) => !m.labelled).map((m) => m.rod), missing };
+    return { fits: true, stop, end, vFrom, top: taper.hz(end), ang: taper.ang, tail, zero, marks, inner, labelY, k, pitch, unlabelled: marks.filter((m) => !m.labelled).map((m) => m.rod), missing };
   }
 
   /** The two notches, placed in the gauge's level layout, clear of its labels if it has any. Carries the layout's tilt, to cut them with or without the gauge. */
@@ -5209,6 +5215,14 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return K.cut(K.prism(pts, -z, z), [groove(-1), groove(1)]);
   }
 
+  /* The coax's groove along the boom's side: a flat floor and a roof sloping up at 45 degrees to the face, so that it prints with
+     no supports (the owner's catch, 2026-11-07: the square groove's flat roof took a row of them). A 1.8 mm coax lies on the
+     floor against the inside wall, wholly inside the boom. */
+  function coaxGroove(K, x0, x1, y) {
+    const { depth: d, floor: f, inner: h } = COAX, top = f + h + d;
+    return K.turn(K.prism([[y + 1, f], [y + 1, top + 1], [y, top], [y - d, f + h], [y - d, f]], x0, x1), [90, 0, 90]);    // drawn in (y, z), pushed along x
+  }
+
   /* A bolt's hole, across the boom, with a 45 degree point on top so it prints without sagging. */
   const teardrop = (x, d) => [...arc(x, 0, d / 2, -225, 45, 32), [x, d / 2 * Math.SQRT2]];
   const hexUp = (x, flats) => { const r = flats / Math.sqrt(3); return [0, 1, 2, 3, 4, 5].map((k) => [x + r * Math.sin(k * Math.PI / 3), r * Math.cos(k * Math.PI / 3)]); };
@@ -5237,7 +5251,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) cuts.push(K.box(driven.x - WINDOW[0] / 2, driven.x + WINDOW[0] / 2, -2, y + 1, -T.win / 2, T.win / 2));
     // the coax runs from the driven element back to the rear end, on any section it reaches
     // but not through a joint, where there are bolts and a prong's wall in its way: there it runs outside
-    if (driven && sec.x0 < driven.x) cuts.push(K.box(sec.prev ? a : sec.x0 - 1, Math.min(driven.x, b), y - 2.5, y + 1, -GROOVE / 2, GROOVE / 2));
+    if (driven && sec.x0 < driven.x) cuts.push(coaxGroove(K, sec.prev ? a : sec.x0 - 1, Math.min(driven.x, b), y));
     if (sec.i === 0) cuts.push(K.cyl(REAR + 7, 0, -zz, M3_BOOM, 2 * zz));      // pins a mount
     // screws from the back, at each rod's middle, where they don't change the antenna; the driven element's either side of its window.
     // Not on a rod through a joint's tongue, where the prongs are in the way.
@@ -5262,6 +5276,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     // either may be off: g is the gauge, notches the check notches, and both share the same level layout and tilt
     const { w, chY, chHalf } = sizes, L = g || notches, top = L.top, out = [];
     if (g) out.push(K.turn(K.prism([[chY - chHalf - 0.5, top + 0.5], [chY + chHalf + 0.5, top + 0.5], [chY, top - chHalf]], g.vFrom, g.end), [90, 0, 90]));     // drawn in (y, z), and pushed along x
+    if (g) out.push(...K.word("0", g.zero.x, g.zero.y, g.zero.k, top - DEEP, top + 1, TICK, 0));
     if (g) g.marks.forEach((m) => {
       out.push(K.box(m.x - TICK / 2, m.x + TICK / 2, -w / 2 - 1, g.inner, top - DEEP, top + 1));
       if (!m.labelled) return;
@@ -5274,7 +5289,11 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       out.push(K.box(notches.to, notches.to + nw, notches.y0, w / 2 + 1, top - nd, top + 1));
     }
     // laid out level, then turned onto the sloped top about the V's front wall, which stays square to the V
-    return L.ang ? [K.tilt(K.fuse(out), L.end, top, L.ang)] : out;
+    const cuts = L.ang ? [K.tilt(K.fuse(out), L.end, top, L.ang)] : out;
+    // the V along the tail, drawn level at the mouth's crest and turned down onto the tail's top about it
+    const T = g && g.tail;
+    if (T) cuts.push(K.tilt(K.turn(K.prism([[chY - chHalf - 0.5, T.pz + 0.5], [chY + chHalf + 0.5, T.pz + 0.5], [chY, T.pz - chHalf]], T.x0, T.x1), [90, 0, 90]), T.px, T.pz, T.ang));
+    return cuts;
   }
 
   /* On the boom's -y side. It reads upright only with the rods vertical, and on horizontal rods it's the side that faces up. */
@@ -5608,7 +5627,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (parts.some((p) => p.place && p.place.how === "corner")) L.push("", "CORNER TO CORNER: check that your slicer lets you use the plate's corners. Some printers keep an edge or a corner clear for purge lines, clips or the wipe tower.");
     if (plan.notches) L.push("", plan.gauge ? "CHECK THE PRINT BEFORE USING THE GAUGE" : "CHECK THE PRINT'S SIZE", `Set your calipers' outside jaws into the two notches on the boom's top and close them on the stretch of top between the notches, against the notches' inner walls. It should read ${CAL_SPAN.toFixed(2)} mm, within about 0.15 mm. If it's off, the gauge's marks are off by about the same share, so fix the shrinkage and reprint, or cut with calipers instead.`);
     if (plan.gauge) {
-      L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, with its end against the wall at the V's front end. It can run off the boom's rear end. Cut a little past its mark, toward the rear, then file to the mark. Measure the first rod with calipers before you trust the rest.");
+      L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, with its end against the wall at the V's front end, by the 0. It can run off the boom's rear end. Each mark is 0.6 mm wide and its middle is the length: its edge toward the 0 is 0.3 mm short, its other edge 0.3 mm long. Cut a little past the mark, away from the 0, then file to the mark's middle. Measure the first rod with calipers before you trust the rest.");
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));
     }
     if (joints) L.push("", "THE JOINT" + (joints > 1 ? "S" : ""), "Slide the tongue into the fork, ridges into grooves, until it stops. If it binds, sand the ridges, not the tongue's faces. Tighten the bolts only until the prongs close on the V: too much bends them. A little glue on the faces makes it stronger if you'll never take it apart. If a rod passes through the tongue, slide the joint together before fitting that rod.");
@@ -7548,7 +7567,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     bedcorner: ["Corner to corner", "A long part can lie across the bed's diagonal, which is longer than either side: about 360 mm on a 256 mm square bed, less what the part's width and brim need. Turn it in your slicer by the angle the file list gives. The corners have to be usable, and on some printers they aren't: purge lines, clips and the wipe tower can take them. A long part on the diagonal is also likelier to lift at its ends, so give it a brim."],
     printfit: ["Rod holes", "How much wider than the rod to model each hole, before the slicer's hole compensation. Print the coupon first: it has holes from 0.10 under to 0.10 over each rod's size. Use the one that grips the rod without bending it, and allow a little more, as a boom's longer holes print tighter than the coupon's."],
     printscrews: ["Screws holding the rods", "A hole in the boom's back at each rod's middle, a little under M3, so that an M3 x 8 screw cuts its own thread in the plastic and presses on the rod. The driven element's two halves get one each, either side of the solder window. Print the coupon first and try the three screw holes on its end, with a rod in place: use the smallest one the screw goes into without splitting the plastic. In the models, a screw at a rod's middle changes nothing, because it sits where the rod's field across it is zero. The two on the driven element move the tuning by about 1 MHz, so fit them before you trim on the VNA, and leave them in."],
-    printgauge: ["The rod-cutting gauge", "A V along the top of the boom with a mark for each rod's length. Lay a rod in the V against the wall at its front end, and cut it at its mark. The marks come from the design's lengths when you make the files, so make the boom again if tuning changes a rod. Leave it off to cut with calipers or the Cut list's guide instead."],
+    printgauge: ["The rod-cutting gauge", "A V along the top of the boom with a mark for each rod's length. Lay a rod in the V against the wall at its front end, by the 0, and cut it at the middle of its mark: each mark is 0.6 mm wide, so its edges are 0.3 mm short and 0.3 mm long. The marks come from the design's lengths when you make the files, so make the boom again if tuning changes a rod. Leave it off to cut with calipers or the Cut list's guide instead."],
     printcheck: ["The check notches", "Two notches on the top of the boom, 100 mm apart between their inner walls. Set your calipers' outside jaws into the notches and close them on the top between them. If it reads 100.00 mm, within about 0.15 mm, the print is true and so are the gauge's marks. They're open to the boom's edge so that hole compensation can't move them."],
     favor: ["Make the best of", "Once a design has the gain you asked for and stays within your limits, this is what the search spends what's left on. Lowest SWR gives the best match. Highest F/B rejects most from behind. Both raises whichever of the two is worse, with SWR counted as return loss. A longer boom or another rod pays for them. SWR stops counting at 1.04 and F/B at 40 dB, as past those a real build can't hold on to them."],
     gain: ["Gain", "How much stronger the signal is straight ahead than from a reference antenna. dBd compares with a plain dipole, dBi with an ideal point source; dBi is always 2.15 higher. Every 3 dB doubles the power."],

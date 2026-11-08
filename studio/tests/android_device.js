@@ -115,7 +115,7 @@ const topApp = () => { const m = /mCurrentFocus=.*?\{[^ ]+ [^ ]+ ([^}/ ]+)/.exec
   const fonts = await p.ev(`document.fonts.ready.then(() => [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family).join(", "))`);
   ok("the bundled fonts load with no network", fonts.includes("IBM Plex Sans"), fonts);
   shot("4-design");
-  for (const v of ["optimize", "check", "cut", "tune"]) { await p.ev(`YS.app.go("${v}")`); await sleep(900); shot("5-" + v); }
+  for (const v of ["check", "cut", "tune"]) { await p.ev(`YS.app.go("${v}")`); await sleep(900); shot("5-" + v); }
   ok("the Tune tab follows", (await p.ev(`document.querySelector("#tune-target").value`)).startsWith("919.5"));
   await p.ev(`YS.app.go("design")`);
   await sleep(800);

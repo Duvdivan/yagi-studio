@@ -25,7 +25,7 @@
             </div>
           </div>
         </section>
-        ${A.gainCard("design")}
+        ${A.planCards()}
         <section class="card" aria-label="Rods">
           <div class="head"><h2>Rods, mm</h2><span class="note">Drag in the drawing, or type. 1/8 in works too.</span></div>
           <div class="body">
@@ -62,9 +62,9 @@
               <div class="field"><label for="z0">Cable impedance</label><input class="num" id="z0" inputmode="decimal"></div>
             </div>
             <label class="check"><input type="checkbox" id="gap-rods" checked> Changing the gap moves the rods, which keep their length ${A.help("gapRods")}</label>
-            <label class="check"><input type="checkbox" id="wire-on"> Count the wire across the gap ${A.help("wire")}</label>
+            <label class="check"><input type="checkbox" id="wire-on"> Count the coax's leads in the driven element's gap ${A.help("wire")}</label>
             <div class="field-grid" id="wire-fields">
-              <div class="field"><label for="wire-d">Wire across it, mm</label><input class="num" id="wire-d" inputmode="decimal"></div>
+              <div class="field"><label for="wire-d">Coax centre wire, mm</label><input class="num" id="wire-d" inputmode="decimal"></div>
               <div class="field"><label>Adds at the target</label><div class="note" id="wire-note" style="padding-top:6px"></div></div>
             </div>
             <p class="note">Folded dipoles aren't offered. ${A.help("folded")}</p>
@@ -109,6 +109,7 @@
       </div>
 
       <div class="col">
+        ${A.polishCard()}
         <section class="card" aria-label="Readings at the cursor">
           <div class="head">
             <h2>At</h2>
@@ -289,7 +290,7 @@
     if (n) n.textContent = `Boom ${b.toFixed(1)} mm · ${(b / lam).toFixed(2)} wavelengths`;
   }
 
-  /** What the wire across the gap adds at the target. */
+  /** What the coax's leads in the gap add at the target. */
   function syncWire() {
     const d = S.design, on = d.feedWire > 0, driven = d.elements.find((e) => e.type === "driven");
     $("#wire-on").checked = on;
@@ -328,7 +329,7 @@
     const any = YS.isCrooked(YS.toSolver(d));
     if (any) $("#bend-more").open = true;
     n.innerHTML = any
-      ? `<span class="pill warn">Rods not straight</span> Using the general solver, which takes longer. Optimize treats rods as straight, and the NEC and YagiCAD files do too.`
+      ? `<span class="pill warn">Rods not straight</span> Using the general solver, which takes longer. Designing and polishing treat rods as straight, and the NEC and YagiCAD files do too.`
       : "All straight and centered. Tune my antenna can suggest bends, and Build check can add random ones.";
   }
 
@@ -500,8 +501,10 @@
 
   A.views.design = {
     mount(host) {
-      host.innerHTML = template();
+      host.innerHTML = template() + `<div id="plan-host" class="plan-host" hidden></div>`;
       bindForm();
+      A.mountPlan($("#plan-host"));
+      A.bindPlanCards();
       layout = new YS.Layout2D($("#layout"), {
         onChange: (id, patch, final) => {
           const e = S.design.elements.find((q) => q.id === id);
@@ -518,13 +521,14 @@
       ro.observe($("#sweep-box"));
       ro.observe($("#smith"));
       $("#nec-check").hidden = !S.server;
-      A.bindGainCard($("#view-design .gain-card"));
       inited = true;
     },
-    show() { renderRods(); syncForm(); refreshAll(); A.renderGainCards(); },
-    refreshDesign(full) { if (!inited) return; if (full) renderRods(); else syncRodsValues(); syncForm(); drawLayout(); A.renderGainCards(); },
-    refreshResults() { refreshAll(); },
-    retheme() { refreshAll(); },
+    show() { renderRods(); syncForm(); refreshAll(); A.plan.setStage(A.planStage()); },
+    refreshDesign(full) { if (!inited) return; if (full) renderRods(); else syncRodsValues(); syncForm(); drawLayout(); A.plan.refresh(); },
+    refreshResults() { refreshAll(); A.renderPlanCards(); },
+    retheme() { refreshAll(); A.plan.retheme(); },
+    /** Draws another design in the drawing, as a polish goes on; null goes back to the one open. */
+    preview(d) { if (layout) layout.set(d || S.design, d ? null : S.detail && S.detail.metrics); },
     showNecButton() { const b = $("#nec-check"); if (b) b.hidden = !S.server; },
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

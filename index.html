@@ -129,6 +129,33 @@ main > div { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: colum
 .view-design { grid-template-columns: 340px minmax(0, 1fr) 372px; }
 .view-three { grid-template-columns: 320px minmax(0, 1fr) 372px; }
 .view-two { grid-template-columns: 340px minmax(0, 1fr); }
+/* The Design tab's goals and Designing screens: two panes that wrap, scrolling as a page */
+.plan-host { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.view-plan { display: flex; flex-direction: column; gap: 10px; max-width: 1280px; margin: 0 auto; width: 100%; }
+.plan-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.plan-main { flex: 999 1 560px; min-width: 0; }
+.plan-side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+section.plan-side { display: block; }
+.plan-h { font: 600 14px var(--sans); margin-top: 6px; }
+.field-grid.plan-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.plan-go { align-items: flex-end; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.plan-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; color: var(--ink2); line-height: 1.45; }
+.plan-steps b { color: var(--ink); }
+.plan-goalbar { flex-wrap: wrap; gap: 6px 14px; }
+.plan-gap { flex: 1 1 auto; }
+.plan-table td.plan-word { font-family: var(--sans); text-align: left; }
+.plan-table td.rough { color: var(--muted); }
+.plan-table tr[data-i] { cursor: pointer; }
+.plan-table tr.watching td { background: var(--accent-soft); }
+.st-polished { color: var(--good); font-weight: 600; }
+.st-polishing { color: var(--accent); font-weight: 600; }
+.st-found { color: var(--warn); font-weight: 600; }
+.badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font: 600 11px var(--sans); }
+.plan-gainline { align-items: baseline; gap: 8px; }
+.plan-gain { margin-left: auto; font: 500 20px var(--mono); }
+.plan-pick { justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--sunken); border-radius: 7px; padding: 10px 12px; }
+.modal.wide { width: min(980px, 100%); }
+@media (max-width: 700px) { .field-grid.plan-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .col.mid { overflow: hidden; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; min-width: 0; }
@@ -348,7 +375,6 @@ input::placeholder { color: var(--muted); opacity: .75; }
   </header>
   <main>
     <div id="host-design"></div>
-    <div id="host-optimize" hidden></div>
     <div id="host-check" hidden></div>
     <div id="host-cut" hidden></div>
     <div id="host-print" hidden></div>
@@ -544,8 +570,9 @@ input::placeholder { color: var(--muted); opacity: .75; }
   }
 
   /**
-   * The wire across the feed gap: series reactance per MHz, in ohm. The rod is modelled as continuous, but the
-   * current really squeezes through a thin wire (design.feedWire, its diameter in mm; 0 leaves it out). This is
+   * The coax's leads in the feed gap: series reactance per MHz, in ohm. The rod is modelled as full thickness up to
+   * the gap, but across it the current really runs in the coax's thin centre wire and braid, one to each half (design.feedWire,
+   * the centre wire's diameter in mm; 0 leaves it out). Nothing joins the halves. This is
    * the inductance of a wire thinner than the rod it replaces, w mu0 / (2 pi) * gap * ln(a / r), plus a small fit.
    */
   function feedWireX(design, a) {
@@ -2856,8 +2883,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   /**
-   * The wire across the feed gap: series reactance per MHz, in ohm. The rod is modelled as continuous, but the
-   * current really squeezes through a thin wire (design.feedWire, its diameter in mm; 0 leaves it out). This is
+   * The coax's leads in the feed gap: series reactance per MHz, in ohm. The rod is modelled as full thickness up to
+   * the gap, but across it the current really runs in the coax's thin centre wire and braid, one to each half (design.feedWire,
+   * the centre wire's diameter in mm; 0 leaves it out). Nothing joins the halves. This is
    * the inductance of a wire thinner than the rod it replaces, w mu0 / (2 pi) * gap * ln(a / r), plus a small fit.
    */
   function feedWireX(design, a) {
@@ -7703,6 +7731,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     printgauge: ["The rod-cutting gauge", "A V along the top of the boom with a mark for each rod's length. Lay a rod in the V against the wall at its front end, by the 0, and cut it at the middle of its mark: each mark is 0.6 mm wide, so its edges are 0.3 mm short and 0.3 mm long. The marks come from the design's lengths when you make the files, so make the boom again if tuning changes a rod. Leave it off to cut with calipers or the Cut list's guide instead."],
     printcheck: ["The check notches", "Two notches on the top of the boom, 100 mm apart between their inner walls. Set your calipers' outside jaws into the notches and close them on the top between them. If it reads 100.00 mm, within about 0.15 mm, the print is true and so are the gauge's marks. They're open to the boom's edge so that hole compensation can't move them."],
     favor: ["Make the best of", "Once a design has the gain you asked for and stays within your limits, this is what the search spends what's left on. Lowest SWR gives the best match. Highest F/B rejects most from behind. Both raises whichever of the two is worse, with SWR counted as return loss. A longer boom or another rod pays for them. SWR stops counting at 1.04 and F/B at 40 dB, as past those a real build can't hold on to them."],
+    forgiving: ["Forgiving?", "A short Build check of each polished design: 48 simulated builds with every rod cut and placed about 0.3 mm off, and the driven element trimmed on a VNA, as you would. Yes means 9 in 10 or more keep SWR under your limit at the target, Mostly 6 in 10 or more, and Fussy fewer: build that one with more care. The Build check tab does the full version."],
     gain: ["Gain", "How much stronger the signal is straight ahead than from a reference antenna. dBd compares with a plain dipole, dBi with an ideal point source; dBi is always 2.15 higher. Every 3 dB doubles the power."],
     fb: ["Front-to-back", "How much stronger the antenna is straight ahead than straight behind. F/B 20 dB means 1/100 of the power goes directly backward. Higher means it ignores more from directly behind."],
     fr: ["Front-to-rear", "Like front-to-back, but against the strongest lobe anywhere in the rear half, not just straight behind. It's the more honest number."],
@@ -7710,10 +7739,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     bw: ["Beamwidth", "How wide the main beam is between its half-power points. A narrow beam has more gain but has to be aimed better."],
     eff: ["Efficiency", "The share of the power that's radiated rather than heating the rods. With metal rods this is usually well above 95%."],
     valley: ["The valley", "The lowest point of the SWR curve. On most Yagis the directors decide where it sits, and the driven element decides how deep it is. Trimming the driven element barely moves it."],
-    quality: ["Accuracy", "How finely the rods are divided. Draft is about 0.1 ohm from Reference on typical designs and much faster, so it's used while you drag and in the optimizer."],
+    quality: ["Accuracy", "How finely the rods are divided. Draft is about 0.1 ohm from Reference on typical designs and much faster, so it's used while you drag and while designing and polishing."],
     gap: ["Feed gap", "The space between the two halves of the driven element at the center. Set it first, then trim: it's hard to change once the coax is soldered."],
     gapRods: ["The gap and the rods", "Real rods keep their length when you move them apart, so a wider gap makes the driven element longer tip to tip. Each mm of gap then counts about twice: once for the length, and once for the wire. Untick it to hold tip to tip fixed and see the gap on its own."],
-    wire: ["The wire across the gap", "The model treats the driven element as one solid rod. Really the current crosses the gap on a thin wire, usually the coax's core, which adds about 3 ohm in series per mm of gap. So a real driven element finishes a little shorter than a model without it expects. It's off unless you tick it, and it comes from a model of the rod's real shape, not from a measurement. Any extra bare lead adds more, especially if it sticks out sideways. Gain doesn't change."],
+    wire: ["The coax's leads in the gap", "The model treats each half of the driven element as full thickness right up to the gap. Really, the coax's thin centre wire and braid carry the current across those few millimetres, the centre wire to one half and the braid to the other, which adds a little inductance: about 9 ohm at 910 MHz for a 3 mm gap. Nothing connects the two halves; this is only about the thin leads that feed them. Tick it for a split driven element fed directly by coax, and set the size to your coax's centre wire (0.3 mm for RG178). It changes the match, so a real driven element finishes a little shorter than a model without it expects. Gain doesn't change. Keep the leads short: bare wire longer than the gap adds more, especially if it sticks out sideways. It comes from a model of the rod's real shape, not from a measurement."],
     bends: ["Bent rods", "A rod bent along the boom changes its distance from its neighbors. That matters most for the driven element and the first director, which are closest. Bends sideways, rods a little off center, and uneven driven halves hardly matter. Gain is rarely hurt, but the match can be, so bending the driven element or D1 is also a free way to tune."],
     folded: ["Folded dipoles", "A folded dipole raises the feed resistance about four times, and needs a 4:1 balun to match it. On a LoRa Yagi it gains little: modeled on the 6-rod DuvYagi it had the same gain and the same SWR bandwidth as a split element, since the directors set that bandwidth and a LoRa signal is far narrower than it anyway. It also has no tips to trim. It can make more sense for other uses: a design with a very low feed resistance, near 12 ohm, or a DC path across the feed to drain static. It's not offered here yet, though tests/crooked.js can model one."],
     guide: ["Cutting guide", "A 3D-printed block that sets each rod's length. It's as accurate as your print, so calibrate first, and measure the guide and your first rod before trusting it. Rods need about ±0.3 mm."],
@@ -8368,7 +8397,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
             </div>
           </div>
         </section>
-        ${A.gainCard("design")}
+        ${A.planCards()}
         <section class="card" aria-label="Rods">
           <div class="head"><h2>Rods, mm</h2><span class="note">Drag in the drawing, or type. 1/8 in works too.</span></div>
           <div class="body">
@@ -8405,9 +8434,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
               <div class="field"><label for="z0">Cable impedance</label><input class="num" id="z0" inputmode="decimal"></div>
             </div>
             <label class="check"><input type="checkbox" id="gap-rods" checked> Changing the gap moves the rods, which keep their length ${A.help("gapRods")}</label>
-            <label class="check"><input type="checkbox" id="wire-on"> Count the wire across the gap ${A.help("wire")}</label>
+            <label class="check"><input type="checkbox" id="wire-on"> Count the coax's leads in the driven element's gap ${A.help("wire")}</label>
             <div class="field-grid" id="wire-fields">
-              <div class="field"><label for="wire-d">Wire across it, mm</label><input class="num" id="wire-d" inputmode="decimal"></div>
+              <div class="field"><label for="wire-d">Coax centre wire, mm</label><input class="num" id="wire-d" inputmode="decimal"></div>
               <div class="field"><label>Adds at the target</label><div class="note" id="wire-note" style="padding-top:6px"></div></div>
             </div>
             <p class="note">Folded dipoles aren't offered. ${A.help("folded")}</p>
@@ -8452,6 +8481,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       </div>
 
       <div class="col">
+        ${A.polishCard()}
         <section class="card" aria-label="Readings at the cursor">
           <div class="head">
             <h2>At</h2>
@@ -8632,7 +8662,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (n) n.textContent = `Boom ${b.toFixed(1)} mm · ${(b / lam).toFixed(2)} wavelengths`;
   }
 
-  /** What the wire across the gap adds at the target. */
+  /** What the coax's leads in the gap add at the target. */
   function syncWire() {
     const d = S.design, on = d.feedWire > 0, driven = d.elements.find((e) => e.type === "driven");
     $("#wire-on").checked = on;
@@ -8671,7 +8701,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const any = YS.isCrooked(YS.toSolver(d));
     if (any) $("#bend-more").open = true;
     n.innerHTML = any
-      ? `<span class="pill warn">Rods not straight</span> Using the general solver, which takes longer. Optimize treats rods as straight, and the NEC and YagiCAD files do too.`
+      ? `<span class="pill warn">Rods not straight</span> Using the general solver, which takes longer. Designing and polishing treat rods as straight, and the NEC and YagiCAD files do too.`
       : "All straight and centered. Tune my antenna can suggest bends, and Build check can add random ones.";
   }
 
@@ -8843,8 +8873,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 
   A.views.design = {
     mount(host) {
-      host.innerHTML = template();
+      host.innerHTML = template() + `<div id="plan-host" class="plan-host" hidden></div>`;
       bindForm();
+      A.mountPlan($("#plan-host"));
+      A.bindPlanCards();
       layout = new YS.Layout2D($("#layout"), {
         onChange: (id, patch, final) => {
           const e = S.design.elements.find((q) => q.id === id);
@@ -8861,13 +8893,14 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       ro.observe($("#sweep-box"));
       ro.observe($("#smith"));
       $("#nec-check").hidden = !S.server;
-      A.bindGainCard($("#view-design .gain-card"));
       inited = true;
     },
-    show() { renderRods(); syncForm(); refreshAll(); A.renderGainCards(); },
-    refreshDesign(full) { if (!inited) return; if (full) renderRods(); else syncRodsValues(); syncForm(); drawLayout(); A.renderGainCards(); },
-    refreshResults() { refreshAll(); },
-    retheme() { refreshAll(); },
+    show() { renderRods(); syncForm(); refreshAll(); A.plan.setStage(A.planStage()); },
+    refreshDesign(full) { if (!inited) return; if (full) renderRods(); else syncRodsValues(); syncForm(); drawLayout(); A.plan.refresh(); },
+    refreshResults() { refreshAll(); A.renderPlanCards(); },
+    retheme() { refreshAll(); A.plan.retheme(); },
+    /** Draws another design in the drawing, as a polish goes on; null goes back to the one open. */
+    preview(d) { if (layout) layout.set(d || S.design, d ? null : S.detail && S.detail.metrics); },
     showNecButton() { const b = $("#nec-check"); if (b) b.hidden = !S.server; },
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
@@ -9532,108 +9565,62 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 })(typeof globalThis !== "undefined" ? globalThis : this);
 
 /*
- * Yagi Studio app, part 4: the Optimize, Build check and Cut list views.
+ * Yagi Studio app, part 4: designing an antenna from goals (the Design tab's first screens), and the Build check, Cut list
+ * and 3D print views.
  */
 (function (root) {
   "use strict";
   const YS = root.YS, A = YS.app, S = A.S;
   const { $, $$, esc, fmt, mmToIn } = A;
 
-  /* ==================== Optimize ==================== */
-  const OPT = { running: false, cancel: false, goals: null, result: null, progress: null, explore: null, exploring: false, preview: null };
+  /* ==================== Designing an antenna: goals, then find and polish ====================
+     The Design tab has three screens: "What you want" (the goals), "Designing" (a quick search for each number of rods, then
+     each one polished in turn, watched live), and the antenna itself (app-design.js), where a hand change can be polished
+     again. This replaced the separate Optimize tab and the "Find the boom" card (the owner's choice, 2026-11-07): one
+     search that stopped at rough designs and another that polished them was confusing. */
+  const OPT = { running: false, cancel: false, goals: null, result: null, progress: null, explore: null, exploring: false, stage: "antenna", list: null, watch: -1, watchPicked: false, polishing: false };
   const EFFORT = {
     quick: { gens: 150, patience: 40, polish: 200, label: "Quick" },
+    normal: { gens: 260, patience: 60, polish: 300, label: "Normal" },
     thorough: { gens: 500, patience: 90, polish: 500, label: "Thorough" },
     deep: { gens: 1500, patience: 200, polish: 900, label: "Deep" },
   };
+  const FORGIVING = { builds: 48, rod: 0.3, pos: 0.3 };     // the short build check on each polished design: builds, and errors (1 sigma, mm)
 
   function goals() {
     const d = S.design;
     if (OPT.goals && OPT.goals.forDesign === d.name && OPT.goals.bandWas !== d.f0 + ":" + d.band) {
-      // the Design view moved the target or the band, so what's searched follows it
+      // the target or the band moved, so what's searched follows it
       const lam = 299792.458 / d.f0;
       Object.assign(OPT.goals, { band: d.band.slice(), bandWas: d.f0 + ":" + d.band, minGap: Math.round(0.05 * lam), boomFrom: Math.round(0.4 * lam), boomTo: Math.round(2 * lam) });
     }
     if (!OPT.goals || OPT.goals.forDesign !== d.name) {
       OPT.goals = { forDesign: d.name, band: d.band.slice(), bandWas: d.f0 + ":" + d.band, fbMin: 15, swrMax: 1.5, boomMax: Math.round(YS.boomLength(d)), limitBoom: true,
-        favor: "gain", changeLengths: true, changeSpacing: true, minGap: Math.round(0.05 * 299792.458 / d.f0), range: "wide", effort: "thorough", locks: {},
+        favor: "gain", changeLengths: true, changeSpacing: true, minGap: Math.round(0.05 * 299792.458 / d.f0), range: "near", effort: "normal", locks: {},
         rodsFrom: 4, rodsTo: 8, boomFrom: Math.round(0.4 * 299792.458 / d.f0), boomTo: Math.round(2 * 299792.458 / d.f0), boomSteps: 6 };
     }
     return OPT.goals;
   }
 
-  function optTemplate() {
-    return `
-    <div class="view view-three" id="view-optimize">
-      <div class="col">
-        ${A.gainCard("opt")}
-        <section class="card" aria-label="Goals">
-          <div class="head"><h2>What you want</h2></div>
-          <div class="body stack">
-            <p class="note" id="g-note"></p>
-            <div class="field"><label for="g-favor">Make the best of ${A.help("favor")}</label><select class="sel" id="g-favor"><option value="gain">Highest gain</option><option value="swr">Lowest SWR</option><option value="fb">Highest F/B</option><option value="both">Both SWR and F/B</option></select></div>
-            <div class="field-grid">
-              <div class="field"><label for="g-lo">Band from, MHz</label><input class="num" id="g-lo" inputmode="decimal"></div>
-              <div class="field"><label for="g-hi">to, MHz</label><input class="num" id="g-hi" inputmode="decimal"></div>
-              <div class="field"><label for="g-swr">SWR under ${A.help("swr")}</label><input class="num" id="g-swr" inputmode="decimal"></div>
-              <div class="field"><label for="g-fb">F/B over, dB ${A.help("fb")}</label><input class="num" id="g-fb" inputmode="decimal"></div>
-              <div class="field"><label for="g-boom">Longest boom, mm</label><input class="num" id="g-boom" inputmode="decimal"></div>
-              <div class="field"><label for="g-gap">Closest rods, mm</label><input class="num" id="g-gap" inputmode="decimal"></div>
-            </div>
-            <div class="field-grid">
-              <div class="field"><label for="g-range">Search</label><select class="sel" id="g-range"><option value="wide">Anywhere sensible</option><option value="near">Close to this design</option></select></div>
-              <div class="field"><label for="g-effort">Effort</label><select class="sel" id="g-effort"><option value="quick">Quick</option><option value="thorough">Thorough</option><option value="deep">Deep</option></select></div>
-            </div>
-            <label class="check"><input type="checkbox" id="g-len"> It may change rod lengths</label>
-            <label class="check"><input type="checkbox" id="g-spc"> It may change spacing</label>
-            <details><summary>Hold particular rods</summary><div class="scroll-x" style="margin-top:6px"><table class="rods" id="g-locks"></table></div></details>
-            <div class="row">
-              <button class="btn primary" id="opt-run">Optimize</button>
-              <button class="btn" id="opt-stop" disabled>Stop</button>
-            </div>
-            <div class="progress"><i id="opt-bar"></i></div>
-            <p class="note" id="opt-status"></p>
-          </div>
-        </section>
-        <section class="card" aria-label="Boom explorer">
-          <div class="head"><h2>Which boom?</h2></div>
-          <div class="body stack">
-            <p class="note">Finds the best gain each mix of rods and boom can hold over the band, so you can see what a longer boom buys. Uses the first director's diameter.</p>
-            <div class="field-grid">
-              <div class="field"><label for="x-rods-a">Rods from</label><input class="num" id="x-rods-a" inputmode="numeric"></div>
-              <div class="field"><label for="x-rods-b">to (up to 5 more)</label><input class="num" id="x-rods-b" inputmode="numeric"></div>
-              <div class="field"><label for="x-boom-a">Boom from, mm</label><input class="num" id="x-boom-a" inputmode="numeric"></div>
-              <div class="field"><label for="x-boom-b">to, mm</label><input class="num" id="x-boom-b" inputmode="numeric"></div>
-            </div>
-            <div class="row"><button class="btn" id="x-run">Explore</button><button class="btn" id="x-stop" disabled>Stop</button></div>
-            <div class="progress"><i id="x-bar"></i></div>
-            <p class="note" id="x-status"></p>
-          </div>
-        </section>
-      </div>
-      <div class="col mid">
-        <section class="card grow tall-sm" style="flex:0.8 1 0" aria-label="Optimizer progress">
-          <div class="head"><h2>Progress</h2><span class="note" id="opt-speed"></span></div>
-          <div class="canvas-box" style="margin:4px"><canvas id="opt-chart"></canvas></div>
-        </section>
-        <section class="card grow tall-sm" style="flex:0.8 1 0" aria-label="Best design so far">
-          <div class="head"><h2>Best so far</h2></div>
-          <div class="canvas-box" style="margin:4px"><canvas id="opt-layout"></canvas></div>
-        </section>
-        <section class="card grow tall-md" style="flex:1.1 1 0" aria-label="Boom explorer results">
-          <div class="head"><h2>Worst gain across the band, by boom</h2><div class="legend" id="x-legend"></div></div>
-          <div class="canvas-box" style="margin:4px"><canvas id="x-chart" aria-label="Gain against boom length, one line per rod count. Click a point to load that design."></canvas></div>
-        </section>
-      </div>
-      <div class="col">
-        <section class="card" aria-label="Result">
-          <div class="head"><h2>Result</h2></div>
-          <div class="body stack" id="opt-result"><p class="note">Run the optimizer to compare its best design with yours. Your design only changes when you choose.</p></div>
-        </section>
-      </div>
-    </div>`;
+  const FIND = { target: 10, gainTo: 0, boomTop: 0, rod: null, rodFor: "", metal: null, driven: null, drivenFor: "", drivenMetal: null, running: false, rows: null, best: null, tooHigh: 0, status: "", bar: 0 };
+  const firstDirector = () => S.design.elements.find((e) => e.type === "director") || S.design.elements[0];
+  const rodSize = () => (FIND.rod && FIND.rodFor === S.design.name ? FIND.rod : firstDirector().d);
+  const drivenRod = () => S.design.elements.find((e) => e.type === "driven") || firstDirector();
+  const drivenSize = () => (FIND.driven && FIND.drivenFor === S.design.name ? FIND.driven : drivenRod().d);
+  const rodMetal = () => (FIND.metal && FIND.rodFor === S.design.name ? FIND.metal : firstDirector().material || S.design.material);
+  const drivenMetal = () => (FIND.drivenMetal && FIND.drivenFor === S.design.name ? FIND.drivenMetal : drivenRod().material || S.design.material);
+  const metalName = (m) => ({ aluminium: "aluminum", steel: "stainless" }[m] || m);
+  const METAL_OPTIONS = [["aluminium", "Aluminum"], ["brass", "Brass"], ["copper", "Copper"], ["steel", "Stainless"]];
+  const optionalNum = (get, set) => ({ get: () => get() || NaN, set, min: 0, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)) });
+  const FAVOR_NAMES = { gain: "the shortest boom", swr: "the lowest SWR", fb: "the highest F/B", both: "the best SWR and F/B together" };
+
+  /** The goals in a line, for the screens that show them. */
+  function goalsLine() {
+    const g = goals();
+    return `${fmt(FIND.target, 2)} dBd or more, ${FAVOR_NAMES[g.favor]}. SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz.`;
   }
 
+  /** How the design open now does against the goals, across the band. */
   function currentParts() {
     const d = S.design, g = goals();
     const rows = S.rows || [];
@@ -9641,57 +9628,547 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (!inBand.length) return null;
     return { worstGain: Math.min.apply(null, inBand.map((r) => r.gainDbd)), worstSwr: Math.max.apply(null, inBand.map((r) => r.swr)), minFb: Math.min.apply(null, inBand.map((r) => r.fb)), boom: YS.boomLength(d) };
   }
+  // A polish works at draft accuracy and finishes finer, and a design polished right up to a limit can read a hair past it at
+  // the accuracy on show: 1.51 against 1.50. That's within the model's own accuracy, so it still counts as meeting it.
+  const SLACK = { gain: 0.02, swr: 0.02, fb: 0.2 };
+  function shortfalls(c) {
+    const g = goals(), out = [];
+    if (!c) return out;
+    if (c.worstGain < FIND.target - SLACK.gain) out.push(`its gain dips to ${fmt(c.worstGain, 2)} dBd, under your ${fmt(FIND.target, 2)}`);
+    if (c.worstSwr > g.swrMax + SLACK.swr) out.push(`SWR reaches ${fmt(c.worstSwr, 2)}, over your ${fmt(g.swrMax, 2)}`);
+    if (c.minFb < g.fbMin - SLACK.fb) out.push(`F/B drops to ${fmt(c.minFb, 1)} dB, under your ${fmt(g.fbMin, 1)}`);
+    return out;
+  }
+
+  /* ---------- the screens ---------- */
+  const plainSelect = (id, options, label) => `<select class="sel" id="${id}" aria-label="${label || ""}">${options.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select>`;
+
+  function planTemplate() {
+    return `
+    <div class="view-plan" id="plan-goals">
+      <div class="plan-wrap">
+        <section class="card plan-main" aria-label="What you want">
+          <div class="head"><h2>What do you want from your antenna?</h2></div>
+          <div class="body stack">
+            <p class="note">Say what matters and what limits you. Yagi Studio finds designs that meet it and polishes each one, then you pick one.</p>
+            <h3 class="plan-h">1. Where it works</h3>
+            <div class="field-grid three">
+              <div class="field"><label for="w-f0">Target, MHz</label><input class="num" id="w-f0" inputmode="decimal"></div>
+              <div class="field"><label for="w-lo">Band from, MHz</label><input class="num" id="w-lo" inputmode="decimal"></div>
+              <div class="field"><label for="w-hi">to, MHz</label><input class="num" id="w-hi" inputmode="decimal"></div>
+            </div>
+            <div class="row"><button class="btn small" id="w-network">Choose a network…</button><span class="note">Sets the target and band for a mesh network or ham band.</span></div>
+            <h3 class="plan-h">2. What matters most</h3>
+            <div class="field-grid three">
+              <div class="field"><label for="w-gain">Gain at least, dBd ${A.help("gain")}</label><input class="num" id="w-gain" inputmode="decimal"></div>
+              <div class="field"><label for="w-to">up to, if it matters</label><input class="num" id="w-to" inputmode="decimal" placeholder="any"></div>
+              <div class="field"><label for="w-favor">Then make the best of ${A.help("favor")}</label>${plainSelect("w-favor", [["gain", "Shortest boom"], ["swr", "Lowest SWR"], ["fb", "Highest F/B"], ["both", "Both SWR and F/B"]])}</div>
+            </div>
+            <h3 class="plan-h">3. Limits it must keep</h3>
+            <div class="field-grid plan-four">
+              <div class="field"><label for="w-swr">SWR under, across the band ${A.help("swr")}</label><input class="num" id="w-swr" inputmode="decimal"></div>
+              <div class="field"><label for="w-fb">F/B over, dB ${A.help("fb")}</label><input class="num" id="w-fb" inputmode="decimal"></div>
+              <div class="field" id="w-top-wrap"><label for="w-top">Longest boom, mm</label><input class="num" id="w-top" inputmode="decimal" placeholder="any"></div>
+              <div class="field"><label for="w-gap">Closest rods, mm</label><input class="num" id="w-gap" inputmode="decimal"></div>
+            </div>
+            <h3 class="plan-h">4. What you'll build it from</h3>
+            <div class="field-grid plan-four">
+              <div class="field"><label for="w-rod">Rods, mm across</label><input class="num" id="w-rod" inputmode="decimal"></div>
+              <div class="field"><label for="w-metal">Rods' metal</label>${plainSelect("w-metal", METAL_OPTIONS)}</div>
+              <div class="field"><label for="w-driven">Driven element, mm across</label><input class="num" id="w-driven" inputmode="decimal"></div>
+              <div class="field"><label for="w-dmetal">Its metal</label>${plainSelect("w-dmetal", METAL_OPTIONS)}</div>
+            </div>
+            <label class="check"><input type="checkbox" id="w-wire"> Fed with coax soldered to the driven element's two halves (counts its leads in the gap) ${A.help("wire")}</label>
+            <div class="row plan-go">
+              <div class="field"><label for="w-effort">How hard to look</label>${plainSelect("w-effort", [["quick", "Quick"], ["normal", "Normal"], ["thorough", "Thorough"]])}</div>
+              <button class="btn primary" id="w-run">Design my antenna</button>
+              <button class="btn" id="w-back">Back to the design I have open</button>
+            </div>
+            <p class="note" id="w-status" role="status"></p>
+          </div>
+        </section>
+        <aside class="plan-side">
+          <section class="card" aria-label="What happens next">
+            <div class="head"><h2>What happens when you press it</h2></div>
+            <div class="body"><ol class="plan-steps">
+              <li><b>It finds.</b> A quick search for each number of rods: the design that reaches your gain within your limits, as you asked.</li>
+              <li><b>It polishes.</b> Each one found is then tuned carefully, so what you open is finished, not rough. You can watch the rods move as it works.</li>
+              <li><b>You choose.</b> Open the one you like. You can still change any rod by hand, and polish it again.</li>
+            </ol></div>
+          </section>
+          <section class="card" aria-label="Your goals stay">
+            <div class="head"><h2>Your answers stay with the design</h2></div>
+            <div class="body"><p class="note">They're what it's polished against later, on the Design tab.</p></div>
+          </section>
+        </aside>
+      </div>
+    </div>
+
+    <div class="view-plan" id="plan-run" hidden>
+      <section class="card" aria-label="Your goals">
+        <div class="body row plan-goalbar"><b>Your goals</b><span class="note" id="r-goals"></span>
+          <span class="plan-gap"></span><button class="btn small" id="r-change">Change</button><button class="btn small" id="r-explore">Simulate different numbers of rods</button></div>
+      </section>
+      <section class="card" aria-label="Progress">
+        <div class="head"><h2 id="r-title">Designing your antenna</h2><div class="row"><button class="btn small" id="r-stop">Stop</button><button class="btn small" id="r-open-current">Back to the design I have open</button></div></div>
+        <div class="body stack">
+          <p class="note" id="r-status" role="status"></p>
+          <div class="progress"><i id="r-bar"></i></div>
+          <p class="note"><b class="st-polished">Polished</b>: final numbers, ready to open. <b class="st-polishing">Polishing</b>: getting better as you watch. <b class="st-found">Found</b>: rough, from the quick search, waiting its turn.</p>
+        </div>
+      </section>
+      <div class="plan-wrap">
+        <section class="card plan-main" aria-label="Designs">
+          <div class="body"><div class="scroll-x"><table class="tbl plan-table" id="r-table"></table></div><div class="row" style="margin-top:8px"><button class="btn primary" id="r-open-best" hidden></button></div><p class="note" id="r-note" style="margin-top:8px"></p></div>
+        </section>
+        <section class="card plan-side" aria-label="Watching the polish">
+          <div class="head"><h2 id="r-watch-name">Watching</h2><span class="note">live</span></div>
+          <div class="body stack">
+            <div style="position:relative;height:130px"><canvas id="r-layout" style="position:absolute;inset:0;width:100%;height:100%" aria-label="The design being watched, drawn to scale as it changes"></canvas></div>
+            <div class="row plan-gainline"><span class="note">Worst gain in band</span><span class="plan-gain" id="r-gain">–</span><span class="note" id="r-gain-up"></span></div>
+            <div style="position:relative;height:110px"><canvas id="r-chart" style="position:absolute;inset:0;width:100%;height:100%" aria-label="Worst gain across the band as the polish goes on"></canvas></div>
+            <p class="note">The rods move as it works. Click a row to watch that one.</p>
+          </div>
+        </section>
+      </div>
+    </div>`;
+  }
+
+  function setStage(stage) {
+    OPT.stage = stage;
+    const plan = $("#plan-host"), design = $("#view-design");
+    if (!plan || !design) return;
+    design.hidden = stage !== "antenna";
+    plan.hidden = stage === "antenna";
+    $("#plan-goals").hidden = stage !== "goals";
+    $("#plan-run").hidden = stage !== "run";
+    if (stage === "goals") syncGoals();
+    if (stage === "run") renderRun();
+    if (stage === "antenna") { A.renderPlanCards(); if (A.views.design.refreshResults) A.views.design.refreshResults(); }
+  }
+  /** Opens the Design tab at one of its screens: "goals", "run" or "antenna". */
+  A.showStage = (stage) => { if (S.view !== "design") A.go("design"); setStage(stage); };
+  A.planStage = () => OPT.stage;
+
+  let runLayout = null;
+  A.mountPlan = (host) => {
+    host.innerHTML = planTemplate();
+    const g = () => goals();
+    A.bindNum($("#w-f0"), { get: () => S.design.f0, min: 1, max: 30000, decimals: 3, set: (v, c) => {
+      const d = S.design, dl = v - d.f0;
+      d.band = [d.band[0] + dl, d.band[1] + dl]; d.f0 = v; S.cursor = v;
+      if (c) A.commit();
+      A.designChanged(false);
+      $("#w-lo")._refresh(); $("#w-hi")._refresh();
+    } });
+    A.bindNum($("#w-lo"), { get: () => g().band[0], decimals: 3, min: 1, set: (v) => { g().band[0] = v; } });
+    A.bindNum($("#w-hi"), { get: () => g().band[1], decimals: 3, min: 1, set: (v) => { g().band[1] = v; } });
+    $("#w-network").onclick = () => A.radio.open();
+    A.bindNum($("#w-gain"), { get: () => FIND.target, min: 0.5, max: 30, decimals: 2, set: (v) => { FIND.target = v; } });
+    A.bindNum($("#w-to"), Object.assign(optionalNum(() => FIND.gainTo, (v) => { FIND.gainTo = v; }), { decimals: 2 }));
+    $("#w-favor").onchange = (e) => { g().favor = e.target.value; syncGoals(); };
+    A.bindNum($("#w-swr"), { get: () => g().swrMax, min: 1.01, max: 20, decimals: 2, set: (v) => { g().swrMax = v; } });
+    A.bindNum($("#w-fb"), { get: () => g().fbMin, min: 0, max: 60, decimals: 1, set: (v) => { g().fbMin = v; } });
+    A.bindNum($("#w-top"), Object.assign(optionalNum(() => FIND.boomTop, (v) => { FIND.boomTop = v; }), { decimals: 0 }));
+    A.bindNum($("#w-gap"), { get: () => g().minGap, min: 1, decimals: 0, set: (v) => { g().minGap = v; } });
+    A.bindNum($("#w-rod"), { get: rodSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.rod = v; FIND.rodFor = S.design.name; } });
+    A.bindNum($("#w-driven"), { get: drivenSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.driven = v; FIND.drivenFor = S.design.name; } });
+    $("#w-metal").onchange = (e) => { FIND.metal = e.target.value; FIND.rodFor = S.design.name; };
+    $("#w-dmetal").onchange = (e) => { FIND.drivenMetal = e.target.value; FIND.drivenFor = S.design.name; };
+    $("#w-wire").onchange = (e) => { S.design.feedWire = e.target.checked ? (S.lastWire || 0.3) : 0; A.commit(); A.designChanged(false); };
+    $("#w-effort").onchange = (e) => { g().effort = e.target.value; };
+    $("#w-run").onclick = designIt;
+    $("#w-back").onclick = () => setStage("antenna");
+    $("#r-change").onclick = () => setStage("goals");
+    $("#r-explore").onclick = openExplorer;
+    $("#r-stop").onclick = () => { OPT.cancel = true; };
+    $("#r-open-current").onclick = () => setStage("antenna");
+    $("#r-open-best").onclick = () => { const i = bestFit(); if (i >= 0) openEntry(OPT.list[i]); };
+    $("#r-table").onclick = (e) => {
+      const open = e.target.closest("[data-open]");
+      if (open) return openEntry(OPT.list[+open.dataset.open]);
+      const tr = e.target.closest("tr[data-i]");
+      if (tr) { OPT.watch = +tr.dataset.i; OPT.watchPicked = true; renderRun(); }
+    };
+    runLayout = new YS.Layout2D($("#r-layout"), { readOnly: true });
+    const ro = new ResizeObserver(() => drawWatch());
+    ro.observe($("#r-chart"));
+  };
+
+  function syncGoals() {
+    const g = goals();
+    ["#w-f0", "#w-lo", "#w-hi", "#w-gain", "#w-to", "#w-swr", "#w-fb", "#w-top", "#w-gap", "#w-rod", "#w-driven"].forEach((q) => { const i = $(q); if (i && document.activeElement !== i) i._refresh(); });
+    $("#w-favor").value = g.favor;
+    $("#w-top-wrap").hidden = g.favor === "gain";
+    $("#w-metal").value = rodMetal();
+    $("#w-dmetal").value = drivenMetal();
+    $("#w-wire").checked = S.design.feedWire > 0;
+    $("#w-effort").value = EFFORT[g.effort] && g.effort !== "deep" ? g.effort : "normal";
+    $("#w-run").disabled = OPT.running;
+    $("#w-status").textContent = OPT.running ? "It's still working on the last request. Stop it on the Designing screen first." : "";
+  }
+
+  /* ---------- finding, then polishing each one ---------- */
+  function polishGoals(boom, range) {
+    const g = goals(), favoured = g.favor !== "gain";
+    return Object.assign({}, g, { range: range || "near", locks: range ? g.locks : {}, changeLengths: range ? g.changeLengths : true, changeSpacing: range ? g.changeSpacing : true,
+      boomMax: boom, limitBoom: true, gainMin: FIND.target + 0.02, gainMax: favoured ? FIND.gainTo : 0 });
+  }
+
+  /** A short build check: of builds with rods cut and placed a little off, and the driven element trimmed on a VNA, how many keep SWR under the limit at the target. */
+  async function forgivingOf(design) {
+    const solver = YS.toSolver(design), chunks = Math.max(1, A.pool.batchCount), each = Math.ceil(FORGIVING.builds / chunks), jobs = [];
+    for (let i = 0; i < chunks; i++) jobs.push(A.pool.run("monteCarlo", { solver, tol: { rod: FORGIVING.rod, pos: FORGIVING.pos, bend: 0, trim: true, count: each, seed: 500 + i * 31, f0: design.f0 } }));
+    const res = (await Promise.all(jobs)).flat(), good = res.filter((r) => r.swr <= goals().swrMax).length, share = good / res.length;
+    return { good, n: res.length, word: share >= 0.9 ? "Yes" : share >= 0.6 ? "Mostly" : "Fussy" };
+  }
+
+  async function designIt() {
+    if (OPT.running) return;
+    const g = goals(), d = S.design;
+    if (!(g.band[1] > g.band[0])) { $("#w-status").textContent = "Check the band: its top should be above its bottom."; return; }
+    if (FIND.gainTo && FIND.gainTo <= FIND.target) { $("#w-status").textContent = "Check the gain: the second number should be above the first."; return; }
+    OPT.running = true; OPT.cancel = false; OPT.list = []; OPT.watch = -1; OPT.watchPicked = false;
+    Object.assign(FIND, { running: true, rows: [], best: null, tooHigh: 0, bar: 0, started: performance.now(), status: "Searching for each number of rods…" });
+    setStage("run");
+    const effort = EFFORT[g.effort] || EFFORT.normal;
+    try {
+      // the model's settings come along, so that the design found is the one you'll then see
+      const settings = {};
+      ["f0", "z0", "polarization", "endCap", "feedWire", "boomFace", "mast", "cable", "ground", "radio"].forEach((k) => { if (d[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(d[k])); });
+      const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rodMetal(), gap: d.gap, driven: { d: drivenSize(), material: drivenMetal() }, settings },
+        { band: g.band.slice(), fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7, favor: g.favor, gainMax: FIND.gainTo, boomTop: FIND.boomTop }, FIND.target, {
+          cancelled: () => OPT.cancel,
+          onProgress: (p) => {
+            FIND.rows = p.rows.slice();
+            OPT.list = FIND.rows.map((r) => ({ rough: r, state: "found" }));
+            FIND.bar = Math.min(30, 30 * p.tries / (p.tries + 6));
+            FIND.status = `Finding: tried ${p.last.rods} rods on ${fmt(p.last.boom, 0)} mm, ${fmt(p.last.gain, 2)} dBd. ${fmt((performance.now() - FIND.started) / 1000, 0)} s so far.`;
+            renderRun();
+          },
+        });
+      Object.assign(FIND, { rows: res.rows, best: res.best, tooHigh: res.tooHigh });
+      OPT.list = res.rows.map((r) => ({ rough: r, state: "found" }));
+      const found = (performance.now() - FIND.started) / 1000;
+      if (!OPT.list.length) FIND.status = noneFound();
+      // then each one polished in turn, rods ascending, as the table lists them
+      for (let i = 0; i < OPT.list.length && !OPT.cancel; i++) {
+        const entry = OPT.list[i];
+        entry.state = "polishing"; entry.pct = 0;
+        if (!OPT.watchPicked || OPT.list[OPT.watch].state !== "polishing") { OPT.watch = i; OPT.watchPicked = false; }
+        FIND.status = `Found ${OPT.list.length} design${OPT.list.length > 1 ? "s" : ""} in ${fmt(found, 0)} s. Polishing them now: ${i} done, 1 under way.`;
+        renderRun();
+        const out = await YS.optimise(A.pool, entry.rough.design, polishGoals(entry.rough.boom), effort, {
+          cancelled: () => OPT.cancel,
+          onProgress: (p) => {
+            entry.pct = Math.min(1, p.gen / p.gens);
+            entry.live = YS.applyToDesign(entry.rough.design, p.solver);
+            entry.best = p.best; entry.history = p.history.slice();
+            FIND.bar = 30 + 70 * (i + entry.pct) / OPT.list.length;
+            renderRun();
+          },
+        });
+        entry.polished = out; entry.live = out.design; entry.state = OPT.cancel ? "stopped" : "polished";
+        if (!OPT.cancel) entry.forgiving = await forgivingOf(out.design).catch(() => null);
+        renderRun();
+      }
+      OPT.list.forEach((e) => { if (e.state === "polishing") e.state = "stopped"; });
+      if (OPT.list.length) FIND.status = OPT.cancel ? "Stopped. Polished ones are final; the rest are as the quick search found them, and open as they are." : `Done in ${fmt((performance.now() - FIND.started) / 1000, 0)} s. Open the one you like.`;
+    } catch (e) {
+      FIND.status = e.message;
+    }
+    FIND.running = false; FIND.bar = 100; OPT.running = false;
+    renderRun();
+    A.renderPlanCards();
+  }
+
+  function noneFound() {
+    if (FIND.tooHigh) return `That's more than ${FIND.tooHigh} rods can reach, the most this searches. Try a lower gain.`;
+    const b = FIND.best;
+    return (OPT.cancel ? "Stopped before reaching it." : "It didn't reach that under these limits.") + (b ? ` The most it found was ${fmt(b.gain, 2)} dBd, on ${b.rods} rods and ${fmt(b.boom, 0)} mm. Try a lower gain, a narrower band or looser limits.` : "");
+  }
+
+  /** The polished one that best fits what was asked: of those meeting every limit, the shortest boom or the best of what's favoured. */
+  function bestFit() {
+    const g = goals(), done = (OPT.list || []).map((e, i) => ({ e, i })).filter(({ e }) => e.state === "polished");
+    const meets = done.filter(({ e }) => !shortfalls({ worstGain: e.polished.parts.worstGain, worstSwr: e.polished.parts.worstSwr, minFb: e.polished.parts.minFb }).length);
+    const pool = meets.length ? meets : done;
+    if (!pool.length) return -1;
+    const score = ({ e }) => { const p = e.polished.parts; return g.favor === "swr" ? p.worstSwr : g.favor === "fb" ? -p.minFb : g.favor === "both" ? p.worstSwr - p.minFb / 20 : YS.boomLength(e.polished.design); };
+    return pool.reduce((a, b) => (score(b) < score(a) ? b : a)).i;
+  }
+
+  function renderRun() {
+    if (!$("#r-table")) return;
+    const list = OPT.list || [], best = bestFit();
+    $("#r-goals").textContent = goalsLine();
+    $("#r-title").textContent = OPT.running ? "Designing your antenna" : list.length ? "Designs for your goals" : "Designing your antenna";
+    $("#r-status").textContent = FIND.status;
+    $("#r-bar").style.width = FIND.bar + "%";
+    $("#r-stop").disabled = !OPT.running;
+    const num = (v, dec, rough) => `<td${rough ? ' class="rough"' : ""}>${v === undefined ? "–" : fmt(v, dec)}</td>`;
+    $("#r-table").innerHTML = list.length ? `<thead><tr><th>Rods</th><th>State</th><th>Boom, mm</th><th>Worst gain, dBd</th><th>Worst SWR</th><th>Worst F/B, dB</th><th>Forgiving? ${A.help("forgiving")}</th><th></th></tr></thead><tbody>` + list.map((e, i) => {
+      const p = e.polished ? e.polished.parts : e.best || e.rough && { worstGain: e.rough.gain, worstSwr: e.rough.swr, minFb: e.rough.fb };
+      const design = e.polished ? e.polished.design : e.live || e.rough.design, rough = e.state !== "polished";
+      const state = { found: ["Found", "st-found"], polishing: [`Polishing, ${Math.round(100 * (e.pct || 0))}%`, "st-polishing"], polished: ["Polished", "st-polished"], stopped: ["Stopped, rough", "st-found"] }[e.state];
+      const canOpen = e.state === "polished" || (!OPT.running && e.state !== "polishing");
+      const forgiving = e.forgiving ? `<td class="plan-word" title="${e.forgiving.good} of ${e.forgiving.n} simulated builds keep SWR under ${fmt(goals().swrMax, 2)} at the target">${e.forgiving.word}</td>` : `<td class="plan-word rough">${e.state === "polished" ? "checking…" : "after polishing"}</td>`;
+      return `<tr data-i="${i}" class="${i === OPT.watch ? "watching" : ""}${i === best ? " best" : ""}"><td class="plan-word">${e.rough.rods}${i === best ? ' <span class="badge">Best fit</span>' : ""}</td><td class="plan-word ${state[1]}">${state[0]}</td>` +
+        num(YS.boomLength(design), 0, rough) + num(p && p.worstGain, 2, rough) + num(p && p.worstSwr, 2, rough) + num(p && p.minFb, 1, rough) + forgiving +
+        `<td><button class="btn small${i === best ? " primary" : ""}" data-open="${i}" ${canOpen ? "" : "disabled"} aria-label="Open the ${e.rough.rods}-rod design">Open</button></td></tr>`;
+    }).join("") + "</tbody>" : "";
+    // the table scrolls sideways on a phone, so the best fit's Open is also under it, in reach
+    $("#r-open-best").hidden = best < 0;
+    if (best >= 0) $("#r-open-best").textContent = `Open the best fit: ${list[best].rough.rods} rods, ${fmt(YS.boomLength(list[best].polished.design), 0)} mm`;
+    $("#r-note").textContent = list.length ? "Grey numbers are rough and will change as it polishes. Forgiving: a short Build check of each polished design, with rods cut and placed ±0.3 mm and the driven element trimmed on a VNA." : "";
+    drawWatch();
+  }
+
+  function drawWatch() {
+    const list = OPT.list || [], e = list[OPT.watch];
+    if (!$("#r-chart")) return;
+    $("#r-watch-name").textContent = e ? `Watching: ${e.rough.rods} rods` : "Watching";
+    if (runLayout) runLayout.set(e ? e.live || e.rough.design : S.design, null);
+    const start = e ? e.rough.gain : NaN, now = e ? (e.polished ? e.polished.parts.worstGain : e.best ? e.best.worstGain : e.rough.gain) : NaN;
+    $("#r-gain").textContent = isFinite(now) ? `${fmt(now, 2)} dBd` : "–";
+    $("#r-gain-up").textContent = isFinite(now) && isFinite(start) && Math.abs(now - start) >= 0.005 ? `${now > start ? "+" : "−"}${fmt(Math.abs(now - start), 2)} since found` : "";
+    const T = YS.tokens();
+    YS.drawLines($("#r-chart"), { yLabel: "dBd", xLabel: "designs tried", empty: "The climb in gain shows here as it polishes",
+      series: e && e.history && e.history.length ? [{ name: "Best", color: T.s1, pts: e.history }] : [] });
+  }
+
+  function designName(rods) { return `${rods}-element ${Math.round(S.design.f0)} MHz, ${fmt(FIND.target, 2)} dBd`; }
+
+  function openEntry(e) {
+    const g = goals(), design = e.polished ? e.polished.design : e.rough.design;
+    const name = designName(e.rough.rods);
+    const next = Object.assign(JSON.parse(JSON.stringify(design)), { name, band: g.band.slice() });
+    delete next.tune;      // any readings were of the antenna this replaces
+    const keep = Object.assign({}, g);
+    FIND.rodFor = name; FIND.drivenFor = name;
+    A.loadDesign(next, true);
+    OPT.goals = Object.assign(keep, { forDesign: name, bandWas: next.f0 + ":" + next.band, boomMax: Math.round(YS.boomLength(next)) });
+    setStage("antenna");
+    A.toast(e.polished ? "Design opened. Undo brings the old one back." : "Opened as the quick search found it, not polished. Polish it on the right. Undo brings the old one back.");
+  }
+
+  /* ---------- the cards on the antenna screen: the goals, and polishing a design again ---------- */
+  A.planCards = () => `
+    <section class="card" aria-label="Your goals">
+      <div class="head"><h2>Your goals</h2><button class="btn small" id="gc-change">Change</button></div>
+      <div class="body stack">
+        <p class="note" id="gc-text"></p>
+        <p id="gc-status"></p>
+        <div class="row"><button class="btn primary" id="gc-design">Design an antenna for me</button><button class="btn small" id="gc-back" hidden></button></div>
+        <div class="row"><button class="btn small" id="gc-explore">Simulate different numbers of rods</button></div>
+      </div>
+    </section>`;
+
+  A.polishCard = () => `
+    <section class="card" aria-label="Polish this design" id="pc-card">
+      <div class="head"><h2 id="pc-title">Polish this design</h2></div>
+      <div class="body stack">
+        <p class="note" id="pc-why"></p>
+        <div class="row"><button class="btn primary" id="pc-run">Polish it</button><button class="btn small" id="pc-stop" disabled>Stop</button></div>
+        <div class="progress"><i id="pc-bar"></i></div>
+        <div class="row plan-gainline" id="pc-live" hidden><span class="note">Worst gain in band</span><span class="plan-gain" id="pc-gain"></span><span class="note" id="pc-up"></span></div>
+        <div style="position:relative;height:90px" id="pc-chart-box" hidden><canvas id="pc-chart" style="position:absolute;inset:0;width:100%;height:100%" aria-label="Worst gain across the band as the polish goes on"></canvas></div>
+        <p class="note" id="pc-status" role="status"></p>
+        <div id="pc-result" class="stack"></div>
+        <details><summary>How it may change the design</summary>
+          <div class="stack" style="margin-top:8px">
+            <div class="field-grid">
+              <div class="field"><label for="pc-range">Search</label>${plainSelect("pc-range", [["near", "Close to this design"], ["wide", "Anywhere sensible"]])}</div>
+              <div class="field"><label for="pc-effort">How hard to look</label>${plainSelect("pc-effort", [["quick", "Quick"], ["normal", "Normal"], ["thorough", "Thorough"], ["deep", "Deep"]])}</div>
+              <div class="field"><label for="pc-boom">Longest boom, mm</label><input class="num" id="pc-boom" inputmode="decimal"></div>
+            </div>
+            <label class="check"><input type="checkbox" id="pc-len"> It may change rod lengths</label>
+            <label class="check"><input type="checkbox" id="pc-spc"> It may change spacing</label>
+            <p class="note">Hold particular rods where they are:</p>
+            <div class="scroll-x"><table class="rods" id="pc-locks"></table></div>
+          </div>
+        </details>
+      </div>
+    </section>`;
+
+  A.bindPlanCards = () => {
+    $("#gc-change").onclick = () => setStage("goals");
+    $("#gc-design").onclick = () => setStage("goals");
+    $("#gc-back").onclick = () => setStage("run");
+    $("#gc-explore").onclick = openExplorer;
+    $("#pc-run").onclick = () => polishAgain();
+    $("#pc-stop").onclick = () => { OPT.cancel = true; };
+    $("#pc-range").onchange = (e) => { goals().range = e.target.value; };
+    $("#pc-effort").onchange = (e) => { goals().effort = e.target.value; };
+    $("#pc-len").onchange = (e) => { goals().changeLengths = e.target.checked; };
+    $("#pc-spc").onchange = (e) => { goals().changeSpacing = e.target.checked; };
+    A.bindNum($("#pc-boom"), { get: () => goals().boomMax, min: 1, decimals: 0, set: (v) => { goals().boomMax = v; } });
+  };
+
+  /** The goals card and the polish card, as the design open now stands. */
+  A.renderPlanCards = () => {
+    if (!$("#gc-text")) return;
+    const g = goals(), c = currentParts(), short = shortfalls(c);
+    $("#gc-text").textContent = goalsLine();
+    $("#gc-status").innerHTML = !c ? "" : short.length ? `<span class="pill warn">Not yet</span> <span class="note">${esc(short.join("; "))}.</span>` : `<span class="pill good">Meets them all</span>`;
+    const n = (OPT.list || []).length;
+    $("#gc-back").hidden = !n;
+    $("#gc-back").textContent = `Back to the ${n} design${n > 1 ? "s" : ""} it found`;
+    $("#gc-design").disabled = OPT.running && !OPT.polishing;
+    if (!OPT.polishing && !OPT.result) {
+      $("#pc-title").textContent = short.length ? "Polish this design" : "Polish this design";
+      $("#pc-why").textContent = !c ? "" : short.length ? `Against your goals, ${short.join("; ")}. Polishing tunes the rods to bring it back within them, close to how it is now.` : "It meets your goals. Polishing may still improve it, and you choose whether to keep what it finds.";
+    }
+    $("#pc-run").disabled = OPT.running;
+    $("#pc-stop").disabled = !OPT.polishing;
+    $("#pc-range").value = g.range; $("#pc-effort").value = g.effort; $("#pc-len").checked = g.changeLengths; $("#pc-spc").checked = g.changeSpacing;
+    if (document.activeElement !== $("#pc-boom")) $("#pc-boom")._refresh();
+    const sorted = S.design.elements.slice().sort((a, b) => a.x - b.x);
+    $("#pc-locks").innerHTML = `<thead><tr><th>Rod</th><th>Hold length</th><th>Hold gap to next</th></tr></thead><tbody>` + sorted.map((e, i) => {
+      const l = g.locks[e.id] || {};
+      return `<tr data-id="${e.id}"><td class="rod-name">${esc(e.name)}</td><td><input type="checkbox" data-k="L" aria-label="Hold ${esc(e.name)} length" ${l.L ? "checked" : ""}></td><td>${i + 1 < sorted.length ? `<input type="checkbox" data-k="x" aria-label="Hold the gap after ${esc(e.name)}" ${l.x ? "checked" : ""}>` : ""}</td></tr>`;
+    }).join("") + "</tbody>";
+    $$("#pc-locks input").forEach((cb) => {
+      cb.onchange = () => {
+        const id = cb.closest("tr").dataset.id, l = g.locks[id] || (g.locks[id] = {});
+        l[cb.dataset.k] = cb.checked;
+      };
+    });
+  };
+
+  /** Polishes the design open now, from where it is, and shows the rods move in the drawing as it works. Nothing changes until it's accepted. */
+  async function polishAgain() {
+    if (OPT.running) return;
+    const g = goals(), started = performance.now(), from = S.design, startGain = currentParts() ? currentParts().worstGain : NaN;
+    OPT.running = true; OPT.polishing = true; OPT.cancel = false; OPT.result = null;
+    $("#pc-result").innerHTML = "";
+    $("#pc-live").hidden = false; $("#pc-chart-box").hidden = false;
+    $("#pc-why").textContent = "Polishing. The drawing shows its best design so far.";
+    A.renderPlanCards();
+    const T = YS.tokens();
+    const show = (gain, history) => {
+      $("#pc-gain").textContent = `${fmt(gain, 2)} dBd`;
+      $("#pc-up").textContent = isFinite(startGain) && Math.abs(gain - startGain) >= 0.005 ? `${gain > startGain ? "+" : "−"}${fmt(Math.abs(gain - startGain), 2)}` : "";
+      YS.drawLines($("#pc-chart"), { yLabel: "dBd", xLabel: "designs tried", empty: "", series: history && history.length ? [{ name: "Best", color: T.s1, pts: history }] : [] });
+    };
+    try {
+      const res = await YS.optimise(A.pool, from, polishGoals(g.boomMax, g.range), EFFORT[g.effort] || EFFORT.normal, {
+        cancelled: () => OPT.cancel,
+        onProgress: (p) => {
+          $("#pc-bar").style.width = Math.min(100, 100 * p.gen / p.gens) + "%";
+          $("#pc-status").textContent = p.polishing ? "Finishing at higher accuracy…" : `Worst SWR ${p.best.worstSwr.toFixed(2)} · lowest F/B ${p.best.minFb.toFixed(1)} dB`;
+          show(p.best.worstGain, p.history);
+          if (A.views.design.preview) A.views.design.preview(YS.applyToDesign(from, p.solver));
+        },
+      });
+      res.seconds = (performance.now() - started) / 1000;
+      OPT.result = res;
+      show(res.parts.worstGain, res.history);
+      $("#pc-bar").style.width = "100%";
+      const favoured = g.favor !== "gain", shortGain = favoured && res.parts.worstGain < FIND.target - 0.01 ? ` It couldn't hold ${fmt(FIND.target, 2)} dBd here, so its gain is what it could reach. A longer boom or another rod may help.` : "";
+      $("#pc-status").textContent = (OPT.cancel ? "Stopped. This is the best it had found." : `Done in ${fmt(res.seconds, 0)} s.`) + shortGain;
+      renderOptResult();
+    } catch (e) {
+      $("#pc-status").textContent = e.message;
+    }
+    OPT.running = false; OPT.polishing = false;
+    A.renderPlanCards();
+  }
 
   function renderOptResult() {
-    const host = $("#opt-result");
-    if (!host) return;
-    const R = OPT.result;
-    if (!R) return;
-    const c = currentParts();
-    const n = R.design, boom = YS.boomLength(n);
+    const host = $("#pc-result"), R = OPT.result;
+    if (!host || !R) return;
+    const c = currentParts(), n = R.design, boom = YS.boomLength(n);
     const cmp = (lab, a, b, dec, higherBetter) => {
       const cls = a === undefined || Math.abs(b - a) < Math.pow(10, -dec) ? "" : (b > a) === higherBetter ? "better" : "worse";
       return `<tr><td>${lab}</td><td>${a === undefined ? "–" : fmt(a, dec)}</td><td class="${cls}">${fmt(b, dec)}</td></tr>`;
     };
+    $("#pc-why").textContent = "It's shown in the drawing. Use it, or keep yours.";
     host.innerHTML = `
-      <div class="scroll-x"><table class="tbl"><thead><tr><th>Across the band</th><th>Yours</th><th>New</th></tr></thead><tbody>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>Across the band</th><th>Yours</th><th>Polished</th></tr></thead><tbody>
         ${cmp("Worst gain, dBd", c && c.worstGain, R.parts.worstGain, 2, true)}
         ${cmp("Worst SWR", c && c.worstSwr, R.parts.worstSwr, 2, false)}
         ${cmp("Lowest F/B, dB", c && c.minFb, R.parts.minFb, 1, true)}
         ${cmp("Boom, mm", c && c.boom, boom, 1, false)}
       </tbody></table></div>
-      <div class="scroll-x"><table class="tbl"><thead><tr><th>Rod</th><th>From R</th><th>Length</th></tr></thead><tbody>
-        ${n.elements.map((e) => `<tr><td>${esc(e.name)}</td><td>${fmt(e.x, 1)}</td><td>${fmt(e.L, 1)}</td></tr>`).join("")}
-      </tbody></table></div>
       <div class="row">
         <button class="btn primary" id="opt-apply">Use this design</button>
-        <button class="btn" id="opt-apply-pin">Use it and pin the old one</button>
+        <button class="btn" id="opt-apply-pin">Use it and pin mine</button>
+        <button class="btn" id="opt-keep">Keep mine</button>
       </div>
-      <p class="note">${R.seconds ? `${R.evals.toLocaleString()} designs tried in ${fmt(R.seconds, 1)} s, then polished at higher accuracy.` : "From the boom explorer, which searches quickly. Use it, then run Optimize to polish it."} Lengths are rounded to 0.1 mm.</p>`;
+      <p class="note">${R.evals.toLocaleString()} designs tried in ${fmt(R.seconds, 1)} s, then finished at higher accuracy. Lengths are rounded to 0.1 mm.</p>`;
     $("#opt-apply").onclick = () => applyResult(false);
     $("#opt-apply-pin").onclick = () => applyResult(true);
+    $("#opt-keep").onclick = () => { OPT.result = null; host.innerHTML = ""; hideLive(); if (A.views.design.preview) A.views.design.preview(null); A.renderPlanCards(); };
   }
+
+  function hideLive() { $("#pc-live").hidden = true; $("#pc-chart-box").hidden = true; $("#pc-bar").style.width = "0%"; $("#pc-status").textContent = ""; }
 
   function applyResult(pin) {
     const d = OPT.result.design;
     if (pin && S.rows) S.pinned = { name: S.design.name + " (before)", rows: S.rows };
     d.tune = S.design.tune;
     S.design = JSON.parse(JSON.stringify(d));
+    OPT.result = null;
+    $("#pc-result").innerHTML = "";
+    hideLive();
+    if (A.views.design.preview) A.views.design.preview(null);
     A.commit();
-    A.go("design");
     A.designChanged(true);
     const b = $("#pin");
     if (b) b.textContent = S.pinned ? "Unpin" : "Pin";
     A.toast("Design updated. Undo brings the old one back.");
   }
 
-  function drawOptChart() {
-    const c = $("#opt-chart");
-    if (!c) return;
-    const T = YS.tokens();
-    const h = OPT.progress ? OPT.progress.history : [];
-    YS.drawLines(c, { yLabel: "Worst gain across the band, dBd", xLabel: "designs tried", empty: "The climb in gain shows here while it runs",
-      series: h.length ? [{ name: "Best", color: T.s1, pts: h }] : [] });
+  /* ---------- simulating different numbers of rods: a window of its own ---------- */
+  function openExplorer() {
+    const g = goals();
+    A.modal(`<h2>Simulate different numbers of rods</h2>
+      <p>For each number of rods and each boom length, the best worst-case gain it can hold across your band within your limits. It shows what a longer boom or another rod buys. Nothing here changes your design unless you open one.</p>
+      <div class="field-grid plan-four">
+        <div class="field"><label for="x-rods-a">Rods from</label><input class="num" id="x-rods-a" inputmode="numeric"></div>
+        <div class="field"><label for="x-rods-b">to (up to 5 more)</label><input class="num" id="x-rods-b" inputmode="numeric"></div>
+        <div class="field"><label for="x-boom-a">Boom from, mm</label><input class="num" id="x-boom-a" inputmode="numeric"></div>
+        <div class="field"><label for="x-boom-b">to, mm</label><input class="num" id="x-boom-b" inputmode="numeric"></div>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="x-run">Simulate</button><button class="btn" id="x-stop" disabled>Stop</button><button class="btn" id="x-close">Close</button></div>
+      <div class="progress" style="margin-top:8px"><i id="x-bar"></i></div>
+      <p class="note" id="x-status" style="margin-top:6px"></p>
+      <div class="legend" id="x-legend"></div>
+      <div style="position:relative;height:280px"><canvas id="x-chart" style="position:absolute;inset:0;width:100%;height:100%" aria-label="Gain against boom length, one line per rod count. Click a point to see that design."></canvas></div>
+      <div id="x-pick" class="stack" style="margin-top:8px"></div>`, (b, close) => {
+      b.querySelector(".modal").classList.add("wide");
+      const set = (key, q) => A.bindNum($(q, b), { get: () => goals()[key], set: (v) => { goals()[key] = v; }, min: key.startsWith("rods") ? 3 : 1, max: key.startsWith("rods") ? 30 : 1e6, decimals: 0 });
+      set("rodsFrom", "#x-rods-a"); set("rodsTo", "#x-rods-b"); set("boomFrom", "#x-boom-a"); set("boomTo", "#x-boom-b");
+      const shut = () => { if (OPT.exploring) OPT.cancel = true; close(); };
+      $("#x-close", b).onclick = shut;
+      $("#x-run", b).onclick = runExplore;
+      $("#x-stop", b).onclick = () => { OPT.cancel = true; };
+      $("#x-run", b).disabled = OPT.running;
+      const xc = $("#x-chart", b);
+      const hitAt = (e) => { const r = xc.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top; return (xc._hits || []).find((h) => Math.hypot(h.x - px, h.y - py) < 12); };
+      xc.addEventListener("pointermove", (e) => {
+        const hit = hitAt(e);
+        xc.style.cursor = hit ? "pointer" : "default";
+        if (hit) { const v = hit.p.r; A.showTip(`<b>${v.rods} rods, ${v.boom.toFixed(0)} mm boom</b><br><span class="mono">${v.gain.toFixed(2)} dBd worst · SWR ${v.swr.toFixed(2)} worst · F/B ${v.fb.toFixed(1)} dB lowest</span><br>Click to see it below.`, e.clientX, e.clientY); } else A.hideTip();
+      });
+      xc.addEventListener("pointerleave", () => A.hideTip());
+      xc.addEventListener("click", (e) => {
+        const hit = hitAt(e);
+        if (!hit) return;
+        const v = hit.p.r;
+        $("#x-pick", b).innerHTML = `<div class="row plan-pick"><span><b>${v.rods} rods, ${fmt(v.boom, 0)} mm</b>: ${fmt(v.gain, 2)} dBd worst in band, SWR ${fmt(v.swr, 2)}, F/B ${fmt(v.fb, 1)} dB</span><button class="btn primary" id="x-open">Open and polish it</button></div><p class="note">These are quick-search numbers. Opening it starts a polish on the Design tab, and you choose whether to keep what it finds.</p>`;
+        $("#x-open", b).onclick = () => {
+          if (OPT.running) return A.toast("Wait for the search to finish, or stop it.");
+          shut();
+          openEntry({ rough: { rods: v.rods, boom: v.boom, gain: v.gain, swr: v.swr, fb: v.fb, design: v.design }, state: "found" });
+          polishAgain();
+        };
+      });
+      const ro = new ResizeObserver(() => drawExplorer());
+      ro.observe(xc);
+      drawExplorer();
+    });
   }
 
   function drawExplorer() {
@@ -9704,302 +10181,50 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const color = (n) => seriesColors[(n - goals().rodsFrom) % seriesColors.length];
     const series = rods.map((n) => ({ name: n + " rods", color: color(n), dots: true,
       pts: res.filter((r) => r.rods === n).sort((a, b) => a.boom - b.boom).map((r) => { const p = [r.boom, r.gain]; p.r = r; return p; }) }));
-    YS.drawLines(c, { yLabel: "dBd", xLabel: "boom, mm", empty: "Run Explore to see what each boom can do", series });
-    $("#x-legend").innerHTML = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("");
-  }
-
-  function bindOptimize() {
-    const g = goals();
-    const set = (key, input, opt) => A.bindNum(input, Object.assign({ get: () => goals()[key], set: (v) => { goals()[key] = v; A.renderGainCards(); }, decimals: 1 }, opt));
-    A.bindGainCard($("#view-optimize .gain-card"));
-    A.bindNum($("#g-lo"), { get: () => goals().band[0], decimals: 3, min: 1, set: (v) => { goals().band[0] = v; A.renderGainCards(); } });
-    A.bindNum($("#g-hi"), { get: () => goals().band[1], decimals: 3, min: 1, set: (v) => { goals().band[1] = v; A.renderGainCards(); } });
-    set("swrMax", $("#g-swr"), { min: 1.01, max: 20, decimals: 2 });
-    set("fbMin", $("#g-fb"), { min: 0, max: 60 });
-    set("boomMax", $("#g-boom"), { min: 1, decimals: 0 });
-    set("minGap", $("#g-gap"), { min: 1, decimals: 0 });
-    set("rodsFrom", $("#x-rods-a"), { min: 3, max: 30, decimals: 0 });
-    set("rodsTo", $("#x-rods-b"), { min: 3, max: 30, decimals: 0 });
-    set("boomFrom", $("#x-boom-a"), { min: 1, decimals: 0 });
-    set("boomTo", $("#x-boom-b"), { min: 1, decimals: 0 });
-    $("#g-favor").onchange = (e) => { goals().favor = e.target.value; A.renderGainCards(); };
-    $("#g-range").onchange = (e) => { goals().range = e.target.value; };
-    $("#g-effort").onchange = (e) => { goals().effort = e.target.value; };
-    $("#g-len").onchange = (e) => { goals().changeLengths = e.target.checked; };
-    $("#g-spc").onchange = (e) => { goals().changeSpacing = e.target.checked; };
-    $("#opt-run").onclick = runOptimize;
-    $("#opt-stop").onclick = () => { OPT.cancel = true; };
-    $("#x-run").onclick = runExplore;
-    $("#x-stop").onclick = () => { OPT.cancel = true; };
-    const xc = $("#x-chart");
-    xc.addEventListener("pointermove", (e) => {
-      const r = xc.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
-      const hit = (xc._hits || []).find((h) => Math.hypot(h.x - px, h.y - py) < 12);
-      xc.style.cursor = hit ? "pointer" : "default";
-      if (hit) {
-        const v = hit.p.r;
-        A.showTip(`<b>${v.rods} rods, ${v.boom.toFixed(0)} mm boom</b><br><span class="mono">${v.gain.toFixed(2)} dBd worst · SWR ${v.swr.toFixed(2)} worst · F/B ${v.fb.toFixed(1)} dB lowest</span><br>Click to load it in the result panel.`, e.clientX, e.clientY);
-      } else A.hideTip();
-    });
-    xc.addEventListener("pointerleave", () => A.hideTip());
-    xc.addEventListener("click", (e) => {
-      const r = xc.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
-      const hit = (xc._hits || []).find((h) => Math.hypot(h.x - px, h.y - py) < 12);
-      if (!hit) return;
-      const v = hit.p.r;
-      OPT.result = { design: v.design, parts: { worstGain: v.gain, worstSwr: v.swr, minFb: v.fb }, evals: v.evals || 0, seconds: 0 };
-      renderOptResult();
-      previewDesign(v.design);
-    });
-  }
-
-  function syncOptimize() {
-    const g = goals();
-    ["#g-lo", "#g-hi", "#g-swr", "#g-fb", "#g-boom", "#g-gap", "#x-rods-a", "#x-rods-b", "#x-boom-a", "#x-boom-b"].forEach((q) => $(q)._refresh());
-    $("#g-favor").value = g.favor; $("#g-range").value = g.range; $("#g-effort").value = g.effort; $("#g-len").checked = g.changeLengths; $("#g-spc").checked = g.changeSpacing;
-    const sorted = S.design.elements.slice().sort((a, b) => a.x - b.x);
-    $("#g-locks").innerHTML = `<thead><tr><th>Rod</th><th>Hold length</th><th>Hold gap to next</th></tr></thead><tbody>` + sorted.map((e, i) => {
-      const l = g.locks[e.id] || {};
-      return `<tr data-id="${e.id}"><td class="rod-name">${esc(e.name)}</td><td><input type="checkbox" data-k="L" aria-label="Hold ${esc(e.name)} length" ${l.L ? "checked" : ""}></td><td>${i + 1 < sorted.length ? `<input type="checkbox" data-k="x" aria-label="Hold the gap after ${esc(e.name)}" ${l.x ? "checked" : ""}>` : ""}</td></tr>`;
-    }).join("") + "</tbody>";
-    $$("#g-locks input").forEach((c) => {
-      c.onchange = () => {
-        const id = c.closest("tr").dataset.id;
-        const l = g.locks[id] || (g.locks[id] = {});
-        l[c.dataset.k] = c.checked;
-      };
-    });
-  }
-
-  let optLayout = null;
-  function previewDesign(d) {
-    if (optLayout) optLayout.set(d, null);
-  }
-
-  async function runOptimize() {
-    if (OPT.running) return;
-    const g = goals();
-    OPT.running = true; OPT.cancel = false; OPT.result = null;
-    $("#opt-run").disabled = true; $("#opt-stop").disabled = false; $("#x-run").disabled = true;
-    A.renderGainCards();
-    const started = performance.now();
-    try {
-      const effort = EFFORT[g.effort];
-      const favoured = g.favor !== "gain";
-      const res = await YS.optimise(A.pool, S.design, Object.assign({}, g, { boomMax: g.boomMax, gainMin: FIND.target + 0.02, gainMax: favoured ? FIND.gainTo : 0 }), effort, {
-        cancelled: () => OPT.cancel,
-        onProgress: (p) => {
-          OPT.progress = p;
-          $("#opt-bar").style.width = Math.min(100, 100 * p.gen / p.gens) + "%";
-          const secs = (performance.now() - started) / 1000;
-          $("#opt-status").textContent = p.polishing ? "Polishing the best design at higher accuracy…" : `Worst gain ${p.best.worstGain.toFixed(2)} dBd · worst SWR ${p.best.worstSwr.toFixed(2)} · lowest F/B ${p.best.minFb.toFixed(1)} dB`;
-          $("#opt-speed").textContent = `${Math.round(p.evals / Math.max(secs, 0.01)).toLocaleString()} designs a second on ${A.pool.threads} threads`;
-          drawOptChart();
-          previewDesign(YS.applyToDesign(S.design, p.solver));
-        },
-      });
-      res.seconds = (performance.now() - started) / 1000;
-      OPT.result = res;
-      previewDesign(res.design);
-      $("#opt-bar").style.width = "100%";
-      const short = favoured && res.parts.worstGain < FIND.target - 0.01 ? ` It couldn't hold ${fmt(FIND.target, 2)} dBd here, so its gain is what it could reach. A longer boom or another rod may help.` : "";
-      $("#opt-status").textContent = (OPT.cancel ? "Stopped. This is the best it had found." : "Done.") + short;
-      renderOptResult();
-    } catch (e) {
-      $("#opt-status").textContent = e.message;
-    }
-    OPT.running = false;
-    $("#opt-run").disabled = false; $("#opt-stop").disabled = true; $("#x-run").disabled = false;
-    A.renderGainCards();
+    YS.drawLines(c, { yLabel: "dBd", xLabel: "boom, mm", empty: "Press Simulate to see what each boom can do", series });
+    const lg = $("#x-legend");
+    if (lg) lg.innerHTML = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("");
   }
 
   async function runExplore() {
     if (OPT.running) return;
     const g = goals(), d = S.design;
-    const firstDir = d.elements.find((e) => e.type === "director") || d.elements[0];
     const rods = [];
     for (let n = Math.round(g.rodsFrom); n <= Math.round(g.rodsTo) && rods.length < 6; n++) rods.push(n);
     const booms = [];
-    const steps = g.boomSteps;
-    for (let i = 0; i < steps; i++) booms.push(Math.round(g.boomFrom + (g.boomTo - g.boomFrom) * i / (steps - 1)));
-    if (!rods.length || g.boomTo <= g.boomFrom) { $("#x-status").textContent = "Check the ranges: the second number should be larger than the first."; return; }
-    OPT.running = true; OPT.cancel = false; OPT.explore = [];
-    $("#x-run").disabled = true; $("#x-stop").disabled = false; $("#opt-run").disabled = true;
-    A.renderGainCards();
+    for (let i = 0; i < g.boomSteps; i++) booms.push(Math.round(g.boomFrom + (g.boomTo - g.boomFrom) * i / (g.boomSteps - 1)));
+    const status = (t) => { const s = $("#x-status"); if (s) s.textContent = t; };
+    if (!rods.length || g.boomTo <= g.boomFrom) return status("Check the ranges: the second number should be larger than the first.");
+    OPT.running = true; OPT.exploring = true; OPT.cancel = false; OPT.explore = [];
+    const buttons = (on) => { const r = $("#x-run"), s = $("#x-stop"); if (r) r.disabled = on; if (s) s.disabled = !on; };
+    buttons(true);
+    A.renderPlanCards();
     const started = performance.now();
     try {
-      const res = await YS.exploreBooms(A.pool, { f0: d.f0, d: firstDir.d, material: firstDir.material || d.material, gap: d.gap, driven: { d: drivenRod().d, material: drivenRod().material || d.material } },
+      const res = await YS.exploreBooms(A.pool, { f0: d.f0, d: rodSize(), material: rodMetal(), gap: d.gap, driven: { d: drivenSize(), material: drivenMetal() } },
         { band: g.band, fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7 },
         { rods, booms, gens: 90 }, {
           cancelled: () => OPT.cancel,
           onProgress: (p) => {
             OPT.explore = p.results.slice();
-            $("#x-bar").style.width = 100 * p.done / p.total + "%";
-            $("#x-status").textContent = `${p.done} of ${p.total} done, ${fmt((performance.now() - started) / 1000, 0)} s so far`;
+            const bar = $("#x-bar");
+            if (bar) bar.style.width = 100 * p.done / p.total + "%";
+            status(`${p.done} of ${p.total} done, ${fmt((performance.now() - started) / 1000, 0)} s so far`);
             drawExplorer();
           },
         });
       OPT.explore = res;
-      $("#x-status").textContent = `${res.length} designs in ${fmt((performance.now() - started) / 1000, 1)} s. Click a point to see it.`;
+      status(`${res.length} designs in ${fmt((performance.now() - started) / 1000, 1)} s. Click a point to see it.`);
       drawExplorer();
     } catch (e) {
-      $("#x-status").textContent = e.message;
+      status(e.message);
     }
-    OPT.running = false;
-    $("#x-run").disabled = false; $("#x-stop").disabled = true; $("#opt-run").disabled = false;
-    A.renderGainCards();
+    OPT.running = false; OPT.exploring = false;
+    buttons(false);
+    A.renderPlanCards();
   }
 
-  /* ==================== The gain you want: a card in both the Design and Optimize views ==================== */
-  const FIND = { target: 10, gainTo: 0, boomTop: 0, rod: null, rodFor: "", running: false, rows: null, best: null, tooHigh: 0, key: "", status: "", bar: 0 };
-
-  const firstDirector = () => S.design.elements.find((e) => e.type === "director") || S.design.elements[0];
-  const rodSize = () => (FIND.rod && FIND.rodFor === S.design.name ? FIND.rod : firstDirector().d);
-  const drivenRod = () => S.design.elements.find((e) => e.type === "driven") || firstDirector();
-  const drivenSize = () => (FIND.driven && FIND.drivenFor === S.design.name ? FIND.driven : drivenRod().d);
-  const metalName = (m) => ({ aluminium: "aluminum" }[m] || m);
-  /* What an answer depends on: when this changes, the answers on show are out of date. */
-  const findKey = () => { const g = goals(); return [S.design.f0, g.band, g.swrMax, g.fbMin, g.minGap, FIND.target, FIND.gainTo, g.favor, g.favor === "gain" ? 0 : FIND.boomTop, rodSize(), firstDirector().material, drivenSize(), drivenRod().material].join(); };
-  /* An optional number: blank means no limit, and is stored as 0. */
-  const optionalNum = (get, set) => ({ get: () => get() || NaN, set, min: 0, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)) });
-
-  A.gainCard = (at) => `
-    <section class="card gain-card" aria-label="The gain you want">
-      <div class="head"><h2>The gain you want ${A.help("gain")}</h2></div>
-      <div class="body stack">
-        <div class="field-grid">
-          <div class="field"><label for="${at}-gf-target">Gain, dBd</label><input class="num" id="${at}-gf-target" data-gf="target" inputmode="decimal"></div>
-          <div class="field"><label for="${at}-gf-to">up to, if it matters</label><input class="num" id="${at}-gf-to" data-gf="to" inputmode="decimal" placeholder="any"></div>
-          <div class="field"><label for="${at}-gf-rod">Other rods' diameter, mm</label><input class="num" id="${at}-gf-rod" data-gf="rod" inputmode="decimal"></div>
-          <div class="field"><label for="${at}-gf-driven">Driven diameter, mm</label><input class="num" id="${at}-gf-driven" data-gf="driven" inputmode="decimal"></div>
-          <div class="field"><label for="${at}-gf-favor">Make the best of ${A.help("favor")}</label><select class="sel" id="${at}-gf-favor" data-gf="favor"><option value="gain">Shortest boom</option><option value="swr">Lowest SWR</option><option value="fb">Highest F/B</option><option value="both">Both SWR and F/B</option></select></div>
-          ${at === "design" ? `<div class="field"><label for="${at}-gf-swr">SWR under ${A.help("swr")}</label><input class="num" id="${at}-gf-swr" data-gf="swr" inputmode="decimal"></div>
-          <div class="field"><label for="${at}-gf-fb">F/B over, dB ${A.help("fb")}</label><input class="num" id="${at}-gf-fb" data-gf="fb" inputmode="decimal"></div>` : ""}
-          <div class="field" data-gf="topwrap"><label for="${at}-gf-top">Longest boom, mm</label><input class="num" id="${at}-gf-top" data-gf="top" inputmode="decimal" placeholder="any"></div>
-        </div>
-        <p class="note" data-gf="limits"></p>
-        <div class="row"><button class="btn primary" data-gf="run">Find the boom</button><button class="btn" data-gf="stop" disabled>Stop</button></div>
-        <div class="progress"><i data-gf="bar"></i></div>
-        <p class="note" data-gf="status" role="status"></p>
-        <div data-gf="out"></div>
-      </div>
-    </section>`;
-
-  A.bindGainCard = (card) => {
-    const q = (k) => card.querySelector(`[data-gf="${k}"]`);
-    A.bindNum(q("target"), { get: () => FIND.target, min: 0.5, max: 30, decimals: 2, set: (v) => { FIND.target = v; A.renderGainCards(card); } });
-    A.bindNum(q("rod"), { get: rodSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.rod = v; FIND.rodFor = S.design.name; A.renderGainCards(card); } });
-    A.bindNum(q("driven"), { get: drivenSize, min: 0.1, max: 100, decimals: 3, set: (v) => { FIND.driven = v; FIND.drivenFor = S.design.name; A.renderGainCards(card); } });
-    A.bindNum(q("to"), Object.assign(optionalNum(() => FIND.gainTo, (v) => { FIND.gainTo = v; A.renderGainCards(card); }), { decimals: 2 }));
-    A.bindNum(q("top"), Object.assign(optionalNum(() => FIND.boomTop, (v) => { FIND.boomTop = v; A.renderGainCards(card); }), { decimals: 0 }));
-    if (q("swr")) {
-      A.bindNum(q("swr"), { get: () => goals().swrMax, min: 1.01, max: 20, decimals: 2, set: (v) => { goals().swrMax = v; A.renderGainCards(card); } });
-      A.bindNum(q("fb"), { get: () => goals().fbMin, min: 0, max: 60, decimals: 1, set: (v) => { goals().fbMin = v; A.renderGainCards(card); } });
-    }
-    q("favor").onchange = (e) => { goals().favor = e.target.value; A.renderGainCards(); };
-    q("run").onclick = runFind;
-    q("stop").onclick = () => { OPT.cancel = true; };
-    q("out").onclick = (e) => { const b = e.target.closest("[data-use]"); if (b) useFound(FIND.rows[+b.dataset.use]); };
-    A.renderGainCards();
-  };
-
-  /* Both cards show the same search. `typing` is the card being typed in, whose fields are left alone. */
-  A.renderGainCards = (typing) => {
-    const g = goals(), R = FIND.rows && FIND.key === findKey() ? FIND : null;
-    const note = $("#g-note");
-    if (note) note.textContent = g.favor === "gain" ? "It raises the worst gain across the band, while holding the limits below. Gain may dip at first as it gets within your limits."
-      : `It works on ${FAVOR_NAMES[g.favor]} while holding the gain in the card above, ${fmt(FIND.target, 2)} dBd or more, and the limits below.`;
-    $$(".gain-card").forEach((card) => {
-      const q = (k) => card.querySelector(`[data-gf="${k}"]`), onDesign = !!card.closest("#view-design");
-      if (card !== typing) ["target", "to", "rod", "driven", "top", "swr", "fb"].forEach((k) => { if (q(k)) q(k)._refresh(); });
-      q("favor").value = g.favor;
-      q("topwrap").hidden = g.favor === "gain";
-      q("limits").textContent = `Worst gain across ${fmt(g.band[0], 3)} to ${fmt(g.band[1], 3)} MHz, in ${metalName(firstDirector().material)} rods with a driven element in ${metalName(drivenRod().material)}. The Rods table sets the metals.${onDesign ? "" : ` With SWR under ${fmt(g.swrMax, 2)} and F/B over ${fmt(g.fbMin, 1)} dB, set below.`}`;
-      q("run").disabled = OPT.running;
-      q("stop").disabled = !FIND.running;
-      q("bar").style.width = FIND.bar + "%";
-      q("status").textContent = FIND.running || R ? FIND.status : "";
-      q("out").innerHTML = R && R.rows.length ? `
-        <div class="scroll-x"><table class="tbl gf-table"><thead><tr><th>Rods</th><th>Boom, mm</th><th>Worst dBd</th><th>SWR</th><th>F/B</th><th></th></tr></thead><tbody>
-          ${R.rows.map((r, i) => `<tr><td>${r.rods}</td><td>${fmt(r.boom, 0)}</td><td>${fmt(r.gain, 2)}</td><td>${fmt(r.swr, 2)}</td><td>${fmt(r.fb, 1)}</td><td><button class="btn small" data-use="${i}" aria-label="Use ${r.rods} rods on ${fmt(r.boom, 0)} mm">Use</button></td></tr>`).join("")}
-        </tbody></table></div>` : "";
-    });
-  };
-
-  const FAVOR_NAMES = { swr: "the lowest SWR", fb: "the highest F/B", both: "the best SWR and F/B together" };
-
-  function foundMessage() {
-    const seconds = fmt((performance.now() - FIND.started) / 1000, 0);
-    if (FIND.tooHigh) return `That's more than ${FIND.tooHigh} rods can reach, the most this searches. Try a lower gain.`;
-    if (OPT.cancel && FIND.rows.length) return "Stopped. These are what it had found, and there may be shorter ones.";
-    if (FIND.rows.length && goals().favor !== "gain") return `Done in ${seconds} s. Each row is ${FAVOR_NAMES[goals().favor]} it found for that many rods at this gain. This is a quick search, so Optimize can polish the one you use.`;
-    if (FIND.rows.length > 1) return `Done in ${seconds} s. More rods shorten the boom. This is a quick search, so Optimize can polish the one you use.`;
-    if (FIND.rows.length) return `Done in ${seconds} s. Another rod wouldn't shorten it. This is a quick search, so Optimize can polish it.`;
-    const b = FIND.best;
-    return (OPT.cancel ? "Stopped before reaching it." : "It didn't reach that under these limits.") + (b ? ` The most it found was ${fmt(b.gain, 2)} dBd, on ${b.rods} rods and ${fmt(b.boom, 0)} mm. Try a lower gain, a narrower band or looser limits.` : "");
-  }
-
-  async function runFind() {
-    if (OPT.running) return;
-    const g = goals(), d = S.design, rod = firstDirector();
-    if (!(g.band[1] > g.band[0])) { FIND.status = "Check the band: its top should be above its bottom."; return A.renderGainCards(); }
-    if (FIND.gainTo && FIND.gainTo <= FIND.target) { FIND.status = "Check the gain: the second number should be above the first."; FIND.key = findKey(); FIND.rows = []; return A.renderGainCards(); }
-    const lock = (on) => ["#opt-run", "#x-run"].forEach((q) => { const b = $(q); if (b) b.disabled = on; });
-    Object.assign(FIND, { running: true, rows: [], best: null, tooHigh: 0, bar: 0, key: findKey(), status: "Starting…", started: performance.now() });
-    OPT.running = true; OPT.cancel = false;
-    lock(true);
-    A.renderGainCards();
-    try {
-      // the model's settings come along, so that the design found is the one you'll then see
-      const settings = {};
-      ["f0", "z0", "polarization", "endCap", "feedWire", "boomFace", "mast", "cable", "ground", "radio"].forEach((k) => { if (d[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(d[k])); });
-      const res = await YS.findForGain(A.pool, { f0: d.f0, d: rodSize(), material: rod.material || d.material, gap: d.gap, driven: { d: drivenSize(), material: drivenRod().material || d.material }, settings },
-        { band: g.band.slice(), fbMin: g.fbMin, swrMax: g.swrMax, minGap: g.minGap, changeLengths: true, changeSpacing: true, seed: 7, favor: g.favor, gainMax: FIND.gainTo, boomTop: FIND.boomTop }, FIND.target, {
-          cancelled: () => OPT.cancel,
-          onProgress: (p) => {
-            FIND.rows = p.rows.slice();
-            FIND.bar = Math.min(92, 100 * p.tries / (p.tries + 6));
-            FIND.status = `Tried ${p.last.rods} rods on ${fmt(p.last.boom, 0)} mm: ${fmt(p.last.gain, 2)} dBd. ${fmt((performance.now() - FIND.started) / 1000, 0)} s so far.`;
-            A.renderGainCards();
-          },
-        });
-      Object.assign(FIND, { rows: res.rows, best: res.best, tooHigh: res.tooHigh });
-      FIND.status = foundMessage();
-    } catch (e) {
-      FIND.status = e.message;
-    }
-    FIND.running = false; FIND.bar = 100; OPT.running = false;
-    lock(false);
-    A.renderGainCards();
-  }
-
-  function useFound(row) {
-    const name = `${row.rods}-element ${Math.round(S.design.f0)} MHz, ${fmt(FIND.target, 2)} dBd`;
-    const next = Object.assign(JSON.parse(JSON.stringify(row.design)), { name });
-    delete next.tune;      // any readings were of the antenna this replaces
-    const g = goals();
-    Object.assign(g, { forDesign: name, boomMax: Math.round(row.boom) });
-    FIND.rodFor = name; FIND.drivenFor = name;
-    A.loadDesign(next, true);
-    g.bandWas = next.f0 + ":" + next.band;
-    FIND.key = findKey();
-    A.go("design");
-    A.toast("Design loaded. Undo brings the old one back.");
-  }
-
-  A.views.optimize = {
-    mount(host) {
-      host.innerHTML = optTemplate();
-      bindOptimize();
-      optLayout = new YS.Layout2D($("#opt-layout"), { readOnly: true });
-      const ro = new ResizeObserver(() => { drawOptChart(); drawExplorer(); });
-      ro.observe($("#opt-chart")); ro.observe($("#x-chart"));
-    },
-    show() { syncOptimize(); previewDesign(OPT.result ? OPT.result.design : S.design); drawOptChart(); drawExplorer(); renderOptResult(); A.renderGainCards(); if (OPT.running) { $("#opt-run").disabled = true; $("#x-run").disabled = true; } },
-    refreshDesign() { if (!OPT.running) { OPT.goals = OPT.goals && OPT.goals.forDesign === S.design.name ? OPT.goals : null; syncOptimize(); previewDesign(S.design); A.renderGainCards(); } },
-    refreshResults() { renderOptResult(); },
-    retheme() { drawOptChart(); drawExplorer(); if (optLayout) optLayout.draw(); },
-  };
+  A.plan = { setStage, retheme() { drawWatch(); drawExplorer(); if (runLayout) runLayout.draw(); }, refresh() { if (OPT.stage === "goals") syncGoals(); if (OPT.stage === "run") renderRun(); A.renderPlanCards(); } };
 
   /* ==================== Build check ==================== */
   const CHK = { tol: { rod: 0.3, pos: 0.3, bend: 0, count: 400, trim: true }, res: null, sens: null, metric: "valley", running: false };
@@ -10009,7 +10234,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     <div class="view view-three" id="view-check">
       <div class="col">
         <section class="card" aria-label="Build errors">
-          <div class="head"><h2>How well can you build it?</h2></div>
+          <div class="head"><h2>How forgiving is this design?</h2></div>
           <div class="body stack">
             <p class="note">Simulates many builds with random errors, to show what you can expect from real parts.</p>
             <div class="field-grid">
@@ -10191,7 +10416,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <td style="font-family:var(--sans)">${metalNames[e.material || d.material] || ""}</td></tr>`).join("")}
       </tbody></table></div>
       <div class="stack" style="max-width:68ch">
-        <p><b>Driven element.</b> Cut two rods at ${fmt(half, 1)} mm each. Set them ${fmt(d.gap, 1)} mm apart, which makes ${fmt(2 * half + d.gap, 1)} mm tip to tip, deliberately ${fmt(CUT.allowance, 1)} mm too long. Then file both outer tips equally on the VNA. The model expects about ${fmt(driven.L, 1)} mm tip to tip when it's right (about ${fmt(doneHalf, 2)} mm each), and the wire across the gap usually makes it finish a mm or more shorter, so go by the VNA. Set the gap before you trim.</p>
+        <p><b>Driven element.</b> Cut two rods at ${fmt(half, 1)} mm each. Set them ${fmt(d.gap, 1)} mm apart, which makes ${fmt(2 * half + d.gap, 1)} mm tip to tip, deliberately ${fmt(CUT.allowance, 1)} mm too long. Then file both outer tips equally on the VNA. The model expects about ${fmt(driven.L, 1)} mm tip to tip when it's right (about ${fmt(doneHalf, 2)} mm each), and the coax's leads in the gap usually make it finish a mm or more shorter, so go by the VNA. Set the gap before you trim.</p>
         ${A.radio.sheetLine()}
         <p><b>Accuracy.</b> Cut the other rods to ±0.3 mm and file the ends square. Measure each one with calipers, and keep a note of what you got: the Tune tab can use it.</p>
         <p><b>Before you mount it.</b> A roof or mast job needs care. Stay well clear of power lines, ground the mast and fit lightning protection as your local code asks, and check any permit rules first.</p>
@@ -10528,7 +10753,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const YS = root.YS, A = YS.app, S = A.S;
   const { $, $$, esc } = A;
 
-  const TABS = [["design", "Design"], ["optimize", "Optimize"], ["check", "Build check"], ["cut", "Cut list"], ["print", "3D print"], ["tune", "Tune my antenna"]];
+  const TABS = [["design", "Design"], ["check", "Build check"], ["cut", "Cut list"], ["print", "3D print"], ["tune", "Tune my antenna"]];
   const mounted = {};
 
   function renderTop() {
@@ -10538,7 +10763,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 
   /** Shows a view, building it the first time. */
   A.go = (view) => {
-    if (!TABS.some((t) => t[0] === view)) view = "design";
+    if (!TABS.some((t) => t[0] === view)) view = "design";       // Optimize is part of Design now, so an old #optimize link lands there
     S.view = view;
     TABS.forEach(([k]) => {
       const host = $("#host-" + k);
@@ -10677,7 +10902,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   function newDesignDialog() {
     const metals = `<option value="aluminium">Aluminum</option><option value="brass">Brass</option><option value="copper">Copper</option><option value="steel">Stainless</option>`;
     A.modal(`<h2>Start a new design</h2>
-      <p>This gives you a sensible starting point using a standard spacing recipe. Then use Optimize to tune it. Undo brings back the design you have open.</p>
+      <p>This gives you a sensible starting point using a standard spacing recipe. Then polish it on the Design tab. To start from the gain you want instead, use Design an antenna for me there. Undo brings back the design you have open.</p>
       <div class="field-grid">
         <div class="field"><label for="n-f">Frequency, MHz</label><input class="num" id="n-f" value="915" inputmode="decimal"></div>
         <div class="field"><label for="n-c">Rods</label><input class="num" id="n-c" value="6" inputmode="numeric"></div>
@@ -10714,7 +10939,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <tr><td style="white-space:normal">Gain from input power against gain from integrating the pattern</td><td>within 0.02 dB</td></tr>
       </tbody></table></div>
       <p style="margin-top:10px"><b>Thick rods.</b> On a 3 mm rod at 900 MHz, nec2++ doesn't settle: its feed resistance runs from 53 to 71 ohms as segments increase. This solver settles, within about 0.1 ohm of its finest mesh at Normal.</p>
-      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but Optimize and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the DuvYagi's valley measured about 9 MHz above this solver's prediction, cause not yet known. Measure yours.</p>
+      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but designing, polishing and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the DuvYagi's valley measured about 9 MHz above this solver's prediction, cause not yet known. Measure yours.</p>
       <p class="note">Yagi Studio is free software: you can use, change and share it under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU Affero General Public License</a>, version 3 or later. It comes with no warranty. <a href="https://github.com/Duvdivan/yagi-studio" target="_blank" rel="noopener">Its source code is on GitHub</a>.</p>
       <div class="row" style="margin-top:8px"><button class="btn" data-close>Close</button></div>`, (b, close) => { $("[data-close]", b).onclick = close; });
   }

@@ -185,8 +185,9 @@
   }
 
   /**
-   * The wire across the feed gap: series reactance per MHz, in ohm. The rod is modelled as continuous, but the
-   * current really squeezes through a thin wire (design.feedWire, its diameter in mm; 0 leaves it out). This is
+   * The coax's leads in the feed gap: series reactance per MHz, in ohm. The rod is modelled as full thickness up to
+   * the gap, but across it the current really runs in the coax's thin centre wire and braid, one to each half (design.feedWire,
+   * the centre wire's diameter in mm; 0 leaves it out). Nothing joins the halves. This is
    * the inductance of a wire thinner than the rod it replaces, w mu0 / (2 pi) * gap * ln(a / r), plus a small fit.
    */
   function feedWireX(design, a) {

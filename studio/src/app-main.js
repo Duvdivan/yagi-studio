@@ -7,7 +7,7 @@
   const YS = root.YS, A = YS.app, S = A.S;
   const { $, $$, esc } = A;
 
-  const TABS = [["design", "Design"], ["optimize", "Optimize"], ["check", "Build check"], ["cut", "Cut list"], ["print", "3D print"], ["tune", "Tune my antenna"]];
+  const TABS = [["design", "Design"], ["check", "Build check"], ["cut", "Cut list"], ["print", "3D print"], ["tune", "Tune my antenna"]];
   const mounted = {};
 
   function renderTop() {
@@ -17,7 +17,7 @@
 
   /** Shows a view, building it the first time. */
   A.go = (view) => {
-    if (!TABS.some((t) => t[0] === view)) view = "design";
+    if (!TABS.some((t) => t[0] === view)) view = "design";       // Optimize is part of Design now, so an old #optimize link lands there
     S.view = view;
     TABS.forEach(([k]) => {
       const host = $("#host-" + k);
@@ -156,7 +156,7 @@
   function newDesignDialog() {
     const metals = `<option value="aluminium">Aluminum</option><option value="brass">Brass</option><option value="copper">Copper</option><option value="steel">Stainless</option>`;
     A.modal(`<h2>Start a new design</h2>
-      <p>This gives you a sensible starting point using a standard spacing recipe. Then use Optimize to tune it. Undo brings back the design you have open.</p>
+      <p>This gives you a sensible starting point using a standard spacing recipe. Then polish it on the Design tab. To start from the gain you want instead, use Design an antenna for me there. Undo brings back the design you have open.</p>
       <div class="field-grid">
         <div class="field"><label for="n-f">Frequency, MHz</label><input class="num" id="n-f" value="915" inputmode="decimal"></div>
         <div class="field"><label for="n-c">Rods</label><input class="num" id="n-c" value="6" inputmode="numeric"></div>
@@ -193,7 +193,7 @@
         <tr><td style="white-space:normal">Gain from input power against gain from integrating the pattern</td><td>within 0.02 dB</td></tr>
       </tbody></table></div>
       <p style="margin-top:10px"><b>Thick rods.</b> On a 3 mm rod at 900 MHz, nec2++ doesn't settle: its feed resistance runs from 53 to 71 ohms as segments increase. This solver settles, within about 0.1 ohm of its finest mesh at Normal.</p>
-      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but Optimize and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the DuvYagi's valley measured about 9 MHz above this solver's prediction, cause not yet known. Measure yours.</p>
+      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but designing, polishing and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the DuvYagi's valley measured about 9 MHz above this solver's prediction, cause not yet known. Measure yours.</p>
       <p class="note">Yagi Studio is free software: you can use, change and share it under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU Affero General Public License</a>, version 3 or later. It comes with no warranty. <a href="https://github.com/Duvdivan/yagi-studio" target="_blank" rel="noopener">Its source code is on GitHub</a>.</p>
       <div class="row" style="margin-top:8px"><button class="btn" data-close>Close</button></div>`, (b, close) => { $("[data-close]", b).onclick = close; });
   }

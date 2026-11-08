@@ -64,7 +64,9 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
   // the same parts left where they sit on the antenna: x along the boom from the reflector, y across, z along the rods
   const here = YS.buildParts(wasm, duv, { mount: "mast", bed: BED, screws: true, inPlace: true });
   const R0 = by(here, "boom_rear").mesh, T = full.plan.taper, S = full.plan.sizes, inR = (x, y, z) => inside(R0, x, y, z);
-  truth("the plan has no warnings, and two pieces", full.plan.warnings.length === 0 && full.plan.sections.length === 2, full.plan.warnings.join(" | "));
+  // D3 sits just past the tongue's tip, where the fork's face curves, so it alone has no length written beside it
+  const onlyD3 = (w) => w.length === 1 && /^D3 has no length written/.test(w[0]);
+  truth("the plan's only warning is D3's missing length, and it's two pieces", onlyD3(full.plan.warnings) && full.plan.sections.length === 2, full.plan.warnings.join(" | "));
   truth("it's 35 mm across at the driven element, the window and a plain rod's 10 mm grip each side", near(2 * T.hzD, 35, 1e-6) && T.win === 15 && near(T.grip, 10, 1e-6));
   truth("and narrows to the plain 20 mm at the tongue's tip, no steeper than 5 degrees", near(2 * T.hz(T.end), 20, 1e-9) && T.ang > 0 && T.ang < 5, `${T.ang.toFixed(2)} degrees`);
   truth("the file lies on its sloped face, along its whole length", (() => {
@@ -148,15 +150,32 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
       for (let x = m.lx - m.width / 2; x <= m.lx + m.width / 2; x += 0.25) for (let z = g.rowTop - g.H; z <= g.rowTop; z += 0.25) if (open(x, z)) n++;
       return m.labelled && n > 20;
     }), g.marks.map((m) => `${m.rod} ${m.lx.toFixed(1)}`).join(", "));
-    truth("the top keeps no names: between the V and the edge it's whole", g.marks.every((m) => [2, 4, 6].every((y) => { const [x, z] = turned(m.lx, g.top - 0.3); return inR(x, y, z); })));
+    // probed where the names sit, past the V, except where a check notch is cut in the top's edge
+    const inNotch = (xf) => n && [[n.from - 4, n.from], [n.to, n.to + 4]].some(([a, b]) => xf > a - 1 && xf < b + 1);
+    truth("the top keeps no names: between the V and the edge it's whole", g.marks.every((m) => [2, 4, 6].every((y) => { const [x, z] = turned(m.lx, g.top - 0.3); return (y >= 4 && inNotch(m.lx)) || inR(x, y, z); })));
   }
   // nothing written covers a screw's head, on either piece
   truth("nothing written covers a screw's head", [[R0, [0, 73.5, 163.8]], [by(here, "boom_front").mesh, [272.4, 378.6]]].every(([M, xs]) => xs.every((x) => [-3.4, 0, 3.4].every((dx) => [-3, 0, 3].every((z) => Math.abs(dx) < 1 && Math.abs(z) < 1.4 || inside(M, x + dx, -S.w / 2 + 0.3, z))))) &&
     [-1, 1].every((k) => [-3.4, 3.4].every((dx) => [-3, 0, 3].every((dz) => inR(xd + dx, -S.w / 2 + 0.3, k * T.zs + dz)))));
+  // each rod's length beside its hole on the screws' side, the driven element's halves each their own (the owner, 2026-11-08)
+  {
+    const L = here.plan.lengths.labels, FM = by(here, "boom_front").mesh, yS = -S.w / 2 + 0.3;
+    const want = { Reflector: "158.6", Driven: "73.0", D1: "142.3", D2: "140.8", D4: "136.1" };
+    truth("every rod but D3 has its length planned, the driven element twice", Object.entries(want).every(([n, t]) => L.filter((l) => l.rod === n).length === (n === "Driven" ? 2 : 1) && L.find((l) => l.rod === n).text === t), L.map((l) => `${l.rod} ${l.text}`).join(", "));
+    const cut = (l) => { const M = l.sec === 0 ? R0 : FM; let n = 0; for (let x = l.x - l.W / 2; x <= l.x + l.W / 2; x += 0.2) for (let z = l.z0; z <= l.z0 + l.H; z += 0.25) if (!inside(M, x, yS, z)) n++; return n; };
+    truth("each is cut in the side, below its screw's head, and the driven element's between its screws", L.every((l) => cut(l) > 25 && (l.driven ? l.z0 + l.H < T.zs - 3 && l.z0 > -T.zs + 3 : l.z0 + l.H <= -3.8 + 1e-9)), L.map((l) => `${l.rod} ${cut(l)}`).join(", "));
+    truth("the reflector's slides clear of the socket's mouth, still reaching the rod", (() => { const l = L.find((q) => q.rod === "Reflector"); return l.x - l.W / 2 >= MOUTH && l.x - l.W / 2 < 0; })());
+    const off = YS.planParts(duv, { bed: BED, screws: true, lengths: false });
+    truth("they can be left off, and then D3 isn't mentioned", !off.lengths && off.warnings.length === 0, off.warnings.join(" | "));
+    // the driven element's are the length to cut each half, with the trimming allowance, as the gauge's DE mark: it's trimmed by the VNA, not to a length
+    const cutDE = YS.planParts(duv, { bed: BED, screws: true, allowance: 4 }).lengths.labels.filter((l) => l.driven).map((l) => l.text);
+    truth("the driven element's two say the length to cut each half, with the allowance", cutDE.length === 2 && cutDE.every((t) => t === "75.0"), cutDE.join(", "));
+    truth("the notes list them", /ROD LENGTHS ON THE BOOM[\s\S]*Driven: 73.0 mm each half/.test(YS.partsNotes(duv, here)));
+  }
   // up arrows on both sides and TOP on the top, in place of THIS SIDE UP, and the name, on the front piece (the owner, 2026-11-07)
   {
     const Fc = here.plan.faces, FM = by(here, "boom_front").mesh, yS = S.w / 2 - 0.3, h2 = S.h / 2;
-    truth("the arrows, TOP and the name are planned on the front piece", Fc && Fc.section === 1 && Fc.arrows.length === 2 && Fc.top && Fc.brand && !here.plan.warnings.length, JSON.stringify(Fc && { arrows: Fc.arrows.map((a) => [a.side, a.x.toFixed(1)]), top: Fc.top && Fc.top.x.toFixed(1), brand: Fc.brand && [Fc.brand.side, Fc.brand.x.toFixed(1)] }));
+    truth("the arrows, TOP and the name are planned on the front piece", Fc && Fc.section === 1 && Fc.arrows.length === 2 && Fc.top && Fc.brand && onlyD3(here.plan.warnings), JSON.stringify(Fc && { arrows: Fc.arrows.map((a) => [a.side, a.x.toFixed(1)]), top: Fc.top && Fc.top.x.toFixed(1), brand: Fc.brand && [Fc.brand.side, Fc.brand.x.toFixed(1)] }));
     truth("an arrow's shaft is cut in each side, pointing up to the top", Fc.arrows.every((a) => !inside(FM, a.x, a.side * yS, 0) && !inside(FM, a.x, a.side * yS, a.half - 0.5) && inside(FM, a.x + 2, a.side * yS, 0) && inside(FM, a.x, a.side * yS, -a.half - 1) && !inside(FM, a.x + 3.5 * 0.86 / 2, a.side * yS, a.half - 3.5 / 2)));
     const someOpen = (x0, x1, f) => { for (let x = x0; x <= x1; x += 0.2) if (f(x)) return true; return false; };
     truth("TOP is cut in the top", someOpen(Fc.top.x - Fc.top.W / 2, Fc.top.x + Fc.top.W / 2, (x) => !inside(FM, x, Fc.top.y0 + 0.4, h2 - 0.3)));

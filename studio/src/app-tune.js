@@ -35,6 +35,7 @@
           <div class="head"><h2>How you measured</h2></div>
           <div class="body stack">
             <div class="field"><label for="tune-target">Frequency you want, MHz</label><input class="num" id="tune-target" inputmode="decimal"></div>
+            <button class="btn small" data-calguide>Calibration guide: how to set up the NanoVNA</button>
             <label class="check"><input type="checkbox" id="cable-on"> A cable stays between the feed and the VNA's calibration point ${A.help("cable")}</label>
             <div id="cable-fields" class="stack">
               <div class="field-grid">
@@ -100,7 +101,14 @@
                 <p class="note"><b>With a PC:</b> the free <a href="https://github.com/NanoVNA-Saver/nanovna-saver" target="_blank" rel="noopener">NanoVNA-Saver</a> reads the sweep over USB and saves it as a Touchstone file. Load or drop that .s1p here.</p>
                 <p class="note"><b>On the NanoVNA alone:</b> with a microSD slot and firmware showing an SD CARD menu, choose SD CARD, then SAVE S1P. Its numbered save slots only hold calibrations, not sweeps.</p>
                 <p class="note"><b>Directly:</b> ${root.ysNative ? "plug it into this phone through a USB OTG adapter and use Connect NanoVNA." : root.ysWeb && root.ysWeb.ios ? "iPhones and iPads can't reach a NanoVNA over USB. Save a .s1p another way, then load it here through the Files app." : "plug it into this PC and use Connect NanoVNA, in Edge or Chrome."}</p>
-                <p class="note"><b>Either way:</b> calibrate first, and sweep well past the valley on both sides. Tick the cable box under How you measured if a pigtail stays between the feed and your calibration point, which it usually does.</p>
+                <p class="note"><b>Set it up like this, every time:</b></p>
+                <ol class="note" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+                  <li>Set the sweep first: START and STOP well past the valley on both sides, such as 850 and 950 MHz for 910 MHz, at 101 points.</li>
+                  <li>Then calibrate over that same range, at the end of the cable you'll plug the antenna into: CAL, RESET, then OPEN, SHORT and LOAD with the kit's three ends on that cable, then DONE, and save it. Calibrate again whenever you change START or STOP. Calibrated over another range, most NanoVNAs show a jump at 900 MHz, where they change how they measure, and that part of the sweep is wrong.</li>
+                  <li>Plug in the antenna, keep hands and the cable still and away from the rods, and read or save the sweep.</li>
+                  <li>Here, tick the cable box under How you measured and enter the coax between that calibration point and the driven element: usually the antenna's own coax. A rough length is enough. That lets the fit use R and X, which say whether the driven element is too long or too short.</li>
+                </ol>
+                <p class="note">Nothing needs setting on the NanoVNA's screen for this: a sweep file and Connect NanoVNA always carry R and X.</p>
               </div>
             </details>
           </div>
@@ -108,6 +116,7 @@
         <div class="row">
           <button class="btn small" id="readings-clear">Clear readings</button>
           <button class="btn small" id="readings-sample">Load the DuvYagi example</button>
+          <button class="btn small" data-calguide>Calibration guide</button>
           <span class="note" id="readings-count"></span>
         </div>
       </div>
@@ -319,10 +328,62 @@
     });
   }
 
+  /* ---------- the calibration guide ----------
+     What the owner asked to have in the app, 2026-11-08, after a NanoVNA calibrated over another range jumped at 900 MHz, and
+     the Tune tab, lacking the antenna's coax, fitted SWR alone and called for a trim that made the antenna worse. */
+  function calibrationGuide() {
+    A.modal(`<h2>Calibrating your NanoVNA</h2>
+      <p>Calibrating makes the NanoVNA measure as if it sat exactly where you attached the open, short and load. That spot is the <b>calibration plane</b>. Everything beyond it, the coax and the antenna, is what you measure.</p>
+      <h3 class="plan-h">The way to do it</h3>
+      <ol class="cal-steps">
+        <li><b>Set the sweep first.</b> START and STOP well past the valley on both sides, such as 850 and 950 MHz for 910 MHz, at 101 points.</li>
+        <li><b>Calibrate over that range, at the connector the antenna plugs into</b>: the VNA's port, or the end of a jumper cable if you use one. CAL, RESET, then OPEN, SHORT and LOAD with the kit's three ends on that connector, then DONE, and save it to a slot.</li>
+        <li><b>Check it.</b> Put the load back on: SWR should read about 1.0 all the way across. If it doesn't, calibrate again.</li>
+        <li><b>Plug in the antenna and sweep.</b> Keep hands and the cable still, and away from the rods. Read it in with Connect NanoVNA, or save a .s1p and load it.</li>
+        <li><b>Tell this tab about the antenna's own coax</b>: tick "A cable stays between the feed and the VNA's calibration point", and enter its type and length, from the SMA connector to where it's soldered to the driven element. For 25 cm of RG178: RG178, 250 mm. Within a few centimetres is enough: the fit works out the exact electrical length.</li>
+      </ol>
+      <p class="note"><b>Calibrate again whenever you change START or STOP.</b> Calibrated over another range, most NanoVNAs show a jump at 900 MHz, where they change how they measure. That part of the sweep is wrong, and this tab leaves it out when it sees one.</p>
+      <h3 class="plan-h">Why the coax matters</h3>
+      <p>SWR says how big the mismatch is, but not which way. R and X say which way: X positive means the driven element is too long, negative means too short. A sweep file and Connect NanoVNA always carry R and X, so there's nothing to set on the NanoVNA for them. But every few centimetres of coax turns R and X round, so this tab needs the coax between the calibration and the feed to use them. Without it, it can only fit SWR, and it says so.</p>
+      <p class="note">The coax's loss counts too: 25 cm of RG178 loses about 0.4 dB each way, which makes the antenna look about 0.8 dB better matched than it is. Entering the coax takes that out as well.</p>
+      <h3 class="plan-h">Calibrating at the coax's bare end instead</h3>
+      <p>You could, before soldering, make the three standards yourself at the stripped end: open, the cut end; short, the centre wire soldered straight to the braid; load, a 49.9 or 51 ohm chip resistor across. That puts the calibration right at the feed, with no coax to enter. But at 900 MHz every millimetre of lead on a home-made short or load adds error, a leaded resistor isn't 50 ohm there, and soldering the coax on afterwards changes the very millimetres you calibrated. Done carefully it can match the way above; done roughly it's worse, and you can't easily tell which. If you do calibrate there, leave the cable box unticked.</p>
+      <h3 class="plan-h">Worth doing before you solder</h3>
+      <p>With the VNA calibrated at its port, plug in the bare coax with its centre wire shorted to the braid at the far end, read R and X at your frequency, and enter them under "Measure its length with a short". That gives the coax's exact electrical length, so the fit doesn't have to estimate it.</p>
+      <div class="row" style="margin-top:8px"><button class="btn" data-close>Close</button></div>`, (b, close) => { b.querySelector(".modal").classList.add("wide"); $("[data-close]", b).onclick = close; });
+  }
+  A.calibrationGuide = calibrationGuide;
+
   /* ---------- diagnosis ---------- */
   function scheduleFit() {
     clearTimeout(fitTimer);
     fitTimer = setTimeout(runFit, 350);
+  }
+
+  /**
+   * The readings that can be trusted. Most NanoVNAs change how they measure at fixed frequencies (900 MHz, where they go from
+   * one harmonic of their oscillator to the next, and 300 and 1500 MHz on some), and unless they're calibrated over the sweep
+   * the curve jumps there. The owner's sweeps jumped at 900 MHz: up to SWR 3 just below it, which no antenna does, and the fit
+   * bent the model to copy it (2026-11-08). So a jump at one of those frequencies, much bigger than the steps around it, leaves
+   * out the readings on the far side of it from the target.
+   */
+  const VNA_SWITCH = [300, 900, 1500];      // MHz where NanoVNAs change measuring mode
+  function usableReadings(all) {
+    const list = all.slice().sort((a, b) => a.f - b.f), tgt = targetF();
+    const mag = (p) => { const v = swrOfReading(p); return (v - 1) / (v + 1); };
+    for (const B of VNA_SWITCH) {
+      const i = list.findIndex((p) => p.f >= B);
+      if (i < 2 || i > list.length - 2) continue;
+      if (list[i].f - list[i - 1].f > 0.05 * B) continue;     // too far apart to tell a jump from a slope
+      const step = Math.abs(mag(list[i]) - mag(list[i - 1]));
+      const around = [i - 2, i + 1].filter((j) => j >= 1 && j < list.length).map((j) => Math.abs(mag(list[j]) - mag(list[j - 1])));
+      const usual = Math.max(0.004, ...around);
+      if (step > 0.025 && step > 4 * usual) {      // the owner's newest sweep: 0.037 in |reflection| against 0.006 either side
+        const keep = tgt >= B ? list.slice(i) : list.slice(0, i);
+        return { list: keep, step: B, dropped: list.length - keep.length };
+      }
+    }
+    return { list, step: null, dropped: 0 };
   }
 
   /** Thins a long sweep, keeping the region around its valley densest. */
@@ -353,16 +414,22 @@
       const cable = S.design.cable.on ? S.design.cable : null;
       const useZ = !!cable && t.readings.some((p) => p.g);
       T.useZ = useZ;
-      const readings = fitSubset(t.readings).map((p) => (p.g && useZ ? { f: p.f, g: p.g } : { f: p.f, swr: swrOfReading(p) }));
+      const readings = fitSubset(usableReadings(t.readings).list).map((p) => (p.g && useZ ? { f: p.f, g: p.g } : { f: p.f, swr: swrOfReading(p) }));
       const rodStarts = [{ directors: 0, driven: 0, reflector: 0 }, { directors: -2 }, { directors: 2 }, { directors: -3, driven: -3 }, { directors: -2, driven: 3 }, { directors: 2, driven: -3 }];
       // the rotation repeats every half wavelength of cable: start from several lengths
       const starts = useZ ? [-50, -25, 0, 25, 50].flatMap((c) => rodStarts.slice(0, 3).map((r) => Object.assign({ cable: c }, r))) : rodStarts;
-      const fitWith = (weightPower) => Promise.all(starts.map((st) => A.pool.run("fitReadings", { design, readings, cable, free: t.free, starts: [st], weightPower, fitCable: useZ })));
-      const [mainFits, plainFits] = await Promise.all([fitWith(3), fitWith(0)]);
+      const fitWith = (weightPower, drivenSide) => Promise.all(starts.map((st) => A.pool.run("fitReadings", { design, readings, cable, free: t.free, starts: [st], weightPower, fitCable: useZ, drivenSide })));
+      // from SWR alone, longer and shorter can fit alike: fit each side as well, to see whether the readings tell them apart
+      const sides = !useZ && t.free.driven;
+      const [mainFits, plainFits, longer, shorter] = await Promise.all([fitWith(3), fitWith(0), sides ? fitWith(3, 1) : null, sides ? fitWith(3, -1) : null]);
       if (seq !== fitSeq) return;
       const best = (list) => list.reduce((a, b) => (b.value < a.value ? b : a));
       const fit = best(mainFits);
       fit.alternate = best(plainFits).offsets;
+      if (sides) {
+        const L = best(longer), Sh = best(shorter), [win, other] = L.rms <= Sh.rms ? [L, Sh] : [Sh, L];
+        if (other.rms <= Math.max(1.25 * win.rms, win.rms + 0.02)) fit.ambiguous = { longer: L.offsets.driven, shorter: Sh.offsets.driven };
+      }
       T.fit = fit;
       T.busy = false;
       renderDiag();
@@ -392,11 +459,25 @@
     renderDiag(); renderPlan(); drawChart();
   }
 
+  /** The valley nearest the target: the low point a sweep's far end, or the far side of a VNA's jump, mustn't steal (the owner's sweep was lowest at 850 MHz). */
   const measuredValley = () => {
-    const list = tune().readings;
+    const list = usableReadings(tune().readings).list, tgt = targetF();
+    if (!list.length) return null;
+    const v = list.map(swrOfReading);
+    const minima = list.map((p, i) => ({ f: p.f, swr: v[i] })).filter((p, i) => i > 0 && i < list.length - 1 && v[i] <= v[i - 1] && v[i] <= v[i + 1]);
+    if (minima.length) return minima.reduce((a, b) => (Math.abs(b.f - tgt) < Math.abs(a.f - tgt) ? b : a));
     let b = null;
-    for (const p of list) { const s = swrOfReading(p); if (!b || s < b.swr) b = { f: p.f, swr: s }; }
+    list.forEach((p, i) => { if (!b || v[i] < b.swr) b = { f: p.f, swr: v[i] }; });
     return b;
+  };
+  /** The SWR the readings show at the target itself, read between the two readings either side. */
+  const measuredAtTarget = () => {
+    const list = usableReadings(tune().readings).list, tgt = targetF();
+    const i = list.findIndex((p) => p.f >= tgt);
+    if (i < 0 || (i === 0 && list[0].f > tgt)) return null;
+    if (i === 0 || list[i].f === tgt) return swrOfReading(list[i]);
+    const a = list[i - 1], b = list[i], u = (tgt - a.f) / (b.f - a.f);
+    return swrOfReading(a) + u * (swrOfReading(b) - swrOfReading(a));
   };
 
   function offsetSentence(name, verb, v) {
@@ -405,8 +486,9 @@
   }
   /** Does this answer hold however the readings are weighted? */
   function firmness(fit, key) {
-    const a = fit.offsets[key], b = fit.alternate[key], gap = Math.abs(a - b);
     const signed = (v) => (v >= 0 ? "+" : "−") + fmt(Math.abs(v), 1);
+    if (key === "driven" && fit.ambiguous) return { firm: false, range: `${signed(fit.ambiguous.shorter)} or ${signed(fit.ambiguous.longer)} mm` };
+    const a = fit.offsets[key], b = fit.alternate[key], gap = Math.abs(a - b);
     return { firm: gap < 0.6, range: `${signed(Math.min(a, b))} to ${signed(Math.max(a, b))} mm` };
   }
 
@@ -417,8 +499,9 @@
       host.innerHTML = `<p class="note">Add at least two SWR readings. Five or more, spread across the valley and its sides, give a much firmer answer.</p>`;
       return;
     }
-    const v = measuredValley(), tgt = targetF(), off = v.f - tgt;
+    const v = measuredValley(), tgt = targetF(), off = v.f - tgt, use = usableReadings(t.readings);
     let html = "";
+    if (use.step) html += `<p><span class="pill warn">VNA jump at ${use.step} MHz</span> <span class="note">Your sweep jumps at ${use.step} MHz, where most NanoVNAs change how they measure. That's the VNA, not the antenna. The ${use.dropped} readings ${use.step > tgt ? "above" : "below"} it are left out of everything here. Calibrate the VNA over this sweep's range, at the end of the cable you measure through, and the jump should go.</span></p>`;
     const onTarget = Math.abs(off) < 0.003 * tgt;
     html += `<p>Your best match is <b>SWR ${fmt(v.swr, 2)} at ${fmt(v.f, 1)} MHz</b>${onTarget ? ", right on your target." : `, <b>${fmt(Math.abs(off), 1)} MHz ${off > 0 ? "above" : "below"}</b> your ${fmt(tgt, 3)} MHz target.`}</p>`;
     if (T.busy && !T.fit) { host.innerHTML = html + `<p class="note">Fitting the model to your readings…</p>`; return; }
@@ -431,16 +514,33 @@
       const fD = firmness(T.fit, "directors"), fE = firmness(T.fit, "driven");
       html += `<p>To match your readings, the ${offsetSentence("directors", "act", o.directors)}, and the ${offsetSentence("driven element", "acts", o.driven)}.${t.free.reflector ? ` The ${offsetSentence("reflector", "acts", o.reflector)}.` : ""}</p>`;
       const firmText = (name, f) => (f.firm ? `<b>${name}: firm.</b> It holds however the readings are weighted (${f.range}).` : `<b>${name}: unsure.</b> It runs from ${f.range} depending on which readings count most.`);
-      html += `<p class="note">${firmText("Directors", fD)} ${firmText("Driven element", fE)}${fE.firm ? "" : " Measure it, enter its real length under Your parts, and trim it last, on the VNA."}</p>`;
+      html += `<p class="note">${firmText("Directors", fD)} ${firmText("Driven element", fE)}${fE.firm || T.fit.ambiguous ? "" : " Measure it, enter its real length under Your parts, and trim it last, on the VNA."}</p>`;
+      if (T.fit.ambiguous) html += `<p><span class="pill warn">Longer or shorter?</span> <span class="note">From SWR alone it can't tell: your readings fit about as well with the driven element acting <b>${fmt(Math.abs(T.fit.ambiguous.shorter), 1)} mm shorter</b> or <b>${fmt(T.fit.ambiguous.longer, 1)} mm longer</b> than you entered. SWR says how big the mismatch is, not which way. A sweep file's R and X tell: tick the cable box on the left and enter the cable between the VNA and the antenna. If filing the driven element has made it worse, it's now too short.</span></p>`;
       html += `<p><span class="pill ${cls}">${word}</span> <span class="note">${note}</span></p>`;
       if (t.readings.length < 5) html += `<p class="note">With only ${t.readings.length} readings this is a rough guide. More readings, especially on both sides of the valley, firm it up.</p>`;
       const hasZ = t.readings.some((p) => p.g);
       if (T.useZ) html += `<p class="note">Using R and X as well as SWR. They fit best with <b>${fmt(T.fit.cableLength, 0)} mm</b> of cable between the feed and the calibration point.</p>`;
-      else if (hasZ) html += `<p class="note"><b>Using SWR only for now.</b> Your readings include R and X, but a cable rotates those, so they can't be trusted yet. Tick the cable box on the left and enter its rough length. The fit will then use them and work out the exact length, which should settle the driven element.</p>`;
-      else html += `<p class="note">SWR alone can't separate every cause. A sweep file with R and X pins it down better.</p>`;
+      else if (hasZ) {
+        // the one question that unlocks R and X: asked here, where it matters, not only in a box most people pass by
+        const c = S.design.cable;
+        html += `<div class="stack ask-cable"><p><span class="pill warn">One question</span> <b>Your sweep has R and X, which say whether the driven element is too long or too short. SWR can't.</b> <span class="note">But coax between the VNA's calibration point and the driven element turns them round, so the fit needs that coax. It's usually the antenna's own coax, from its SMA to where it's soldered on, plus any cable you calibrated before rather than after. A rough length will do: the fit works out the exact one.</span> <button class="btn small" data-calguide>Calibration guide</button></p>
+          <div class="row" style="flex-wrap:wrap;align-items:flex-end;gap:8px">
+            <div class="field"><label for="ask-kind">Coax</label><select class="sel" id="ask-kind">${Object.entries(YS.CABLES).map(([k, v]) => `<option value="${k}"${k === c.kind ? " selected" : ""}>${esc(v.name)}</option>`).join("")}</select></div>
+            <div class="field"><label for="ask-len">Length, mm</label><input class="num" id="ask-len" inputmode="decimal" value="${fmt(c.length, 0)}" style="max-width:90px"></div>
+            <button class="btn primary small" id="ask-use">Use R and X</button>
+          </div></div>`;
+      } else html += `<p class="note"><b>These readings are SWR only</b>, as drawn or typed ones are. SWR says how big the mismatch is, not which way, so it can't say whether the driven element is too long or too short. A sweep from the NanoVNA (Connect NanoVNA, Read a sweep, or a .s1p file) carries R and X, which can.</p>`;
       html += `<label class="check"><input type="checkbox" id="free-reflector" ${t.free.reflector ? "checked" : ""}> Let the fit change the reflector too</label>`;
     }
     host.innerHTML = html;
+    const ask = $("#ask-use");
+    if (ask) ask.onclick = () => {
+      const c = S.design.cable, q = YS.CABLES[$("#ask-kind").value], len = A.parseLen($("#ask-len").value);
+      if (!(len >= 0)) { A.toast("Enter the coax's length in mm."); return; }
+      Object.assign(c, { on: true, kind: $("#ask-kind").value, vf: q.vf, lossAt1G: q.lossAt1G, length: len });
+      A.commit(); syncForm(); scheduleFit();
+      A.toast("Using R and X, through that coax. The cable box on the left has it too.");
+    };
     const fr = $("#free-reflector");
     if (fr) fr.onchange = (e) => { t.free.reflector = e.target.checked; A.commit(); scheduleFit(); };
   }
@@ -474,9 +574,19 @@
     const now = T.plan.now;
     const row = (lab, o) => `<tr><td>${lab}</td><td>${fmt(o.swr, 2)}</td><td>${fmt(o.gain, 2)}</td><td>${fmt(o.fb, 1)}</td></tr>`;
     let html = "";
-    const mv = measuredValley();
-    if (mv && mv.swr < 1.35 && Math.abs(mv.f - targetF()) < 0.004 * targetF()) {
-      html += `<p><span class="pill good">Already good</span> Your readings show SWR ${fmt(mv.swr, 2)} at ${fmt(mv.f, 1)} MHz, right where you want it. You could glue the rods and move on. The options below are only if you want a little more.</p>`;
+    const mv = measuredValley(), atT = measuredAtTarget();
+    // judged at the target itself: on a one-channel network that's all that counts. At SWR 1.5, 4% of the power comes back, 0.18 dB.
+    const good = atT !== null && atT <= 1.5;
+    if (good) {
+      const lost = -10 * Math.log10(1 - Math.pow((atT - 1) / (atT + 1), 2));
+      html += `<p><span class="pill good">Already good</span> At your target, ${fmt(targetF(), 3)} MHz, your readings show SWR ${fmt(atT, 2)}: ${fmt(lost, 2)} dB lost to the match. No change below can win back more than that. Glue the rods and move on. The options are only if you want to try for a little more, and a cut or a file can't be undone.</p>`;
+    }
+    // a rough fit, or a driven element it can't pin down, can't be trusted with a cut: on the owner's antenna, filing what such a
+    // fit called best took SWR at the target from 1.23 to 1.61 (2026-11-08)
+    const fD = T.fit ? firmness(T.fit, "driven") : { firm: true }, rough = T.fit && T.fit.rms >= 0.16, either = T.fit && T.fit.ambiguous;
+    const doubtful = rough || !fD.firm;
+    if (doubtful) {
+      html += `<p><span class="pill bad">Don't cut on this yet</span> ${either ? "It can't tell whether the driven element is too long or too short, so it can't say which way to change it, and" : `The fit is ${rough ? "rough" : "fair"}${fD.firm ? "" : " and the driven element is unsure"}, so`} these predictions can be well off: a trim that looks good here can make the real antenna worse. First enter what each rod really measures under Your parts, the driven element tip to tip; check the VNA's calibration and the cable; and sweep again. The options are shown so you can see what the model thinks, not as instructions.</p>`;
     }
     html += opts.map((o, i) => {
       const lines = (o.bends || []).map((b) => `<li><b>${esc(b.rod)}:</b> bend both tips <b>${fmt(Math.abs(b.add), 0)} mm</b> ${b.add > 0 ? "forward, away from the reflector" : "back, toward the reflector"}, from where they leave the boom.</li>`).join("")
@@ -485,10 +595,10 @@
       const needs = o.newRods ? `${o.newRods} new rod${o.newRods > 1 ? "s" : ""}` : "No new rods";
       const chosen = T.chosen === o.id;
       return `<div class="option" data-opt="${o.id}" style="border:1px solid ${chosen ? "var(--accent)" : "var(--line)"};border-radius:6px;padding:8px 10px">
-        <div class="row" style="justify-content:space-between"><b>${i === 0 ? "Best: " : ""}${esc(o.title)}</b><button class="btn small" data-show="${o.id}" aria-pressed="${chosen}">${chosen ? "On the chart" : "Show"}</button></div>
+        <div class="row" style="justify-content:space-between"><b>${i === 0 && !doubtful && !good ? "Best: " : ""}${esc(o.title)}</b><button class="btn small" data-show="${o.id}" aria-pressed="${chosen}">${chosen ? "On the chart" : "Show"}</button></div>
         <p class="note" style="margin:3px 0 6px">${esc(o.why)}</p>
         <ul style="margin:0 0 6px;padding-left:18px">${lines || "<li>No rods need to change.</li>"}</ul>
-        <p class="stat-line"><span class="pill ${cls}">${word}</span> SWR ${fmt(o.swr, 2)} at target · ${fmt(o.gain, 2)} dBd · F/B ${fmt(o.fb, 1)} dB · ${needs}</p>
+        <p class="stat-line">${doubtful ? `<span class="note">If the model were right:</span>` : `<span class="pill ${cls}">${word}</span>`} SWR ${fmt(o.swr, 2)} at target · ${fmt(o.gain, 2)} dBd · F/B ${fmt(o.fb, 1)} dB · ${needs}</p>
         <div class="row" style="margin-top:6px"><button class="btn small" data-apply="${o.id}">${o.bends ? "Put these bends in the design" : "Make these the design's lengths"}</button></div>
       </div>`;
     }).join("");
@@ -636,6 +746,8 @@
     mount(host) {
       host.innerHTML = template();
       bindForm();
+      // the guide opens from any of its buttons in this tab, wherever they're drawn
+      host.addEventListener("click", (e) => { if (e.target.closest("[data-calguide]")) calibrationGuide(); });
       const ro = new ResizeObserver(() => drawChart());
       ro.observe($("#tune-chart"));
     },

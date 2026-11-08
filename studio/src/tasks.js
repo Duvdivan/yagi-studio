@@ -300,7 +300,12 @@
     };
   }
 
-  function fitReadings({ design, readings, cable, free, starts, weightPower, fitCable }) {
+  /**
+   * drivenSide, if given (+1 or -1), keeps the driven element's offset to that side of zero. From SWR alone a driven element
+   * too long and one too short can fit the readings equally well, as SWR has no sign; fitting each side and comparing shows
+   * whether the readings can tell them apart (the owner's antenna, 2026-11-08, where they couldn't).
+   */
+  function fitReadings({ design, readings, cable, free, starts, weightPower, fitCable, drivenSide }) {
     const solver = YS.toSolver(Object.assign({}, design, { asBuilt: null }));
     const fs_ = readings.map((p) => p.f), bendFix = bendCorrection(solver, Math.min.apply(null, fs_), Math.max.apply(null, fs_) + 1e-6);
     const run = runner(solver, "draft");
@@ -324,6 +329,8 @@
     const lineFor = (v) => (fitCable ? Object.assign({}, cable, { length: Math.max(0, cable.length + v[nRods]) }) : cable);
     const cost = (v) => {
       for (let i = 0; i < nRods; i++) if (Math.abs(v[i]) > 12) return 1e6 + Math.abs(v[i]);
+      const di = groups.indexOf("driven");
+      if (drivenSide && di >= 0 && v[di] * drivenSide < 0) return 1e6 + Math.abs(v[di]);
       if (fitCable && Math.abs(v[nRods]) > CABLE_RANGE) return 1e6 + Math.abs(v[nRods]);
       const s = withOffsets(v), at = run.fixed(s), line = lineFor(v);
       let e = 0, total = 0;
@@ -342,7 +349,7 @@
     };
     let best = null;
     for (const st of starts) {
-      const x0 = groups.map((g) => st[g] || 0).concat(fitCable ? [st.cable || 0] : []);
+      const x0 = groups.map((g) => (g === "driven" && drivenSide ? drivenSide * Math.max(1, Math.abs(st[g] || 0)) : st[g] || 0)).concat(fitCable ? [st.cable || 0] : []);
       const res = nelderMead(cost, x0, groups.map(() => 0.6).concat(fitCable ? [8] : []), 70 * x0.length);
       if (!best || res.value < best.value) best = res;
     }

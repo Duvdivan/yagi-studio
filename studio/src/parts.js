@@ -52,6 +52,7 @@
   const SIDE_TEXT = { k: 1, pitch: 4.4, stroke: 0.8, tick: 2 };   // writing on the boom's sides: letters 5k mm tall, their spacing, the stroke, and how far a gauge mark runs down the side before its leader
   const ARROW = { half: 7, head: 3.5, stroke: 0.9, width: 8 };    // an up arrow on a side: half its length at most, its head, stroke and the room it takes along the boom
   const BRAND = "YAGI STUDIO";     // on the boom's side, if it's wanted
+  const ROD_TEXT = { k: 0.8, stroke: 0.7, gap: 0.8 };   // each rod's length on the screws' side: letters 5k mm tall, the stroke, and the room kept from a screw's head
   const NAME_GAP = 4.5;            // mm between the gauge's names on the side, well over the 1.4 between letters, so that R and D1 don't read as RD1
   const PIN_NUT = { flats: 5.6, height: 3.6, top: 4.4, shoulder: 1.2, foot: 1 };   // the bulge for the pin's nut, mm: recess across flats, height, flat top's radius, and the rounding of its shoulder and foot
   const SOFT = { edge: 2.5, rim: 1, block: 4, blockRim: 1.5 };   // rounded outside edges, mm: a socket's long edges and open end, and a block's
@@ -83,7 +84,7 @@
     0: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0]], 1: [[1.5, 0, 1.5, 5], [1.5, 5, 0.4, 3.9]], 2: [[0, 5, 3, 5], [3, 5, 3, 2.5], [3, 2.5, 0, 2.5], [0, 2.5, 0, 0], [0, 0, 3, 0]],
     3: [[0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0.8, 2.5, 3, 2.5]], 4: [[0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 5, 3, 0]], 5: [[3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 2.5, 3, 0], [3, 0, 0, 0]],
     6: [[3, 5, 0, 5], [0, 5, 0, 0], [0, 0, 3, 0], [3, 0, 3, 2.5], [3, 2.5, 0, 2.5]], 7: [[0, 5, 3, 5], [3, 5, 1, 0]], 8: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0, 2.5, 3, 2.5]],
-    9: [[3, 0, 3, 5], [3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5]], "/": [[0, 0, 3, 5]],
+    9: [[3, 0, 3, 5], [3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5]], "/": [[0, 0, 3, 5]], ".": [[1.5, 0, 1.5, 0.4]],
   };
   const textWidth = (s, k, pitch) => (s.length - 1) * pitch + 3 * k;
   /* What a rod's name can be written as: D1 from anything, and nothing the letters above can't draw. */
@@ -258,7 +259,7 @@
    * Where the gauge's marks and their labels go on the top face. The labels spread along x where the marks crowd,
    * with leaders from the marks, and a mark whose leader would hit a rod's hole keeps only its tick.
    */
-  function planGauge(design, rods, section, sizes, allowance, taper, screws) {
+  function planGauge(design, rods, section, sizes, allowance, taper, screws, lengths) {
     const channels = YS.guideChannels(design, allowance);
     // a rod butts against the wall at the V's front end, and the V runs off the boom's rear end, so that an uncut rod of any length lies in it
     const end = (section.next === null ? section.x1 : section.next.t - JOINT.flare[0]) - GAUGE_WALL;
@@ -307,10 +308,13 @@
         (r.driven ? (taper.drivenScrews ? [-taper.zs, taper.zs] : []) : [0]).forEach((zc) => heads.push([flat(r.x), top - (taper.hz(r.x) - zc)]));
       });
     }
-    const clear = (x0, x1, z0, z1) => heads.every(([hx, hz]) => x1 < hx - c || x0 > hx + c || z1 < hz - c || z0 > hz + c);
+    // and so are the rods' lengths, in the level layout too
+    const boxes = labelBlocks(lengths, section.i, 2.5).map(      // well clear, so that no name reads as a length's: R over the driven element's 73.0 did
+      ([x0, x1, z0, z1]) => { const xm = (x0 + x1) / 2, d = taper.hz(xm); return [flat(x0), flat(x1), top - (d - z0), top - (d - z1)]; });
+    const clear = (x0, x1, z0, z1) => heads.every(([hx, hz]) => x1 < hx - c || x0 > hx + c || z1 < hz - c || z0 > hz + c) && boxes.every(([p0, p1, q0, q1]) => x1 < p0 || x0 > p1 || z1 < q0 || z0 > q1);
     const inRange = (m, lx) => lx - m.width / 2 > stop && lx + m.width / 2 < end + GAUGE_WALL - 2;
     // the leader is a slanting line, so it's checked along its length rather than by the box round it
-    const lineClear = (x0, z0, x1, z1) => { if (!heads.length) return true; const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.3) + 1; for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; if (!clear(x - TICK, x + TICK, z - TICK, z + TICK)) return false; } return true; };
+    const lineClear = (x0, z0, x1, z1) => { if (!heads.length && !boxes.length) return true; const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.3) + 1; for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; if (!clear(x - TICK, x + TICK, z - TICK, z + TICK)) return false; } return true; };
     const fitsAt = (m, lx) => inRange(m, lx) && clear(lx - m.width / 2, lx + m.width / 2, rowBottom, rowTop) && lineClear(m.x, top, m.x, top - tick) && lineClear(m.x, top - tick, lx, rowTop + 0.8);
     // The names are placed together, in their marks' order, NAME_GAP apart, each where it and its leader miss the screws' heads, so
     // that they move least in all; a name with nowhere to go is left off, which costs as much as moving one 100 mm. Searched
@@ -342,7 +346,7 @@
     // then the row's depth that moves them least, a little in favour of steeper leaders
     const want = drop;
     let best = null;
-    for (let d = want; d >= 2.5 - 1e-9; d -= heads.length ? 0.5 : Infinity) {      // with no screws' heads, the first depth is best
+    for (let d = want; d >= 2.5 - 1e-9; d -= heads.length || boxes.length ? 0.5 : Infinity) {      // with nothing in the way, the first depth is best
       setDrop(d);
       const cost = place() + 0.5 * (want - d);
       if (!best || cost < best.cost - 1e-9) best = { cost, d };
@@ -350,6 +354,36 @@
     setDrop(best.d); place();
     return { fits: true, stop, end, vFrom, top, ang: taper.ang, tail, zero, marks, inner, k, pitch, tick, drop, rowTop, H, unlabelled: marks.filter((m) => !m.labelled).map((m) => m.rod), missing };
   }
+
+  /**
+   * Each rod's length to cut, written on the screws' side (-y) beside its hole, so that a boom among several says which rods
+   * it takes (the owner, 2026-11-08). Under the screw's head at the rod's middle; the driven element's two halves each get their
+   * own, one above the middle and one below, between its screws. Theirs is the length to cut, with the trimming allowance, as
+   * the gauge's DE mark and the Cut list give it: the driven element is trimmed by the VNA's readings, not to a length, so a
+   * finished length would only be the model's guess (the owner's point). A rod in a joint, where the prongs or
+   * the tongue's flare are, gets none. Returns the labels in the boom's own (x, z), and the rods left without one.
+   */
+  function planRodLabels(design, sections, rods, sizes, T, screws, allowance) {
+    const out = [], missed = [], { gap } = ROD_TEXT, under = SCREW.head / 2 + gap;
+    sections.forEach((sec) => {
+      const a = sec.prev ? sec.prev.t + JOINT.down[1] + 1 : MOUTH + 1, b = sec.next ? sec.next.t - JOINT.flare[0] - 1 : sec.x1 - 1;
+      const hz = (x) => (sec.i === 0 && T.m ? T.hz(x) : sizes.h / 2);
+      sectionRods(rods, sec).forEach((r) => {
+        const text = (r.driven ? (r.L + (allowance || 0) - (design.gap || 0)) / 2 : r.L).toFixed(1);
+        // the driven element's labels sit between its screws, so they shrink if those are close to the middle
+        const room = r.driven ? (screws && T.drivenScrews && sec.i === 0 ? T.zs - under : hz(r.x) - 1.2) - 1.5 : hz(r.x) - 1.2 - under;
+        const k = Math.min(ROD_TEXT.k, room / 5), H = 5 * k, pitch = 4.4 * k, W = textWidth(text, k, pitch);
+        // centred on the rod, or slid along to keep off a joint or the socket's mouth, as long as it still reaches the rod
+        const x = Math.min(Math.max(r.x, a + W / 2), b - W / 2);
+        if (k < 0.5 || b - a < W || Math.abs(x - r.x) > W / 2 - 1) return;
+        const z0s = r.driven ? [1.5, -1.5 - H] : [-under - H];      // the halves' two well apart, so their points don't read as a colon
+        z0s.forEach((z0) => out.push({ sec: sec.i, rod: r.name, driven: r.driven, x, z0, text, k, pitch, W, H }));
+      });
+    });
+    rods.forEach((r) => { if (!out.some((l) => l.rod === r.name)) missed.push(r.name); });
+    return { labels: out, missed };
+  }
+  const labelBlocks = (L, sec, m) => (L ? L.labels.filter((l) => l.sec === sec).map((l) => [l.x - l.W / 2 - m, l.x + l.W / 2 + m, l.z0 - m, l.z0 + l.H + m]) : []);
 
   /** The two notches, placed in the gauge's level layout. Carries the layout's tilt, to cut them with or without the gauge. */
   function planNotches(gauge, sizes, rods) {
@@ -518,6 +552,11 @@
     s = K.cut(s, cuts);
     if (sec.i === 0 && (opts.gauge || opts.notches)) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
     if (opts.faces && opts.faces.section === sec.i) s = K.cut(s, faceCuts(K, opts.faces, sizes));
+    if (opts.lengths) {
+      // drawn in (x, z) on the -y face, pushed in along y, and turned onto it, as the gauge's names are
+      const mine = opts.lengths.labels.filter((l) => l.sec === sec.i), Z0 = w / 2 - DEEP, Z1 = w / 2 + 1;
+      if (mine.length) s = K.cut(s, [K.turn(K.fuse(mine.flatMap((l) => K.word(l.text, l.x - l.W / 2, l.z0, l.k, Z0, Z1, ROD_TEXT.stroke, l.pitch))), [90, 0, 0])]);
+    }
     return s;
   }
 
@@ -574,7 +613,7 @@
     const hzAt = (x) => (sec.i === 0 ? T.hz(x) : sizes.h / 2), all = 1e3, c = SCREW.head / 2 + 1;
     const a = sec.prev ? sec.prev.t + JOINT.down[1] + 1 : MOUTH + 2, b = sec.next ? sec.next.t - JOINT.flare[0] - 1 : sec.x1 - 1;
     const driven = rods.find((r) => r.driven), through = sec.next ? sec.next.through : [];
-    const blocks = { "-1": [], 1: [], top: [] };
+    const blocks = { "-1": labelBlocks(o.lengthLabels, sec.i, 1.5), 1: [], top: [] };
     if (o.screws) sectionRods(rods, sec).forEach((r) => {
       if (through.includes(r)) return;
       (r.driven ? (T.drivenScrews ? [-T.zs, T.zs] : []) : [0]).forEach((zc) => blocks["-1"].push([r.x - c, r.x + c, zc - c, zc + c]));
@@ -828,10 +867,10 @@
 
   /**
    * Plans the parts without making any: the sections, the gauge's marks and any warnings, for the page to show as you type.
-   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, mount, screws, pilot }
+   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, mount, screws, pilot }
    */
   function planParts(design, opts) {
-    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
+    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
     const rods = rodsOf(design, o.fit), sizes = boomSizes(rods), warnings = [];
     if (rods.length < 2) throw new Error("A boom needs at least two rods.");
     rods.forEach((r, i) => {
@@ -853,7 +892,8 @@
     };
     // A joint with no rod in its tongue is kept unless letting a rod through it (the owner's choice, 2026-11-06) saves a piece,
     // or, with as many pieces, keeps more of the gauge's marks.
-    const marksOf = (L) => { const g = o.gauge ? planGauge(design, rods, L.sections[0], sizes, o.allowance, L.taper, o.screws) : null; return g && g.fits ? g.marks.length : 0; };
+    const lengthsFor = (sections, taper) => (o.lengths ? planRodLabels(design, sections, rods, sizes, taper, o.screws, o.allowance) : null);
+    const marksOf = (L) => { const g = o.gauge ? planGauge(design, rods, L.sections[0], sizes, o.allowance, L.taper, o.screws, lengthsFor(L.sections, L.taper)) : null; return g && g.fits ? g.marks.length : 0; };
     const choose = (b) => {
       let clean = null, open = null;
       try { clean = layout(b, true); } catch (e) { open = layout(b, false); return open; }
@@ -884,16 +924,18 @@
     if (boom > FLOPPY) warnings.push(`At ${Math.round(boom)} mm, a printed boom will sag and flex. A metal or fibreglass boom suits this better, and metal changes the tuning.`);
     if (sizes.w > BOOM_W) warnings.push(`These rods are thick, so the boom grows to ${sizes.w} x ${sizes.h} mm, a size nobody has printed and tried yet.`);
     // the gauge and the notches are separate choices; the notches use the gauge's layout, and its labels only if it's on
-    const top = o.gauge || o.notches ? planGauge(design, rods, sections[0], sizes, o.allowance, taper, o.screws) : null;
+    const lengths = lengthsFor(sections, taper);
+    if (lengths && lengths.missed.length) warnings.push(`${lengths.missed.join(" and ")} ${lengths.missed.length > 1 ? "have" : "has"} no length written beside ${lengths.missed.length > 1 ? "them" : "it"}: ${lengths.missed.length > 1 ? "they're" : "it's"} in a joint, or there's no room. The Cut list has every length.`);
+    const top = o.gauge || o.notches ? planGauge(design, rods, sections[0], sizes, o.allowance, taper, o.screws, lengths) : null;
     const gauge = o.gauge ? top : null;
     const notches = o.notches ? planNotches(gauge && gauge.fits ? gauge : Object.assign({}, top, { marks: [] }), sizes, rods) : null;
     if (gauge && !gauge.fits) warnings.push(gauge.reason);
     if (gauge && gauge.fits && gauge.missing) warnings.push(`${gauge.missing} rod${gauge.missing > 1 ? "s are" : " is"} too long for the gauge. Use the Cut list's guide for ${gauge.missing > 1 ? "those" : "it"}.`);
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
-    const faces = planFaces(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, o);
+    const faces = planFaces(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, Object.assign({}, o, { lengthLabels: lengths }));
     if (faces) warnings.push(...faces.warnings);
     if (o.notches && !notches) warnings.push(`There's no clear ${CAL_SPAN} mm stretch on the first piece's top for the check notches, away from the rods and the driven element's window. To check the print's size instead, measure with calipers between the outsides of two rods' holes far apart, and compare with their spacing plus a hole's width.`);
-    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
+    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, lengths, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
   }
 
   /** How to lay a part on the bed, in words, when the file as it opens won't do. Files always lie along x. */
@@ -921,7 +963,7 @@
     };
     try {
       sections.forEach((sec) => {
-        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, screws: o.screws, pilot: o.pilot });
+        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, screws: o.screws, pilot: o.pilot });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
         // a tapered piece is turned to lie on its bottom face, which slopes by the taper's angle
@@ -963,6 +1005,10 @@
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));
     }
     if (joints) L.push("", "THE JOINT" + (joints > 1 ? "S" : ""), "Slide the tongue into the fork, ridges into grooves, until it stops. If it binds, sand the ridges, not the tongue's faces. Tighten the bolts only until the prongs close on the V: too much bends them. A little glue on the faces makes it stronger if you'll never take it apart. If a rod passes through the tongue, slide the joint together before fitting that rod.");
+    if (plan.lengths && plan.lengths.labels.length) {
+      const seen = [], each = plan.lengths.labels.filter((l) => !seen.includes(l.rod) && seen.push(l.rod));
+      L.push("", "ROD LENGTHS ON THE BOOM", `Each rod's length to cut is written on the screws' side, beside its hole, so the boom says which rods it takes. The driven element's two halves each have their own: the length to cut each half${plan.o.allowance > 0 ? `, ${(+plan.o.allowance).toFixed(1)} mm longer in all than the model's guess` : ", with no trimming allowance set"}, as on the gauge and the Cut list. Then trim both tips equally by the VNA's readings, not to a length.`, ...each.map((l) => `  ${l.rod}: ${l.text} mm${l.driven ? " each half" : ""}`));
+    }
     if (plan.faces && (plan.faces.top || plan.faces.arrows.length)) L.push("", "WHICH WAY UP", "TOP marks the boom's top, the face with the gauge's V, and the arrows on both sides point to it.");
     const T = plan.taper;
     if (driven) {

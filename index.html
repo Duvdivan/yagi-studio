@@ -155,6 +155,8 @@ section.plan-side { display: block; }
 .plan-gain { margin-left: auto; font: 500 20px var(--mono); }
 .plan-pick { justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--sunken); border-radius: 7px; padding: 10px 12px; }
 .modal.wide { width: min(980px, 100%); }
+.cal-steps { margin: 4px 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--ink2); line-height: 1.45; }
+.modal .plan-h { margin: 12px 0 4px; }
 @media (max-width: 700px) { .field-grid.plan-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .col.mid { overflow: hidden; }
@@ -2334,7 +2336,12 @@ input::placeholder { color: var(--muted); opacity: .75; }
     };
   }
 
-  function fitReadings({ design, readings, cable, free, starts, weightPower, fitCable }) {
+  /**
+   * drivenSide, if given (+1 or -1), keeps the driven element's offset to that side of zero. From SWR alone a driven element
+   * too long and one too short can fit the readings equally well, as SWR has no sign; fitting each side and comparing shows
+   * whether the readings can tell them apart (the owner's antenna, 2026-11-08, where they couldn't).
+   */
+  function fitReadings({ design, readings, cable, free, starts, weightPower, fitCable, drivenSide }) {
     const solver = YS.toSolver(Object.assign({}, design, { asBuilt: null }));
     const fs_ = readings.map((p) => p.f), bendFix = bendCorrection(solver, Math.min.apply(null, fs_), Math.max.apply(null, fs_) + 1e-6);
     const run = runner(solver, "draft");
@@ -2358,6 +2365,8 @@ input::placeholder { color: var(--muted); opacity: .75; }
     const lineFor = (v) => (fitCable ? Object.assign({}, cable, { length: Math.max(0, cable.length + v[nRods]) }) : cable);
     const cost = (v) => {
       for (let i = 0; i < nRods; i++) if (Math.abs(v[i]) > 12) return 1e6 + Math.abs(v[i]);
+      const di = groups.indexOf("driven");
+      if (drivenSide && di >= 0 && v[di] * drivenSide < 0) return 1e6 + Math.abs(v[di]);
       if (fitCable && Math.abs(v[nRods]) > CABLE_RANGE) return 1e6 + Math.abs(v[nRods]);
       const s = withOffsets(v), at = run.fixed(s), line = lineFor(v);
       let e = 0, total = 0;
@@ -2376,7 +2385,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
     };
     let best = null;
     for (const st of starts) {
-      const x0 = groups.map((g) => st[g] || 0).concat(fitCable ? [st.cable || 0] : []);
+      const x0 = groups.map((g) => (g === "driven" && drivenSide ? drivenSide * Math.max(1, Math.abs(st[g] || 0)) : st[g] || 0)).concat(fitCable ? [st.cable || 0] : []);
       const res = nelderMead(cost, x0, groups.map(() => 0.6).concat(fitCable ? [8] : []), 70 * x0.length);
       if (!best || res.value < best.value) best = res;
     }
@@ -4880,6 +4889,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const SIDE_TEXT = { k: 1, pitch: 4.4, stroke: 0.8, tick: 2 };   // writing on the boom's sides: letters 5k mm tall, their spacing, the stroke, and how far a gauge mark runs down the side before its leader
   const ARROW = { half: 7, head: 3.5, stroke: 0.9, width: 8 };    // an up arrow on a side: half its length at most, its head, stroke and the room it takes along the boom
   const BRAND = "YAGI STUDIO";     // on the boom's side, if it's wanted
+  const ROD_TEXT = { k: 0.8, stroke: 0.7, gap: 0.8 };   // each rod's length on the screws' side: letters 5k mm tall, the stroke, and the room kept from a screw's head
   const NAME_GAP = 4.5;            // mm between the gauge's names on the side, well over the 1.4 between letters, so that R and D1 don't read as RD1
   const PIN_NUT = { flats: 5.6, height: 3.6, top: 4.4, shoulder: 1.2, foot: 1 };   // the bulge for the pin's nut, mm: recess across flats, height, flat top's radius, and the rounding of its shoulder and foot
   const SOFT = { edge: 2.5, rim: 1, block: 4, blockRim: 1.5 };   // rounded outside edges, mm: a socket's long edges and open end, and a block's
@@ -4911,7 +4921,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     0: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0]], 1: [[1.5, 0, 1.5, 5], [1.5, 5, 0.4, 3.9]], 2: [[0, 5, 3, 5], [3, 5, 3, 2.5], [3, 2.5, 0, 2.5], [0, 2.5, 0, 0], [0, 0, 3, 0]],
     3: [[0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0.8, 2.5, 3, 2.5]], 4: [[0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 5, 3, 0]], 5: [[3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 2.5, 3, 0], [3, 0, 0, 0]],
     6: [[3, 5, 0, 5], [0, 5, 0, 0], [0, 0, 3, 0], [3, 0, 3, 2.5], [3, 2.5, 0, 2.5]], 7: [[0, 5, 3, 5], [3, 5, 1, 0]], 8: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0, 2.5, 3, 2.5]],
-    9: [[3, 0, 3, 5], [3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5]], "/": [[0, 0, 3, 5]],
+    9: [[3, 0, 3, 5], [3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5]], "/": [[0, 0, 3, 5]], ".": [[1.5, 0, 1.5, 0.4]],
   };
   const textWidth = (s, k, pitch) => (s.length - 1) * pitch + 3 * k;
   /* What a rod's name can be written as: D1 from anything, and nothing the letters above can't draw. */
@@ -5086,7 +5096,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
    * Where the gauge's marks and their labels go on the top face. The labels spread along x where the marks crowd,
    * with leaders from the marks, and a mark whose leader would hit a rod's hole keeps only its tick.
    */
-  function planGauge(design, rods, section, sizes, allowance, taper, screws) {
+  function planGauge(design, rods, section, sizes, allowance, taper, screws, lengths) {
     const channels = YS.guideChannels(design, allowance);
     // a rod butts against the wall at the V's front end, and the V runs off the boom's rear end, so that an uncut rod of any length lies in it
     const end = (section.next === null ? section.x1 : section.next.t - JOINT.flare[0]) - GAUGE_WALL;
@@ -5135,10 +5145,13 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         (r.driven ? (taper.drivenScrews ? [-taper.zs, taper.zs] : []) : [0]).forEach((zc) => heads.push([flat(r.x), top - (taper.hz(r.x) - zc)]));
       });
     }
-    const clear = (x0, x1, z0, z1) => heads.every(([hx, hz]) => x1 < hx - c || x0 > hx + c || z1 < hz - c || z0 > hz + c);
+    // and so are the rods' lengths, in the level layout too
+    const boxes = labelBlocks(lengths, section.i, 2.5).map(      // well clear, so that no name reads as a length's: R over the driven element's 73.0 did
+      ([x0, x1, z0, z1]) => { const xm = (x0 + x1) / 2, d = taper.hz(xm); return [flat(x0), flat(x1), top - (d - z0), top - (d - z1)]; });
+    const clear = (x0, x1, z0, z1) => heads.every(([hx, hz]) => x1 < hx - c || x0 > hx + c || z1 < hz - c || z0 > hz + c) && boxes.every(([p0, p1, q0, q1]) => x1 < p0 || x0 > p1 || z1 < q0 || z0 > q1);
     const inRange = (m, lx) => lx - m.width / 2 > stop && lx + m.width / 2 < end + GAUGE_WALL - 2;
     // the leader is a slanting line, so it's checked along its length rather than by the box round it
-    const lineClear = (x0, z0, x1, z1) => { if (!heads.length) return true; const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.3) + 1; for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; if (!clear(x - TICK, x + TICK, z - TICK, z + TICK)) return false; } return true; };
+    const lineClear = (x0, z0, x1, z1) => { if (!heads.length && !boxes.length) return true; const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.3) + 1; for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; if (!clear(x - TICK, x + TICK, z - TICK, z + TICK)) return false; } return true; };
     const fitsAt = (m, lx) => inRange(m, lx) && clear(lx - m.width / 2, lx + m.width / 2, rowBottom, rowTop) && lineClear(m.x, top, m.x, top - tick) && lineClear(m.x, top - tick, lx, rowTop + 0.8);
     // The names are placed together, in their marks' order, NAME_GAP apart, each where it and its leader miss the screws' heads, so
     // that they move least in all; a name with nowhere to go is left off, which costs as much as moving one 100 mm. Searched
@@ -5170,7 +5183,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     // then the row's depth that moves them least, a little in favour of steeper leaders
     const want = drop;
     let best = null;
-    for (let d = want; d >= 2.5 - 1e-9; d -= heads.length ? 0.5 : Infinity) {      // with no screws' heads, the first depth is best
+    for (let d = want; d >= 2.5 - 1e-9; d -= heads.length || boxes.length ? 0.5 : Infinity) {      // with nothing in the way, the first depth is best
       setDrop(d);
       const cost = place() + 0.5 * (want - d);
       if (!best || cost < best.cost - 1e-9) best = { cost, d };
@@ -5178,6 +5191,36 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     setDrop(best.d); place();
     return { fits: true, stop, end, vFrom, top, ang: taper.ang, tail, zero, marks, inner, k, pitch, tick, drop, rowTop, H, unlabelled: marks.filter((m) => !m.labelled).map((m) => m.rod), missing };
   }
+
+  /**
+   * Each rod's length to cut, written on the screws' side (-y) beside its hole, so that a boom among several says which rods
+   * it takes (the owner, 2026-11-08). Under the screw's head at the rod's middle; the driven element's two halves each get their
+   * own, one above the middle and one below, between its screws. Theirs is the length to cut, with the trimming allowance, as
+   * the gauge's DE mark and the Cut list give it: the driven element is trimmed by the VNA's readings, not to a length, so a
+   * finished length would only be the model's guess (the owner's point). A rod in a joint, where the prongs or
+   * the tongue's flare are, gets none. Returns the labels in the boom's own (x, z), and the rods left without one.
+   */
+  function planRodLabels(design, sections, rods, sizes, T, screws, allowance) {
+    const out = [], missed = [], { gap } = ROD_TEXT, under = SCREW.head / 2 + gap;
+    sections.forEach((sec) => {
+      const a = sec.prev ? sec.prev.t + JOINT.down[1] + 1 : MOUTH + 1, b = sec.next ? sec.next.t - JOINT.flare[0] - 1 : sec.x1 - 1;
+      const hz = (x) => (sec.i === 0 && T.m ? T.hz(x) : sizes.h / 2);
+      sectionRods(rods, sec).forEach((r) => {
+        const text = (r.driven ? (r.L + (allowance || 0) - (design.gap || 0)) / 2 : r.L).toFixed(1);
+        // the driven element's labels sit between its screws, so they shrink if those are close to the middle
+        const room = r.driven ? (screws && T.drivenScrews && sec.i === 0 ? T.zs - under : hz(r.x) - 1.2) - 1.5 : hz(r.x) - 1.2 - under;
+        const k = Math.min(ROD_TEXT.k, room / 5), H = 5 * k, pitch = 4.4 * k, W = textWidth(text, k, pitch);
+        // centred on the rod, or slid along to keep off a joint or the socket's mouth, as long as it still reaches the rod
+        const x = Math.min(Math.max(r.x, a + W / 2), b - W / 2);
+        if (k < 0.5 || b - a < W || Math.abs(x - r.x) > W / 2 - 1) return;
+        const z0s = r.driven ? [1.5, -1.5 - H] : [-under - H];      // the halves' two well apart, so their points don't read as a colon
+        z0s.forEach((z0) => out.push({ sec: sec.i, rod: r.name, driven: r.driven, x, z0, text, k, pitch, W, H }));
+      });
+    });
+    rods.forEach((r) => { if (!out.some((l) => l.rod === r.name)) missed.push(r.name); });
+    return { labels: out, missed };
+  }
+  const labelBlocks = (L, sec, m) => (L ? L.labels.filter((l) => l.sec === sec).map((l) => [l.x - l.W / 2 - m, l.x + l.W / 2 + m, l.z0 - m, l.z0 + l.H + m]) : []);
 
   /** The two notches, placed in the gauge's level layout. Carries the layout's tilt, to cut them with or without the gauge. */
   function planNotches(gauge, sizes, rods) {
@@ -5346,6 +5389,11 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     s = K.cut(s, cuts);
     if (sec.i === 0 && (opts.gauge || opts.notches)) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
     if (opts.faces && opts.faces.section === sec.i) s = K.cut(s, faceCuts(K, opts.faces, sizes));
+    if (opts.lengths) {
+      // drawn in (x, z) on the -y face, pushed in along y, and turned onto it, as the gauge's names are
+      const mine = opts.lengths.labels.filter((l) => l.sec === sec.i), Z0 = w / 2 - DEEP, Z1 = w / 2 + 1;
+      if (mine.length) s = K.cut(s, [K.turn(K.fuse(mine.flatMap((l) => K.word(l.text, l.x - l.W / 2, l.z0, l.k, Z0, Z1, ROD_TEXT.stroke, l.pitch))), [90, 0, 0])]);
+    }
     return s;
   }
 
@@ -5402,7 +5450,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const hzAt = (x) => (sec.i === 0 ? T.hz(x) : sizes.h / 2), all = 1e3, c = SCREW.head / 2 + 1;
     const a = sec.prev ? sec.prev.t + JOINT.down[1] + 1 : MOUTH + 2, b = sec.next ? sec.next.t - JOINT.flare[0] - 1 : sec.x1 - 1;
     const driven = rods.find((r) => r.driven), through = sec.next ? sec.next.through : [];
-    const blocks = { "-1": [], 1: [], top: [] };
+    const blocks = { "-1": labelBlocks(o.lengthLabels, sec.i, 1.5), 1: [], top: [] };
     if (o.screws) sectionRods(rods, sec).forEach((r) => {
       if (through.includes(r)) return;
       (r.driven ? (T.drivenScrews ? [-T.zs, T.zs] : []) : [0]).forEach((zc) => blocks["-1"].push([r.x - c, r.x + c, zc - c, zc + c]));
@@ -5656,10 +5704,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 
   /**
    * Plans the parts without making any: the sections, the gauge's marks and any warnings, for the page to show as you type.
-   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, mount, screws, pilot }
+   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, mount, screws, pilot }
    */
   function planParts(design, opts) {
-    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
+    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
     const rods = rodsOf(design, o.fit), sizes = boomSizes(rods), warnings = [];
     if (rods.length < 2) throw new Error("A boom needs at least two rods.");
     rods.forEach((r, i) => {
@@ -5681,7 +5729,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     };
     // A joint with no rod in its tongue is kept unless letting a rod through it (the owner's choice, 2026-11-06) saves a piece,
     // or, with as many pieces, keeps more of the gauge's marks.
-    const marksOf = (L) => { const g = o.gauge ? planGauge(design, rods, L.sections[0], sizes, o.allowance, L.taper, o.screws) : null; return g && g.fits ? g.marks.length : 0; };
+    const lengthsFor = (sections, taper) => (o.lengths ? planRodLabels(design, sections, rods, sizes, taper, o.screws, o.allowance) : null);
+    const marksOf = (L) => { const g = o.gauge ? planGauge(design, rods, L.sections[0], sizes, o.allowance, L.taper, o.screws, lengthsFor(L.sections, L.taper)) : null; return g && g.fits ? g.marks.length : 0; };
     const choose = (b) => {
       let clean = null, open = null;
       try { clean = layout(b, true); } catch (e) { open = layout(b, false); return open; }
@@ -5712,16 +5761,18 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (boom > FLOPPY) warnings.push(`At ${Math.round(boom)} mm, a printed boom will sag and flex. A metal or fibreglass boom suits this better, and metal changes the tuning.`);
     if (sizes.w > BOOM_W) warnings.push(`These rods are thick, so the boom grows to ${sizes.w} x ${sizes.h} mm, a size nobody has printed and tried yet.`);
     // the gauge and the notches are separate choices; the notches use the gauge's layout, and its labels only if it's on
-    const top = o.gauge || o.notches ? planGauge(design, rods, sections[0], sizes, o.allowance, taper, o.screws) : null;
+    const lengths = lengthsFor(sections, taper);
+    if (lengths && lengths.missed.length) warnings.push(`${lengths.missed.join(" and ")} ${lengths.missed.length > 1 ? "have" : "has"} no length written beside ${lengths.missed.length > 1 ? "them" : "it"}: ${lengths.missed.length > 1 ? "they're" : "it's"} in a joint, or there's no room. The Cut list has every length.`);
+    const top = o.gauge || o.notches ? planGauge(design, rods, sections[0], sizes, o.allowance, taper, o.screws, lengths) : null;
     const gauge = o.gauge ? top : null;
     const notches = o.notches ? planNotches(gauge && gauge.fits ? gauge : Object.assign({}, top, { marks: [] }), sizes, rods) : null;
     if (gauge && !gauge.fits) warnings.push(gauge.reason);
     if (gauge && gauge.fits && gauge.missing) warnings.push(`${gauge.missing} rod${gauge.missing > 1 ? "s are" : " is"} too long for the gauge. Use the Cut list's guide for ${gauge.missing > 1 ? "those" : "it"}.`);
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
-    const faces = planFaces(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, o);
+    const faces = planFaces(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, Object.assign({}, o, { lengthLabels: lengths }));
     if (faces) warnings.push(...faces.warnings);
     if (o.notches && !notches) warnings.push(`There's no clear ${CAL_SPAN} mm stretch on the first piece's top for the check notches, away from the rods and the driven element's window. To check the print's size instead, measure with calipers between the outsides of two rods' holes far apart, and compare with their spacing plus a hole's width.`);
-    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
+    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, lengths, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
   }
 
   /** How to lay a part on the bed, in words, when the file as it opens won't do. Files always lie along x. */
@@ -5749,7 +5800,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     };
     try {
       sections.forEach((sec) => {
-        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, screws: o.screws, pilot: o.pilot });
+        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, screws: o.screws, pilot: o.pilot });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
         // a tapered piece is turned to lie on its bottom face, which slopes by the taper's angle
@@ -5791,6 +5842,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));
     }
     if (joints) L.push("", "THE JOINT" + (joints > 1 ? "S" : ""), "Slide the tongue into the fork, ridges into grooves, until it stops. If it binds, sand the ridges, not the tongue's faces. Tighten the bolts only until the prongs close on the V: too much bends them. A little glue on the faces makes it stronger if you'll never take it apart. If a rod passes through the tongue, slide the joint together before fitting that rod.");
+    if (plan.lengths && plan.lengths.labels.length) {
+      const seen = [], each = plan.lengths.labels.filter((l) => !seen.includes(l.rod) && seen.push(l.rod));
+      L.push("", "ROD LENGTHS ON THE BOOM", `Each rod's length to cut is written on the screws' side, beside its hole, so the boom says which rods it takes. The driven element's two halves each have their own: the length to cut each half${plan.o.allowance > 0 ? `, ${(+plan.o.allowance).toFixed(1)} mm longer in all than the model's guess` : ", with no trimming allowance set"}, as on the gauge and the Cut list. Then trim both tips equally by the VNA's readings, not to a length.`, ...each.map((l) => `  ${l.rod}: ${l.text} mm${l.driven ? " each half" : ""}`));
+    }
     if (plan.faces && (plan.faces.top || plan.faces.arrows.length)) L.push("", "WHICH WAY UP", "TOP marks the boom's top, the face with the gauge's V, and the arrows on both sides point to it.");
     const T = plan.taper;
     if (driven) {
@@ -6154,7 +6209,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     };
   }
 
-  function fitReadings({ design, readings, cable, free, starts, weightPower, fitCable }) {
+  /**
+   * drivenSide, if given (+1 or -1), keeps the driven element's offset to that side of zero. From SWR alone a driven element
+   * too long and one too short can fit the readings equally well, as SWR has no sign; fitting each side and comparing shows
+   * whether the readings can tell them apart (the owner's antenna, 2026-11-08, where they couldn't).
+   */
+  function fitReadings({ design, readings, cable, free, starts, weightPower, fitCable, drivenSide }) {
     const solver = YS.toSolver(Object.assign({}, design, { asBuilt: null }));
     const fs_ = readings.map((p) => p.f), bendFix = bendCorrection(solver, Math.min.apply(null, fs_), Math.max.apply(null, fs_) + 1e-6);
     const run = runner(solver, "draft");
@@ -6178,6 +6238,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const lineFor = (v) => (fitCable ? Object.assign({}, cable, { length: Math.max(0, cable.length + v[nRods]) }) : cable);
     const cost = (v) => {
       for (let i = 0; i < nRods; i++) if (Math.abs(v[i]) > 12) return 1e6 + Math.abs(v[i]);
+      const di = groups.indexOf("driven");
+      if (drivenSide && di >= 0 && v[di] * drivenSide < 0) return 1e6 + Math.abs(v[di]);
       if (fitCable && Math.abs(v[nRods]) > CABLE_RANGE) return 1e6 + Math.abs(v[nRods]);
       const s = withOffsets(v), at = run.fixed(s), line = lineFor(v);
       let e = 0, total = 0;
@@ -6196,7 +6258,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     };
     let best = null;
     for (const st of starts) {
-      const x0 = groups.map((g) => st[g] || 0).concat(fitCable ? [st.cable || 0] : []);
+      const x0 = groups.map((g) => (g === "driven" && drivenSide ? drivenSide * Math.max(1, Math.abs(st[g] || 0)) : st[g] || 0)).concat(fitCable ? [st.cable || 0] : []);
       const res = nelderMead(cost, x0, groups.map(() => 0.6).concat(fitCable ? [8] : []), 70 * x0.length);
       if (!best || res.value < best.value) best = res;
     }
@@ -8942,6 +9004,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
           <div class="head"><h2>How you measured</h2></div>
           <div class="body stack">
             <div class="field"><label for="tune-target">Frequency you want, MHz</label><input class="num" id="tune-target" inputmode="decimal"></div>
+            <button class="btn small" data-calguide>Calibration guide: how to set up the NanoVNA</button>
             <label class="check"><input type="checkbox" id="cable-on"> A cable stays between the feed and the VNA's calibration point ${A.help("cable")}</label>
             <div id="cable-fields" class="stack">
               <div class="field-grid">
@@ -9007,7 +9070,14 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
                 <p class="note"><b>With a PC:</b> the free <a href="https://github.com/NanoVNA-Saver/nanovna-saver" target="_blank" rel="noopener">NanoVNA-Saver</a> reads the sweep over USB and saves it as a Touchstone file. Load or drop that .s1p here.</p>
                 <p class="note"><b>On the NanoVNA alone:</b> with a microSD slot and firmware showing an SD CARD menu, choose SD CARD, then SAVE S1P. Its numbered save slots only hold calibrations, not sweeps.</p>
                 <p class="note"><b>Directly:</b> ${root.ysNative ? "plug it into this phone through a USB OTG adapter and use Connect NanoVNA." : root.ysWeb && root.ysWeb.ios ? "iPhones and iPads can't reach a NanoVNA over USB. Save a .s1p another way, then load it here through the Files app." : "plug it into this PC and use Connect NanoVNA, in Edge or Chrome."}</p>
-                <p class="note"><b>Either way:</b> calibrate first, and sweep well past the valley on both sides. Tick the cable box under How you measured if a pigtail stays between the feed and your calibration point, which it usually does.</p>
+                <p class="note"><b>Set it up like this, every time:</b></p>
+                <ol class="note" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+                  <li>Set the sweep first: START and STOP well past the valley on both sides, such as 850 and 950 MHz for 910 MHz, at 101 points.</li>
+                  <li>Then calibrate over that same range, at the end of the cable you'll plug the antenna into: CAL, RESET, then OPEN, SHORT and LOAD with the kit's three ends on that cable, then DONE, and save it. Calibrate again whenever you change START or STOP. Calibrated over another range, most NanoVNAs show a jump at 900 MHz, where they change how they measure, and that part of the sweep is wrong.</li>
+                  <li>Plug in the antenna, keep hands and the cable still and away from the rods, and read or save the sweep.</li>
+                  <li>Here, tick the cable box under How you measured and enter the coax between that calibration point and the driven element: usually the antenna's own coax. A rough length is enough. That lets the fit use R and X, which say whether the driven element is too long or too short.</li>
+                </ol>
+                <p class="note">Nothing needs setting on the NanoVNA's screen for this: a sweep file and Connect NanoVNA always carry R and X.</p>
               </div>
             </details>
           </div>
@@ -9015,6 +9085,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <div class="row">
           <button class="btn small" id="readings-clear">Clear readings</button>
           <button class="btn small" id="readings-sample">Load the DuvYagi example</button>
+          <button class="btn small" data-calguide>Calibration guide</button>
           <span class="note" id="readings-count"></span>
         </div>
       </div>
@@ -9226,10 +9297,62 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     });
   }
 
+  /* ---------- the calibration guide ----------
+     What the owner asked to have in the app, 2026-11-08, after a NanoVNA calibrated over another range jumped at 900 MHz, and
+     the Tune tab, lacking the antenna's coax, fitted SWR alone and called for a trim that made the antenna worse. */
+  function calibrationGuide() {
+    A.modal(`<h2>Calibrating your NanoVNA</h2>
+      <p>Calibrating makes the NanoVNA measure as if it sat exactly where you attached the open, short and load. That spot is the <b>calibration plane</b>. Everything beyond it, the coax and the antenna, is what you measure.</p>
+      <h3 class="plan-h">The way to do it</h3>
+      <ol class="cal-steps">
+        <li><b>Set the sweep first.</b> START and STOP well past the valley on both sides, such as 850 and 950 MHz for 910 MHz, at 101 points.</li>
+        <li><b>Calibrate over that range, at the connector the antenna plugs into</b>: the VNA's port, or the end of a jumper cable if you use one. CAL, RESET, then OPEN, SHORT and LOAD with the kit's three ends on that connector, then DONE, and save it to a slot.</li>
+        <li><b>Check it.</b> Put the load back on: SWR should read about 1.0 all the way across. If it doesn't, calibrate again.</li>
+        <li><b>Plug in the antenna and sweep.</b> Keep hands and the cable still, and away from the rods. Read it in with Connect NanoVNA, or save a .s1p and load it.</li>
+        <li><b>Tell this tab about the antenna's own coax</b>: tick "A cable stays between the feed and the VNA's calibration point", and enter its type and length, from the SMA connector to where it's soldered to the driven element. For 25 cm of RG178: RG178, 250 mm. Within a few centimetres is enough: the fit works out the exact electrical length.</li>
+      </ol>
+      <p class="note"><b>Calibrate again whenever you change START or STOP.</b> Calibrated over another range, most NanoVNAs show a jump at 900 MHz, where they change how they measure. That part of the sweep is wrong, and this tab leaves it out when it sees one.</p>
+      <h3 class="plan-h">Why the coax matters</h3>
+      <p>SWR says how big the mismatch is, but not which way. R and X say which way: X positive means the driven element is too long, negative means too short. A sweep file and Connect NanoVNA always carry R and X, so there's nothing to set on the NanoVNA for them. But every few centimetres of coax turns R and X round, so this tab needs the coax between the calibration and the feed to use them. Without it, it can only fit SWR, and it says so.</p>
+      <p class="note">The coax's loss counts too: 25 cm of RG178 loses about 0.4 dB each way, which makes the antenna look about 0.8 dB better matched than it is. Entering the coax takes that out as well.</p>
+      <h3 class="plan-h">Calibrating at the coax's bare end instead</h3>
+      <p>You could, before soldering, make the three standards yourself at the stripped end: open, the cut end; short, the centre wire soldered straight to the braid; load, a 49.9 or 51 ohm chip resistor across. That puts the calibration right at the feed, with no coax to enter. But at 900 MHz every millimetre of lead on a home-made short or load adds error, a leaded resistor isn't 50 ohm there, and soldering the coax on afterwards changes the very millimetres you calibrated. Done carefully it can match the way above; done roughly it's worse, and you can't easily tell which. If you do calibrate there, leave the cable box unticked.</p>
+      <h3 class="plan-h">Worth doing before you solder</h3>
+      <p>With the VNA calibrated at its port, plug in the bare coax with its centre wire shorted to the braid at the far end, read R and X at your frequency, and enter them under "Measure its length with a short". That gives the coax's exact electrical length, so the fit doesn't have to estimate it.</p>
+      <div class="row" style="margin-top:8px"><button class="btn" data-close>Close</button></div>`, (b, close) => { b.querySelector(".modal").classList.add("wide"); $("[data-close]", b).onclick = close; });
+  }
+  A.calibrationGuide = calibrationGuide;
+
   /* ---------- diagnosis ---------- */
   function scheduleFit() {
     clearTimeout(fitTimer);
     fitTimer = setTimeout(runFit, 350);
+  }
+
+  /**
+   * The readings that can be trusted. Most NanoVNAs change how they measure at fixed frequencies (900 MHz, where they go from
+   * one harmonic of their oscillator to the next, and 300 and 1500 MHz on some), and unless they're calibrated over the sweep
+   * the curve jumps there. The owner's sweeps jumped at 900 MHz: up to SWR 3 just below it, which no antenna does, and the fit
+   * bent the model to copy it (2026-11-08). So a jump at one of those frequencies, much bigger than the steps around it, leaves
+   * out the readings on the far side of it from the target.
+   */
+  const VNA_SWITCH = [300, 900, 1500];      // MHz where NanoVNAs change measuring mode
+  function usableReadings(all) {
+    const list = all.slice().sort((a, b) => a.f - b.f), tgt = targetF();
+    const mag = (p) => { const v = swrOfReading(p); return (v - 1) / (v + 1); };
+    for (const B of VNA_SWITCH) {
+      const i = list.findIndex((p) => p.f >= B);
+      if (i < 2 || i > list.length - 2) continue;
+      if (list[i].f - list[i - 1].f > 0.05 * B) continue;     // too far apart to tell a jump from a slope
+      const step = Math.abs(mag(list[i]) - mag(list[i - 1]));
+      const around = [i - 2, i + 1].filter((j) => j >= 1 && j < list.length).map((j) => Math.abs(mag(list[j]) - mag(list[j - 1])));
+      const usual = Math.max(0.004, ...around);
+      if (step > 0.025 && step > 4 * usual) {      // the owner's newest sweep: 0.037 in |reflection| against 0.006 either side
+        const keep = tgt >= B ? list.slice(i) : list.slice(0, i);
+        return { list: keep, step: B, dropped: list.length - keep.length };
+      }
+    }
+    return { list, step: null, dropped: 0 };
   }
 
   /** Thins a long sweep, keeping the region around its valley densest. */
@@ -9260,16 +9383,22 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       const cable = S.design.cable.on ? S.design.cable : null;
       const useZ = !!cable && t.readings.some((p) => p.g);
       T.useZ = useZ;
-      const readings = fitSubset(t.readings).map((p) => (p.g && useZ ? { f: p.f, g: p.g } : { f: p.f, swr: swrOfReading(p) }));
+      const readings = fitSubset(usableReadings(t.readings).list).map((p) => (p.g && useZ ? { f: p.f, g: p.g } : { f: p.f, swr: swrOfReading(p) }));
       const rodStarts = [{ directors: 0, driven: 0, reflector: 0 }, { directors: -2 }, { directors: 2 }, { directors: -3, driven: -3 }, { directors: -2, driven: 3 }, { directors: 2, driven: -3 }];
       // the rotation repeats every half wavelength of cable: start from several lengths
       const starts = useZ ? [-50, -25, 0, 25, 50].flatMap((c) => rodStarts.slice(0, 3).map((r) => Object.assign({ cable: c }, r))) : rodStarts;
-      const fitWith = (weightPower) => Promise.all(starts.map((st) => A.pool.run("fitReadings", { design, readings, cable, free: t.free, starts: [st], weightPower, fitCable: useZ })));
-      const [mainFits, plainFits] = await Promise.all([fitWith(3), fitWith(0)]);
+      const fitWith = (weightPower, drivenSide) => Promise.all(starts.map((st) => A.pool.run("fitReadings", { design, readings, cable, free: t.free, starts: [st], weightPower, fitCable: useZ, drivenSide })));
+      // from SWR alone, longer and shorter can fit alike: fit each side as well, to see whether the readings tell them apart
+      const sides = !useZ && t.free.driven;
+      const [mainFits, plainFits, longer, shorter] = await Promise.all([fitWith(3), fitWith(0), sides ? fitWith(3, 1) : null, sides ? fitWith(3, -1) : null]);
       if (seq !== fitSeq) return;
       const best = (list) => list.reduce((a, b) => (b.value < a.value ? b : a));
       const fit = best(mainFits);
       fit.alternate = best(plainFits).offsets;
+      if (sides) {
+        const L = best(longer), Sh = best(shorter), [win, other] = L.rms <= Sh.rms ? [L, Sh] : [Sh, L];
+        if (other.rms <= Math.max(1.25 * win.rms, win.rms + 0.02)) fit.ambiguous = { longer: L.offsets.driven, shorter: Sh.offsets.driven };
+      }
       T.fit = fit;
       T.busy = false;
       renderDiag();
@@ -9299,11 +9428,25 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     renderDiag(); renderPlan(); drawChart();
   }
 
+  /** The valley nearest the target: the low point a sweep's far end, or the far side of a VNA's jump, mustn't steal (the owner's sweep was lowest at 850 MHz). */
   const measuredValley = () => {
-    const list = tune().readings;
+    const list = usableReadings(tune().readings).list, tgt = targetF();
+    if (!list.length) return null;
+    const v = list.map(swrOfReading);
+    const minima = list.map((p, i) => ({ f: p.f, swr: v[i] })).filter((p, i) => i > 0 && i < list.length - 1 && v[i] <= v[i - 1] && v[i] <= v[i + 1]);
+    if (minima.length) return minima.reduce((a, b) => (Math.abs(b.f - tgt) < Math.abs(a.f - tgt) ? b : a));
     let b = null;
-    for (const p of list) { const s = swrOfReading(p); if (!b || s < b.swr) b = { f: p.f, swr: s }; }
+    list.forEach((p, i) => { if (!b || v[i] < b.swr) b = { f: p.f, swr: v[i] }; });
     return b;
+  };
+  /** The SWR the readings show at the target itself, read between the two readings either side. */
+  const measuredAtTarget = () => {
+    const list = usableReadings(tune().readings).list, tgt = targetF();
+    const i = list.findIndex((p) => p.f >= tgt);
+    if (i < 0 || (i === 0 && list[0].f > tgt)) return null;
+    if (i === 0 || list[i].f === tgt) return swrOfReading(list[i]);
+    const a = list[i - 1], b = list[i], u = (tgt - a.f) / (b.f - a.f);
+    return swrOfReading(a) + u * (swrOfReading(b) - swrOfReading(a));
   };
 
   function offsetSentence(name, verb, v) {
@@ -9312,8 +9455,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
   /** Does this answer hold however the readings are weighted? */
   function firmness(fit, key) {
-    const a = fit.offsets[key], b = fit.alternate[key], gap = Math.abs(a - b);
     const signed = (v) => (v >= 0 ? "+" : "−") + fmt(Math.abs(v), 1);
+    if (key === "driven" && fit.ambiguous) return { firm: false, range: `${signed(fit.ambiguous.shorter)} or ${signed(fit.ambiguous.longer)} mm` };
+    const a = fit.offsets[key], b = fit.alternate[key], gap = Math.abs(a - b);
     return { firm: gap < 0.6, range: `${signed(Math.min(a, b))} to ${signed(Math.max(a, b))} mm` };
   }
 
@@ -9324,8 +9468,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       host.innerHTML = `<p class="note">Add at least two SWR readings. Five or more, spread across the valley and its sides, give a much firmer answer.</p>`;
       return;
     }
-    const v = measuredValley(), tgt = targetF(), off = v.f - tgt;
+    const v = measuredValley(), tgt = targetF(), off = v.f - tgt, use = usableReadings(t.readings);
     let html = "";
+    if (use.step) html += `<p><span class="pill warn">VNA jump at ${use.step} MHz</span> <span class="note">Your sweep jumps at ${use.step} MHz, where most NanoVNAs change how they measure. That's the VNA, not the antenna. The ${use.dropped} readings ${use.step > tgt ? "above" : "below"} it are left out of everything here. Calibrate the VNA over this sweep's range, at the end of the cable you measure through, and the jump should go.</span></p>`;
     const onTarget = Math.abs(off) < 0.003 * tgt;
     html += `<p>Your best match is <b>SWR ${fmt(v.swr, 2)} at ${fmt(v.f, 1)} MHz</b>${onTarget ? ", right on your target." : `, <b>${fmt(Math.abs(off), 1)} MHz ${off > 0 ? "above" : "below"}</b> your ${fmt(tgt, 3)} MHz target.`}</p>`;
     if (T.busy && !T.fit) { host.innerHTML = html + `<p class="note">Fitting the model to your readings…</p>`; return; }
@@ -9338,16 +9483,33 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       const fD = firmness(T.fit, "directors"), fE = firmness(T.fit, "driven");
       html += `<p>To match your readings, the ${offsetSentence("directors", "act", o.directors)}, and the ${offsetSentence("driven element", "acts", o.driven)}.${t.free.reflector ? ` The ${offsetSentence("reflector", "acts", o.reflector)}.` : ""}</p>`;
       const firmText = (name, f) => (f.firm ? `<b>${name}: firm.</b> It holds however the readings are weighted (${f.range}).` : `<b>${name}: unsure.</b> It runs from ${f.range} depending on which readings count most.`);
-      html += `<p class="note">${firmText("Directors", fD)} ${firmText("Driven element", fE)}${fE.firm ? "" : " Measure it, enter its real length under Your parts, and trim it last, on the VNA."}</p>`;
+      html += `<p class="note">${firmText("Directors", fD)} ${firmText("Driven element", fE)}${fE.firm || T.fit.ambiguous ? "" : " Measure it, enter its real length under Your parts, and trim it last, on the VNA."}</p>`;
+      if (T.fit.ambiguous) html += `<p><span class="pill warn">Longer or shorter?</span> <span class="note">From SWR alone it can't tell: your readings fit about as well with the driven element acting <b>${fmt(Math.abs(T.fit.ambiguous.shorter), 1)} mm shorter</b> or <b>${fmt(T.fit.ambiguous.longer, 1)} mm longer</b> than you entered. SWR says how big the mismatch is, not which way. A sweep file's R and X tell: tick the cable box on the left and enter the cable between the VNA and the antenna. If filing the driven element has made it worse, it's now too short.</span></p>`;
       html += `<p><span class="pill ${cls}">${word}</span> <span class="note">${note}</span></p>`;
       if (t.readings.length < 5) html += `<p class="note">With only ${t.readings.length} readings this is a rough guide. More readings, especially on both sides of the valley, firm it up.</p>`;
       const hasZ = t.readings.some((p) => p.g);
       if (T.useZ) html += `<p class="note">Using R and X as well as SWR. They fit best with <b>${fmt(T.fit.cableLength, 0)} mm</b> of cable between the feed and the calibration point.</p>`;
-      else if (hasZ) html += `<p class="note"><b>Using SWR only for now.</b> Your readings include R and X, but a cable rotates those, so they can't be trusted yet. Tick the cable box on the left and enter its rough length. The fit will then use them and work out the exact length, which should settle the driven element.</p>`;
-      else html += `<p class="note">SWR alone can't separate every cause. A sweep file with R and X pins it down better.</p>`;
+      else if (hasZ) {
+        // the one question that unlocks R and X: asked here, where it matters, not only in a box most people pass by
+        const c = S.design.cable;
+        html += `<div class="stack ask-cable"><p><span class="pill warn">One question</span> <b>Your sweep has R and X, which say whether the driven element is too long or too short. SWR can't.</b> <span class="note">But coax between the VNA's calibration point and the driven element turns them round, so the fit needs that coax. It's usually the antenna's own coax, from its SMA to where it's soldered on, plus any cable you calibrated before rather than after. A rough length will do: the fit works out the exact one.</span> <button class="btn small" data-calguide>Calibration guide</button></p>
+          <div class="row" style="flex-wrap:wrap;align-items:flex-end;gap:8px">
+            <div class="field"><label for="ask-kind">Coax</label><select class="sel" id="ask-kind">${Object.entries(YS.CABLES).map(([k, v]) => `<option value="${k}"${k === c.kind ? " selected" : ""}>${esc(v.name)}</option>`).join("")}</select></div>
+            <div class="field"><label for="ask-len">Length, mm</label><input class="num" id="ask-len" inputmode="decimal" value="${fmt(c.length, 0)}" style="max-width:90px"></div>
+            <button class="btn primary small" id="ask-use">Use R and X</button>
+          </div></div>`;
+      } else html += `<p class="note"><b>These readings are SWR only</b>, as drawn or typed ones are. SWR says how big the mismatch is, not which way, so it can't say whether the driven element is too long or too short. A sweep from the NanoVNA (Connect NanoVNA, Read a sweep, or a .s1p file) carries R and X, which can.</p>`;
       html += `<label class="check"><input type="checkbox" id="free-reflector" ${t.free.reflector ? "checked" : ""}> Let the fit change the reflector too</label>`;
     }
     host.innerHTML = html;
+    const ask = $("#ask-use");
+    if (ask) ask.onclick = () => {
+      const c = S.design.cable, q = YS.CABLES[$("#ask-kind").value], len = A.parseLen($("#ask-len").value);
+      if (!(len >= 0)) { A.toast("Enter the coax's length in mm."); return; }
+      Object.assign(c, { on: true, kind: $("#ask-kind").value, vf: q.vf, lossAt1G: q.lossAt1G, length: len });
+      A.commit(); syncForm(); scheduleFit();
+      A.toast("Using R and X, through that coax. The cable box on the left has it too.");
+    };
     const fr = $("#free-reflector");
     if (fr) fr.onchange = (e) => { t.free.reflector = e.target.checked; A.commit(); scheduleFit(); };
   }
@@ -9381,9 +9543,19 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const now = T.plan.now;
     const row = (lab, o) => `<tr><td>${lab}</td><td>${fmt(o.swr, 2)}</td><td>${fmt(o.gain, 2)}</td><td>${fmt(o.fb, 1)}</td></tr>`;
     let html = "";
-    const mv = measuredValley();
-    if (mv && mv.swr < 1.35 && Math.abs(mv.f - targetF()) < 0.004 * targetF()) {
-      html += `<p><span class="pill good">Already good</span> Your readings show SWR ${fmt(mv.swr, 2)} at ${fmt(mv.f, 1)} MHz, right where you want it. You could glue the rods and move on. The options below are only if you want a little more.</p>`;
+    const mv = measuredValley(), atT = measuredAtTarget();
+    // judged at the target itself: on a one-channel network that's all that counts. At SWR 1.5, 4% of the power comes back, 0.18 dB.
+    const good = atT !== null && atT <= 1.5;
+    if (good) {
+      const lost = -10 * Math.log10(1 - Math.pow((atT - 1) / (atT + 1), 2));
+      html += `<p><span class="pill good">Already good</span> At your target, ${fmt(targetF(), 3)} MHz, your readings show SWR ${fmt(atT, 2)}: ${fmt(lost, 2)} dB lost to the match. No change below can win back more than that. Glue the rods and move on. The options are only if you want to try for a little more, and a cut or a file can't be undone.</p>`;
+    }
+    // a rough fit, or a driven element it can't pin down, can't be trusted with a cut: on the owner's antenna, filing what such a
+    // fit called best took SWR at the target from 1.23 to 1.61 (2026-11-08)
+    const fD = T.fit ? firmness(T.fit, "driven") : { firm: true }, rough = T.fit && T.fit.rms >= 0.16, either = T.fit && T.fit.ambiguous;
+    const doubtful = rough || !fD.firm;
+    if (doubtful) {
+      html += `<p><span class="pill bad">Don't cut on this yet</span> ${either ? "It can't tell whether the driven element is too long or too short, so it can't say which way to change it, and" : `The fit is ${rough ? "rough" : "fair"}${fD.firm ? "" : " and the driven element is unsure"}, so`} these predictions can be well off: a trim that looks good here can make the real antenna worse. First enter what each rod really measures under Your parts, the driven element tip to tip; check the VNA's calibration and the cable; and sweep again. The options are shown so you can see what the model thinks, not as instructions.</p>`;
     }
     html += opts.map((o, i) => {
       const lines = (o.bends || []).map((b) => `<li><b>${esc(b.rod)}:</b> bend both tips <b>${fmt(Math.abs(b.add), 0)} mm</b> ${b.add > 0 ? "forward, away from the reflector" : "back, toward the reflector"}, from where they leave the boom.</li>`).join("")
@@ -9392,10 +9564,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       const needs = o.newRods ? `${o.newRods} new rod${o.newRods > 1 ? "s" : ""}` : "No new rods";
       const chosen = T.chosen === o.id;
       return `<div class="option" data-opt="${o.id}" style="border:1px solid ${chosen ? "var(--accent)" : "var(--line)"};border-radius:6px;padding:8px 10px">
-        <div class="row" style="justify-content:space-between"><b>${i === 0 ? "Best: " : ""}${esc(o.title)}</b><button class="btn small" data-show="${o.id}" aria-pressed="${chosen}">${chosen ? "On the chart" : "Show"}</button></div>
+        <div class="row" style="justify-content:space-between"><b>${i === 0 && !doubtful && !good ? "Best: " : ""}${esc(o.title)}</b><button class="btn small" data-show="${o.id}" aria-pressed="${chosen}">${chosen ? "On the chart" : "Show"}</button></div>
         <p class="note" style="margin:3px 0 6px">${esc(o.why)}</p>
         <ul style="margin:0 0 6px;padding-left:18px">${lines || "<li>No rods need to change.</li>"}</ul>
-        <p class="stat-line"><span class="pill ${cls}">${word}</span> SWR ${fmt(o.swr, 2)} at target · ${fmt(o.gain, 2)} dBd · F/B ${fmt(o.fb, 1)} dB · ${needs}</p>
+        <p class="stat-line">${doubtful ? `<span class="note">If the model were right:</span>` : `<span class="pill ${cls}">${word}</span>`} SWR ${fmt(o.swr, 2)} at target · ${fmt(o.gain, 2)} dBd · F/B ${fmt(o.fb, 1)} dB · ${needs}</p>
         <div class="row" style="margin-top:6px"><button class="btn small" data-apply="${o.id}">${o.bends ? "Put these bends in the design" : "Make these the design's lengths"}</button></div>
       </div>`;
     }).join("");
@@ -9543,6 +9715,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     mount(host) {
       host.innerHTML = template();
       bindForm();
+      // the guide opens from any of its buttons in this tab, wherever they're drawn
+      host.addEventListener("click", (e) => { if (e.target.closest("[data-calguide]")) calibrationGuide(); });
       const ro = new ResizeObserver(() => drawChart());
       ro.observe($("#tune-chart"));
     },
@@ -10500,7 +10674,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
-  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, lengths: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
   /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
   function bedNow() {
@@ -10529,7 +10703,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -10554,6 +10728,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
             <label class="check"><input type="checkbox" id="p-gauge"> Rod-cutting gauge on top of the boom ${A.help("printgauge")}</label>
             <label class="check"><input type="checkbox" id="p-notches"> Check notches on top of the boom, 100 mm apart ${A.help("printcheck")}</label>
             <label class="check"><input type="checkbox" id="p-label"> Up arrows on both sides of the boom, and TOP on its top</label>
+            <label class="check"><input type="checkbox" id="p-lengths"> Each rod's length on the boom's side, beside its hole</label>
             <label class="check"><input type="checkbox" id="p-brand"> Yagi Studio on the boom's side</label>
             <label class="check"><input type="checkbox" id="p-screws"> Holes for M3 screws to hold the rods ${A.help("printscrews")}</label>
             <div class="field-grid" id="p-pilot-wrap"><div class="field"><label for="p-pilot">Screw holes, mm</label><select class="sel" id="p-pilot">${YS.PARTS.SCREW.pilots.map((v) => `<option value="${v}">${v.toFixed(1)}</option>`).join("")}</select></div></div>
@@ -10695,11 +10870,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });
       $("#p-shrink").onchange = (e) => { PRINT.useBar = e.target.value === "bar"; changed(); };
-      $("#p-gauge").checked = PRINT.gauge; $("#p-notches").checked = PRINT.notches; $("#p-label").checked = PRINT.label; $("#p-brand").checked = PRINT.brand;
+      $("#p-gauge").checked = PRINT.gauge; $("#p-notches").checked = PRINT.notches; $("#p-label").checked = PRINT.label; $("#p-brand").checked = PRINT.brand; $("#p-lengths").checked = PRINT.lengths;
       $("#p-gauge").onchange = (e) => { PRINT.gauge = e.target.checked; changed(); };
       $("#p-notches").onchange = (e) => { PRINT.notches = e.target.checked; changed(); };
       $("#p-label").onchange = (e) => { PRINT.label = e.target.checked; changed(); };
       $("#p-brand").onchange = (e) => { PRINT.brand = e.target.checked; changed(); };
+      $("#p-lengths").onchange = (e) => { PRINT.lengths = e.target.checked; changed(); };
       // screws belong to the design, as the New design dialog asks about them, so that they're remembered with it
       $("#p-screws").onchange = (e) => { S.design.screws = e.target.checked; A.commit(); changed(); };
       $("#p-pilot").value = String(PRINT.pilot);

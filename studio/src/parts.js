@@ -53,6 +53,7 @@
   const ARROW = { half: 7, head: 3.5, stroke: 0.9, width: 8 };    // an up arrow on a side: half its length at most, its head, stroke and the room it takes along the boom
   const BRAND = "YAGI STUDIO";     // on the boom's side, if it's wanted
   const ROD_TEXT = { k: 0.8, stroke: 0.7, gap: 0.8 };   // each rod's length on the screws' side: letters 5k mm tall, the stroke, and the room kept from a screw's head
+  const CUSTOM_MAX = 40;           // characters of the owner's own text on the boom's side
   const NAME_GAP = 4.5;            // mm between the gauge's names on the side, well over the 1.4 between letters, so that R and D1 don't read as RD1
   const PIN_NUT = { flats: 5.6, height: 3.6, top: 4.4, shoulder: 1.2, foot: 1 };   // the bulge for the pin's nut, mm: recess across flats, height, flat top's radius, and the rounding of its shoulder and foot
   const SOFT = { edge: 2.5, rim: 1, block: 4, blockRim: 1.5 };   // rounded outside edges, mm: a socket's long edges and open end, and a block's
@@ -85,6 +86,13 @@
     3: [[0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0.8, 2.5, 3, 2.5]], 4: [[0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 5, 3, 0]], 5: [[3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 2.5, 3, 0], [3, 0, 0, 0]],
     6: [[3, 5, 0, 5], [0, 5, 0, 0], [0, 0, 3, 0], [3, 0, 3, 2.5], [3, 2.5, 0, 2.5]], 7: [[0, 5, 3, 5], [3, 5, 1, 0]], 8: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0, 2.5, 3, 2.5]],
     9: [[3, 0, 3, 5], [3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5]], "/": [[0, 0, 3, 5]], ".": [[1.5, 0, 1.5, 0.4]],
+    // the rest of the alphabet and a little punctuation, for the owner's own text (2026-11-08)
+    F: [[0, 0, 0, 5], [0, 5, 3, 5], [0, 2.5, 2.2, 2.5]], J: [[3, 5, 3, 0.8], [3, 0.8, 2.2, 0], [2.2, 0, 0.8, 0], [0.8, 0, 0, 0.8]],
+    K: [[0, 0, 0, 5], [3, 5, 0, 2.2], [1, 2.9, 3, 0]], N: [[0, 0, 0, 5], [0, 5, 3, 0], [3, 0, 3, 5]],
+    Q: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [1.8, 1.2, 3, 0]], V: [[0, 5, 1.5, 0], [1.5, 0, 3, 5]],
+    W: [[0, 5, 0.7, 0], [0.7, 0, 1.5, 2.5], [1.5, 2.5, 2.3, 0], [2.3, 0, 3, 5]], X: [[0, 0, 3, 5], [0, 5, 3, 0]], Z: [[0, 5, 3, 5], [3, 5, 0, 0], [0, 0, 3, 0]],
+    "-": [[0.5, 2.5, 2.5, 2.5]], "+": [[1.5, 1, 1.5, 4], [0, 2.5, 3, 2.5]], "(": [[2, 5, 1, 3.8], [1, 3.8, 1, 1.2], [1, 1.2, 2, 0]], ")": [[1, 5, 2, 3.8], [2, 3.8, 2, 1.2], [2, 1.2, 1, 0]],
+    ":": [[1.5, 0.8, 1.5, 1.2], [1.5, 3.8, 1.5, 4.2]], ",": [[1.5, 0.6, 1, -0.4]], "'": [[1.5, 5, 1.5, 3.8]], "#": [[1, 0, 1, 5], [2, 0, 2, 5], [0, 1.7, 3, 1.7], [0, 3.3, 3, 3.3]],
   };
   const textWidth = (s, k, pitch) => (s.length - 1) * pitch + 3 * k;
   /* What a rod's name can be written as: D1 from anything, and nothing the letters above can't draw. */
@@ -552,6 +560,7 @@
     s = K.cut(s, cuts);
     if (sec.i === 0 && (opts.gauge || opts.notches)) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
     if (opts.faces && opts.faces.section === sec.i) s = K.cut(s, faceCuts(K, opts.faces, sizes));
+    if (opts.custom && opts.custom.placed && opts.custom.placed.section === sec.i) s = K.cut(s, [customCut(K, opts.custom, sizes)]);
     if (opts.lengths) {
       // drawn in (x, z) on the -y face, pushed in along y, and turned onto it, as the gauge's names are
       const mine = opts.lengths.labels.filter((l) => l.sec === sec.i), Z0 = w / 2 - DEEP, Z1 = w / 2 + 1;
@@ -608,8 +617,8 @@
     return best;
   }
 
-  function facesOn(sec, rods, sizes, T, gauge, notches, o) {
-    const out = { section: sec.i, arrows: [], top: null, brand: null, warnings: [] };
+  /** What's free on a piece's sides and top: the plain stretch between its joints, and what's already there, as boxes in (x, z). */
+  function faceSpace(sec, rods, sizes, T, gauge, notches, o) {
     const hzAt = (x) => (sec.i === 0 ? T.hz(x) : sizes.h / 2), all = 1e3, c = SCREW.head / 2 + 1;
     const a = sec.prev ? sec.prev.t + JOINT.down[1] + 1 : MOUTH + 2, b = sec.next ? sec.next.t - JOINT.flare[0] - 1 : sec.x1 - 1;
     const driven = rods.find((r) => r.driven), through = sec.next ? sec.next.through : [];
@@ -634,6 +643,12 @@
     const clear = (list, x0, x1, z0, z1) => x0 >= a && x1 <= b && list.every(([p0, p1, q0, q1]) => x1 < p0 || x0 > p1 || z1 < q0 || z0 > q1);
     const onSide = (k, x0, x1, z0, z1) => clear(blocks[k], x0, x1, z0, z1) && z1 <= Math.min(hzAt(x0), hzAt(x1)) - 1.5 && z0 >= 1.5 - Math.min(hzAt(x0), hzAt(x1));
     const near = (x) => { const xs = []; for (let d = 0; d <= b - a; d += 0.5) xs.push(x + d, x - d); return xs; };
+    return { a, b, hzAt, blocks, clear, onSide, near };
+  }
+
+  function facesOn(sec, rods, sizes, T, gauge, notches, o) {
+    const out = { section: sec.i, arrows: [], top: null, brand: null, warnings: [] };
+    const { a, b, hzAt, blocks, clear, onSide, near } = faceSpace(sec, rods, sizes, T, gauge, notches, o), all = 1e3;
     const mid = (a + b) / 2;
     if (o.brand) {
       // full size on either side, or a little smaller if it must
@@ -667,6 +682,44 @@
       else out.top = { x, k, pitch, W, y0: yLo + (yHi - yLo - 5 * k) / 2, z: hzAt(x), ang: sec.i === 0 ? T.ang : 0 };
     }
     return out;
+  }
+
+  /**
+   * The owner's own text (2026-11-08): a name, a call sign, a phone number, a club. Capitals, digits and a little punctuation,
+   * along a side wherever there's a clear stretch, the last piece first, clear of the arrows and the name; smaller if it must.
+   */
+  function planCustom(sections, rods, sizes, T, gauge, notches, o, faces) {
+    const raw = String(o.customText || "").toUpperCase().replace(/\s+/g, " ").trim();
+    if (!raw) return null;
+    const dropped = [...new Set(raw.split("").filter((ch) => ch !== " " && !LETTERS[ch]))];
+    const kept = raw.split("").filter((ch) => ch === " " || LETTERS[ch]).join("").replace(/\s+/g, " ").trim();
+    const text = kept.slice(0, CUSTOM_MAX).trim(), out = { text, placed: null, warnings: [] };
+    if (dropped.length) out.warnings.push(`Your text can't include ${dropped.join(" ")}, so ${dropped.length > 1 ? "those were" : "that was"} left out.`);
+    if (kept.length > CUSTOM_MAX) out.warnings.push(`Your text is cut to its first ${CUSTOM_MAX} characters.`);
+    if (!text) return out;
+    for (const k of [1, 0.8, 0.65]) {
+      for (const sec of sections.slice().reverse()) {
+        const F = faceSpace(sec, rods, sizes, T, gauge, notches, o);
+        if (faces && faces.section === sec.i) {
+          if (faces.brand) F.blocks[faces.brand.side].push([faces.brand.x - faces.brand.W / 2 - 3, faces.brand.x + faces.brand.W / 2 + 3, -1e3, 1e3]);
+          faces.arrows.forEach((A) => F.blocks[A.side].push([A.x - ARROW.width / 2 - 3, A.x + ARROW.width / 2 + 3, -1e3, 1e3]));
+        }
+        const pitch = 4.4 * k, W = textWidth(text, k, pitch), zh = 2.5 * k + 0.6;
+        for (const side of [1, -1]) {
+          const x = F.near((F.a + F.b) / 2).find((q) => F.onSide(side, q - W / 2 - 1, q + W / 2 + 1, -zh, zh));
+          if (x !== undefined) { out.placed = { section: sec.i, side, x, k, pitch, W }; return out; }
+        }
+      }
+    }
+    out.warnings.push(`There's no clear stretch on the boom's sides long enough for "${text}". Shorten it, or leave off Yagi Studio's name to make room.`);
+    return out;
+  }
+
+  /* The owner's text, cut as the name is: drawn on the -y face, and turned half round for the +y face. */
+  function customCut(K, C, sizes) {
+    const P = C.placed, Z0 = sizes.w / 2 - DEEP, Z1 = sizes.w / 2 + 1;
+    const m = K.turn(K.fuse(K.word(C.text, -P.W / 2, -2.5 * P.k, P.k, Z0, Z1, SIDE_TEXT.stroke, P.pitch)), [90, 0, 0]);
+    return K.at(P.side < 0 ? m : K.turn(m, [0, 0, 180]), [P.x, 0, 0]);
   }
 
   /* The arrows, TOP and the name, as planFaces placed them. Writing on a side is drawn on the -y face, reading from outside it,
@@ -867,10 +920,10 @@
 
   /**
    * Plans the parts without making any: the sections, the gauge's marks and any warnings, for the page to show as you type.
-   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, mount, screws, pilot }
+   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, customText, mount, screws, pilot }
    */
   function planParts(design, opts) {
-    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
+    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, customText: "", mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
     const rods = rodsOf(design, o.fit), sizes = boomSizes(rods), warnings = [];
     if (rods.length < 2) throw new Error("A boom needs at least two rods.");
     rods.forEach((r, i) => {
@@ -934,8 +987,10 @@
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
     const faces = planFaces(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, Object.assign({}, o, { lengthLabels: lengths }));
     if (faces) warnings.push(...faces.warnings);
+    const custom = planCustom(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, Object.assign({}, o, { lengthLabels: lengths }), faces);
+    if (custom) warnings.push(...custom.warnings);
     if (o.notches && !notches) warnings.push(`There's no clear ${CAL_SPAN} mm stretch on the first piece's top for the check notches, away from the rods and the driven element's window. To check the print's size instead, measure with calipers between the outsides of two rods' holes far apart, and compare with their spacing plus a hole's width.`);
-    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, lengths, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
+    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, lengths, custom, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
   }
 
   /** How to lay a part on the bed, in words, when the file as it opens won't do. Files always lie along x. */
@@ -963,7 +1018,7 @@
     };
     try {
       sections.forEach((sec) => {
-        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, screws: o.screws, pilot: o.pilot });
+        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, custom: plan.custom, screws: o.screws, pilot: o.pilot });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
         // a tapered piece is turned to lie on its bottom face, which slopes by the taper's angle
@@ -994,7 +1049,7 @@
   function partsNotes(design, result) {
     const { plan, parts } = result, { o, rods, sections } = plan, L = [];
     const joints = sections.length - 1, driven = rods.find((r) => r.driven);
-    L.push(`${design.name}: printing and building`, "", "NEW AND UNTESTED: nothing from Yagi Studio's 3D print tab has been printed yet. Print one, measure it and test-fit it before you rely on it.", "", "PRINTING", `0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
+    L.push(`${design.name}: printing and building`, "", "TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes. NOT YET PRINTED: the mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", "", "PRINTING", `0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
       `X-Y hole compensation ${HOLE_COMP} mm for the boom and coupon: their holes are modelled for it and come out too small without it. A mount's fine with or without it.`,
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short. For SUNLU ASA it's estimated at 99.65%, from a printed boom. Other brands differ." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
     parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
@@ -1008,6 +1063,10 @@
     if (plan.lengths && plan.lengths.labels.length) {
       const seen = [], each = plan.lengths.labels.filter((l) => !seen.includes(l.rod) && seen.push(l.rod));
       L.push("", "ROD LENGTHS ON THE BOOM", `Each rod's length to cut is written on the screws' side, beside its hole, so the boom says which rods it takes. The driven element's two halves each have their own: the length to cut each half${plan.o.allowance > 0 ? `, ${(+plan.o.allowance).toFixed(1)} mm longer in all than the model's guess` : ", with no trimming allowance set"}, as on the gauge and the Cut list. Then trim both tips equally by the VNA's readings, not to a length.`, ...each.map((l) => `  ${l.rod}: ${l.text} mm${l.driven ? " each half" : ""}`));
+    }
+    if (plan.custom && plan.custom.placed) {
+      const P = plan.custom.placed, piece = sections.length === 1 ? "the boom" : P.section === 0 ? "the rear piece" : P.section === sections.length - 1 ? "the front piece" : `piece ${P.section + 1}`;
+      L.push("", "YOUR TEXT", `"${plan.custom.text}", on the ${P.side > 0 ? "coax's" : "screws'"} side of ${piece}, ${(5 * P.k).toFixed(1)} mm tall.`);
     }
     if (plan.faces && (plan.faces.top || plan.faces.arrows.length)) L.push("", "WHICH WAY UP", "TOP marks the boom's top, the face with the gauge's V, and the arrows on both sides point to it.");
     const T = plan.taper;

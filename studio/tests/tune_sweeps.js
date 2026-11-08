@@ -32,7 +32,7 @@ const after = sweep([[850, 1.52], [860, 1.53], [870, 1.62], [880, 1.75], [890, 1
     console.log(`--- ${name}\n  DIAG ${diag.slice(0, 700)}\n  PLAN ${plan.slice(0, 1500)}`);
     ok(`${name}: the jump at 900 MHz is named and left out`, /VNA jump at 900 MHz/.test(diag));
     ok(`${name}: the best match is the valley near the target`, /SWR 1\.\d+ at 91[0-4]\.\d MHz/.test(diag), (diag.match(/best match is [^.]*\.[^.]*\./) || [""])[0]);
-    if (name === "before the trim") ok("before: it says it's already good, and calls nothing Best", /Already good/.test(plan) && !/Best:/.test(plan));
+    if (name === "before the trim") ok("before: it says it's already good, recommends leaving it first, and calls nothing Best", /Already good/.test(plan) && /^Recommended: leave it as it is/.test(plan.trim()) && !/Best:/.test(plan));
     else ok("after: not already good", !/Already good/.test(plan));
     ok(`${name}: a rough or unsure fit carries the warning, and no Best`, !/Rough fit|unsure/.test(diag) || (/Don't cut on this yet/.test(plan) && !/Best:/.test(plan)));
   }
@@ -58,6 +58,12 @@ const after = sweep([[850, 1.52], [860, 1.53], [870, 1.62], [880, 1.75], [890, 1
   const diag = (await p.textContent("#diag")).replace(/\s+/g, " ");
   ok("answered, it uses R and X and finds the driven element short", /Using R and X/.test(diag) && /driven element acts about [0-9.]+ mm shorter/.test(diag) && !/Longer or shorter/.test(diag), (diag.match(/driven element acts about [0-9.]+ mm [a-z]+/) || [""])[0]);
   ok("and the cable box shows it", await p.isChecked("#cable-on"));
+  // the options: no change finer than cutting, titles that say the driven element changes too, no two alike
+  const opts = await p.evaluate(() => [...document.querySelectorAll("#plan .option[data-opt]")].map((o) => ({ title: o.querySelector("b").textContent, steps: [...o.querySelectorAll("li")].map((l) => l.textContent) })));
+  const tiny = opts.flatMap((o) => o.steps).filter((t) => /(file|longer\)?)\s*0\.[0-2]\d* mm|file 0\.[0-2] mm|\(0\.[0-2] mm longer\)/.test(t));
+  ok("no step is finer than 0.3 mm", !tiny.length, tiny.join(" | ") || opts.map((o) => o.title).join(" / "));
+  ok("a director option that retunes the driven element says so", opts.filter((o) => o.steps.some((t) => /^Driven/.test(t)) && /^Change (D\d|all the directors)/.test(o.title)).every((o) => /and the driven element to match/.test(o.title)));
+  ok("no two options do the same work", new Set(opts.map((o) => o.steps.join("|"))).size === opts.length);
   ok("no page errors", errs.length === 0, errs.join(" | "));
   await b.close(); console.log(bad ? `${bad} FAILED` : "All passed"); process.exit(bad ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

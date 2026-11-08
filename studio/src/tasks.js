@@ -414,7 +414,12 @@
       return 0.5 * (lo + hi);
     };
 
-    const describe = (id, title, why, change) => {
+    // A change finer than anyone cuts to is no change: it's left out before the option is judged, so that what's predicted is
+    // what will be done (the owner's plan once said "D2: file 0.1 mm", against ±0.3 mm cutting).
+    const CUT_TOL = 0.3;
+    const describe = (id, title, why, given) => {
+      const change = {};
+      Object.keys(given).forEach((i) => { if (Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
       const s = built(change), at = run.fixed(s);
       const m = at(target, 1);
       const curve = [];
@@ -425,7 +430,7 @@
       const v = valley(s);
       const steps = base.elements.map((e, i) => {
         const dL = change[i] || 0;
-        const action = Math.abs(dL) < 0.05 ? "keep" : dL < 0 ? "file" : "new";
+        const action = Math.abs(dL) < CUT_TOL ? "keep" : dL < 0 ? "file" : "new";
         return { rod: names[i], role: roles[i], from: e.L, to: e.L + dL, change: dL, action };
       });
       const newRods = steps.filter((t) => t.action === "new").length;
@@ -481,7 +486,7 @@
         const c = {};
         directors.forEach((i) => { c[i] = x; });
         c[drv] = tuneDriven(c);
-        options.push(describe("directors", "Change all the directors",
+        options.push(describe("directors", "Change all the directors, and the driven element to match",
           "The directors decide where the valley sits. Changing them together keeps the design's balance, so it holds the most gain.", c));
       }
     }
@@ -498,16 +503,23 @@
       if (x === null || Math.abs(x) > 8) continue;
       const c = { [i]: x };
       c[drv] = tuneDriven(c);
-      const o = describe("single", `Change only ${names[i]}`, `One rod to change. ${names[i]} moves the valley most for its length, but changing one rod alone costs some gain.`, c);
+      // every director option retunes the driven element too, and its title says so
+      const o = describe("single", `Change ${names[i]}, and the driven element to match`, `${names[i]} moves the valley most for its length, but changing one director alone costs some gain.`, c);
       if (!bestSingle || o.gain - 2 * Math.max(0, o.swr - 1.5) > bestSingle.gain - 2 * Math.max(0, bestSingle.swr - 1.5)) bestSingle = o;
     }
     if (bestSingle) options.push(bestSingle);
     // 4. no cutting at all: bend the driven element and D1, which are close enough for it to work
     const bent = bendOption();
     if (bent) options.push(bent);
-    // what's worth doing: gain, a good match, and as few new rods as possible
-    const score = (o) => o.gain - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
-    options.sort((a, b) => score(b) - score(a));
+    // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
+    // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
+    const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
+    const distinct = options.filter((o, i) => work(o) !== "" && options.findIndex((q) => work(q) === work(o)) === i);
+    const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
+    const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
+    distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));
+    options.length = 0;
+    options.push(...distinct);
     return { now: none, options };
   }
 

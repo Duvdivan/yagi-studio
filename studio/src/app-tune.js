@@ -451,7 +451,7 @@
         }),
       };
       if (plan.options[0] && !plan.options.some((o) => o.id === T.chosen)) T.chosen = plan.options[0].id;
-      if (T.lastTop !== plan.options[0].id) { T.chosen = plan.options[0].id; T.lastTop = plan.options[0].id; }
+      if (plan.options[0] && T.lastTop !== plan.options[0].id) { T.chosen = plan.options[0].id; T.lastTop = plan.options[0].id; }      // none left once changes under 0.3 mm count as none
     } catch (err) {
       A.toast("The fit stopped: " + err.message);
     }
@@ -578,8 +578,11 @@
     // judged at the target itself: on a one-channel network that's all that counts. At SWR 1.5, 4% of the power comes back, 0.18 dB.
     const good = atT !== null && atT <= 1.5;
     if (good) {
+      // a clear first answer, as an option of its own: leave it (the owner, 2026-11-08)
       const lost = -10 * Math.log10(1 - Math.pow((atT - 1) / (atT + 1), 2));
-      html += `<p><span class="pill good">Already good</span> At your target, ${fmt(targetF(), 3)} MHz, your readings show SWR ${fmt(atT, 2)}: ${fmt(lost, 2)} dB lost to the match. No change below can win back more than that. Glue the rods and move on. The options are only if you want to try for a little more, and a cut or a file can't be undone.</p>`;
+      html += `<div class="option leave-it"><div class="row" style="justify-content:space-between"><b>Recommended: leave it as it is</b><span class="pill good">Already good</span></div>
+        <p style="margin:4px 0">At your target, ${fmt(targetF(), 3)} MHz, your readings show <b>SWR ${fmt(atT, 2)}</b>: ${fmt(lost, 2)} dB lost to the match, about ${fmt(100 * (1 - Math.pow(10, -lost / 10)), 0)}% of the power. Nothing below can win back more than that, and every cut or file is for keeps. Glue the rods and mount it.</p></div>
+        <p class="note" style="margin-top:6px"><b>Only if you want to try for a little more:</b></p>`;
     }
     // a rough fit, or a driven element it can't pin down, can't be trusted with a cut: on the owner's antenna, filing what such a
     // fit called best took SWR at the target from 1.23 to 1.61 (2026-11-08)

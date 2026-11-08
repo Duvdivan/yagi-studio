@@ -963,7 +963,7 @@
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -975,7 +975,7 @@
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom's fork-and-tongue joint, cutting marks, check notches and label are new, and so are the hand grip, the tripod mount and the painter pole's arm. Print one and check it before you rely on it.</p>
+            <p class="note"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill warn">Mounts not yet</span> The mast clamp, painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
             <div>${bedFields("p")}</div>
             <p id="p-pieces" role="status" style="font-weight:600"></p>
@@ -990,6 +990,7 @@
             <label class="check"><input type="checkbox" id="p-label"> Up arrows on both sides of the boom, and TOP on its top</label>
             <label class="check"><input type="checkbox" id="p-lengths"> Each rod's length on the boom's side, beside its hole</label>
             <label class="check"><input type="checkbox" id="p-brand"> Yagi Studio on the boom's side</label>
+            <div class="field"><label for="p-text">Your own text on the boom's side ${A.help("boomtext")}</label><input class="txt-in" id="p-text" maxlength="60" placeholder="Name, call sign, phone number, club…" autocomplete="off"></div>
             <label class="check"><input type="checkbox" id="p-screws"> Holes for M3 screws to hold the rods ${A.help("printscrews")}</label>
             <div class="field-grid" id="p-pilot-wrap"><div class="field"><label for="p-pilot">Screw holes, mm</label><select class="sel" id="p-pilot">${YS.PARTS.SCREW.pilots.map((v) => `<option value="${v}">${v.toFixed(1)}</option>`).join("")}</select></div></div>
             <div class="row"><button class="btn primary" id="p-run">Make the files</button></div>
@@ -1012,6 +1013,7 @@
     const d = S.design, host = $("#p-plan"), run = $("#p-run");
     $("#p-bar-wrap").hidden = !PRINT.useBar;
     $("#p-screws").checked = !!d.screws;
+    if (document.activeElement !== $("#p-text")) $("#p-text").value = d.boomText || "";
     $("#p-pilot-wrap").hidden = !d.screws;
     let plan;
     try {
@@ -1055,7 +1057,7 @@
         ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm${p.placing ? `. ${p.place.fits ? "" : '<span class="pill warn">Check that</span> '}${esc(p.placing)}` : ""}</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
       </tbody></table>
       <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
-      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. They've only been checked as models, not printed, so measure the check notches and test-fit the parts before you rely on them.</p>`;
+      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. The boom has been printed, built and tuned; the mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it.</p>`;
     const name = S.design.name.replace(/[^\w-]+/g, "_");
     const notes = () => A.download(`${name}_build_notes.txt`, YS.partsNotes(S.design, R), "text/plain");
     const one = (p) => A.download(p.file, YS.meshToStl(p.mesh, p.id), "model/stl");
@@ -1138,6 +1140,8 @@
       $("#p-lengths").onchange = (e) => { PRINT.lengths = e.target.checked; changed(); };
       // screws belong to the design, as the New design dialog asks about them, so that they're remembered with it
       $("#p-screws").onchange = (e) => { S.design.screws = e.target.checked; A.commit(); changed(); };
+      // kept with the design, as the screws are, so each antenna keeps its own
+      $("#p-text").onchange = (e) => { S.design.boomText = e.target.value.trim(); A.commit(); changed(); };
       $("#p-pilot").value = String(PRINT.pilot);
       $("#p-pilot").onchange = (e) => { PRINT.pilot = +e.target.value; changed(); };
       $("#p-run").onclick = runPrint;

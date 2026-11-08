@@ -172,6 +172,22 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
     truth("the driven element's two say the length to cut each half, with the allowance", cutDE.length === 2 && cutDE.every((t) => t === "75.0"), cutDE.join(", "));
     truth("the notes list them", /ROD LENGTHS ON THE BOOM[\s\S]*Driven: 73.0 mm each half/.test(YS.partsNotes(duv, here)));
   }
+  // the owner's own text, wherever a side has room (2026-11-08)
+  {
+    const withText = YS.buildParts(wasm, duv, { mount: "none", bed: BED, screws: true, inPlace: true, coupon: false, customText: "kd9xyz Dan (555) 012-3456 @" });
+    const C = withText.plan.custom, P = C && C.placed;
+    truth("your own text is planned in capitals, with what can't be written left out and said", C && C.text === "KD9XYZ DAN (555) 012-3456" && P && withText.plan.warnings.some((w) => /can't include @/.test(w)), JSON.stringify(C));
+    const M = by(withText, P.section === 0 ? "boom_rear" : "boom_front").mesh, yS = P.side * (S.w / 2 - 0.3);
+    let cut = 0;
+    for (let x = P.x - P.W / 2; x <= P.x + P.W / 2; x += 0.25) for (let z = -2.5 * P.k; z <= 2.5 * P.k; z += 0.25) if (!inside(M, x, yS, z)) cut++;
+    truth("and cut into that side", cut > 200, `${cut} probes open, ${P.side > 0 ? "+y" : "-y"} of piece ${P.section}, at x ${P.x.toFixed(1)}`);
+    // on the coax's side: clear of the driven element's window, the coax's groove behind it, and the joint. Rods' holes run
+    // through the middle, 6.5 mm in from a side, so text can pass them; the screws' heads are on the other side.
+    const dx = duv.elements.find((e) => e.type === "driven").x, x0 = P.x - P.W / 2, x1 = P.x + P.W / 2;
+    truth("clear of the window, the coax's groove and the joint", (P.side < 0 || (x0 > dx + YS.PARTS.WINDOW[0] / 2 + 2)) && withText.plan.sections.every((sec) => !sec.next || x1 < sec.next.t - YS.PARTS.JOINT.flare[0]), `${x0.toFixed(1)} to ${x1.toFixed(1)}`);
+    truth("the notes say where it is", /YOUR TEXT\n"KD9XYZ DAN \(555\) 012-3456", on the/.test(YS.partsNotes(duv, withText)));
+    truth("and none without it", YS.planParts(duv, { bed: BED }).custom === null);
+  }
   // up arrows on both sides and TOP on the top, in place of THIS SIDE UP, and the name, on the front piece (the owner, 2026-11-07)
   {
     const Fc = here.plan.faces, FM = by(here, "boom_front").mesh, yS = S.w / 2 - 0.3, h2 = S.h / 2;

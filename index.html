@@ -155,6 +155,7 @@ section.plan-side { display: block; }
 .plan-gain { margin-left: auto; font: 500 20px var(--mono); }
 .plan-pick { justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--sunken); border-radius: 7px; padding: 10px 12px; }
 .modal.wide { width: min(980px, 100%); }
+.option.leave-it { border: 2px solid var(--good); border-radius: 6px; padding: 8px 10px; }
 .cal-steps { margin: 4px 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--ink2); line-height: 1.45; }
 .modal .plan-h { margin: 12px 0 4px; }
 @media (max-width: 700px) { .field-grid.plan-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -201,6 +202,7 @@ input.num, input.txt, select.sel, textarea.txt {
   width: 100%; min-width: 0; border: 1px solid var(--line2); background: var(--raised); border-radius: 4px; padding: 4px 6px; min-height: 28px;
 }
 input.num { font: 12.5px var(--mono); font-variant-numeric: tabular-nums; }
+input.txt-in { width: 100%; font: 13px var(--sans); padding: 6px 8px; border: 1px solid var(--line2); border-radius: 5px; background: var(--raised); color: var(--ink); box-sizing: border-box; }
 input.num:focus, input.txt:focus, select.sel:focus, textarea.txt:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
 input.bad { border-color: var(--bad); }
 .check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); cursor: pointer; }
@@ -2450,7 +2452,12 @@ input::placeholder { color: var(--muted); opacity: .75; }
       return 0.5 * (lo + hi);
     };
 
-    const describe = (id, title, why, change) => {
+    // A change finer than anyone cuts to is no change: it's left out before the option is judged, so that what's predicted is
+    // what will be done (the owner's plan once said "D2: file 0.1 mm", against ±0.3 mm cutting).
+    const CUT_TOL = 0.3;
+    const describe = (id, title, why, given) => {
+      const change = {};
+      Object.keys(given).forEach((i) => { if (Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
       const s = built(change), at = run.fixed(s);
       const m = at(target, 1);
       const curve = [];
@@ -2461,7 +2468,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
       const v = valley(s);
       const steps = base.elements.map((e, i) => {
         const dL = change[i] || 0;
-        const action = Math.abs(dL) < 0.05 ? "keep" : dL < 0 ? "file" : "new";
+        const action = Math.abs(dL) < CUT_TOL ? "keep" : dL < 0 ? "file" : "new";
         return { rod: names[i], role: roles[i], from: e.L, to: e.L + dL, change: dL, action };
       });
       const newRods = steps.filter((t) => t.action === "new").length;
@@ -2517,7 +2524,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
         const c = {};
         directors.forEach((i) => { c[i] = x; });
         c[drv] = tuneDriven(c);
-        options.push(describe("directors", "Change all the directors",
+        options.push(describe("directors", "Change all the directors, and the driven element to match",
           "The directors decide where the valley sits. Changing them together keeps the design's balance, so it holds the most gain.", c));
       }
     }
@@ -2534,16 +2541,23 @@ input::placeholder { color: var(--muted); opacity: .75; }
       if (x === null || Math.abs(x) > 8) continue;
       const c = { [i]: x };
       c[drv] = tuneDriven(c);
-      const o = describe("single", `Change only ${names[i]}`, `One rod to change. ${names[i]} moves the valley most for its length, but changing one rod alone costs some gain.`, c);
+      // every director option retunes the driven element too, and its title says so
+      const o = describe("single", `Change ${names[i]}, and the driven element to match`, `${names[i]} moves the valley most for its length, but changing one director alone costs some gain.`, c);
       if (!bestSingle || o.gain - 2 * Math.max(0, o.swr - 1.5) > bestSingle.gain - 2 * Math.max(0, bestSingle.swr - 1.5)) bestSingle = o;
     }
     if (bestSingle) options.push(bestSingle);
     // 4. no cutting at all: bend the driven element and D1, which are close enough for it to work
     const bent = bendOption();
     if (bent) options.push(bent);
-    // what's worth doing: gain, a good match, and as few new rods as possible
-    const score = (o) => o.gain - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
-    options.sort((a, b) => score(b) - score(a));
+    // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
+    // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
+    const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
+    const distinct = options.filter((o, i) => work(o) !== "" && options.findIndex((q) => work(q) === work(o)) === i);
+    const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
+    const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
+    distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));
+    options.length = 0;
+    options.push(...distinct);
     return { now: none, options };
   }
 
@@ -4890,6 +4904,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const ARROW = { half: 7, head: 3.5, stroke: 0.9, width: 8 };    // an up arrow on a side: half its length at most, its head, stroke and the room it takes along the boom
   const BRAND = "YAGI STUDIO";     // on the boom's side, if it's wanted
   const ROD_TEXT = { k: 0.8, stroke: 0.7, gap: 0.8 };   // each rod's length on the screws' side: letters 5k mm tall, the stroke, and the room kept from a screw's head
+  const CUSTOM_MAX = 40;           // characters of the owner's own text on the boom's side
   const NAME_GAP = 4.5;            // mm between the gauge's names on the side, well over the 1.4 between letters, so that R and D1 don't read as RD1
   const PIN_NUT = { flats: 5.6, height: 3.6, top: 4.4, shoulder: 1.2, foot: 1 };   // the bulge for the pin's nut, mm: recess across flats, height, flat top's radius, and the rounding of its shoulder and foot
   const SOFT = { edge: 2.5, rim: 1, block: 4, blockRim: 1.5 };   // rounded outside edges, mm: a socket's long edges and open end, and a block's
@@ -4922,6 +4937,13 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     3: [[0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0.8, 2.5, 3, 2.5]], 4: [[0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 5, 3, 0]], 5: [[3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5], [3, 2.5, 3, 0], [3, 0, 0, 0]],
     6: [[3, 5, 0, 5], [0, 5, 0, 0], [0, 0, 3, 0], [3, 0, 3, 2.5], [3, 2.5, 0, 2.5]], 7: [[0, 5, 3, 5], [3, 5, 1, 0]], 8: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [0, 2.5, 3, 2.5]],
     9: [[3, 0, 3, 5], [3, 5, 0, 5], [0, 5, 0, 2.5], [0, 2.5, 3, 2.5]], "/": [[0, 0, 3, 5]], ".": [[1.5, 0, 1.5, 0.4]],
+    // the rest of the alphabet and a little punctuation, for the owner's own text (2026-11-08)
+    F: [[0, 0, 0, 5], [0, 5, 3, 5], [0, 2.5, 2.2, 2.5]], J: [[3, 5, 3, 0.8], [3, 0.8, 2.2, 0], [2.2, 0, 0.8, 0], [0.8, 0, 0, 0.8]],
+    K: [[0, 0, 0, 5], [3, 5, 0, 2.2], [1, 2.9, 3, 0]], N: [[0, 0, 0, 5], [0, 5, 3, 0], [3, 0, 3, 5]],
+    Q: [[0, 0, 0, 5], [0, 5, 3, 5], [3, 5, 3, 0], [3, 0, 0, 0], [1.8, 1.2, 3, 0]], V: [[0, 5, 1.5, 0], [1.5, 0, 3, 5]],
+    W: [[0, 5, 0.7, 0], [0.7, 0, 1.5, 2.5], [1.5, 2.5, 2.3, 0], [2.3, 0, 3, 5]], X: [[0, 0, 3, 5], [0, 5, 3, 0]], Z: [[0, 5, 3, 5], [3, 5, 0, 0], [0, 0, 3, 0]],
+    "-": [[0.5, 2.5, 2.5, 2.5]], "+": [[1.5, 1, 1.5, 4], [0, 2.5, 3, 2.5]], "(": [[2, 5, 1, 3.8], [1, 3.8, 1, 1.2], [1, 1.2, 2, 0]], ")": [[1, 5, 2, 3.8], [2, 3.8, 2, 1.2], [2, 1.2, 1, 0]],
+    ":": [[1.5, 0.8, 1.5, 1.2], [1.5, 3.8, 1.5, 4.2]], ",": [[1.5, 0.6, 1, -0.4]], "'": [[1.5, 5, 1.5, 3.8]], "#": [[1, 0, 1, 5], [2, 0, 2, 5], [0, 1.7, 3, 1.7], [0, 3.3, 3, 3.3]],
   };
   const textWidth = (s, k, pitch) => (s.length - 1) * pitch + 3 * k;
   /* What a rod's name can be written as: D1 from anything, and nothing the letters above can't draw. */
@@ -5389,6 +5411,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     s = K.cut(s, cuts);
     if (sec.i === 0 && (opts.gauge || opts.notches)) s = K.cut(s, gaugeCuts(K, opts.gauge, opts.notches, sizes));
     if (opts.faces && opts.faces.section === sec.i) s = K.cut(s, faceCuts(K, opts.faces, sizes));
+    if (opts.custom && opts.custom.placed && opts.custom.placed.section === sec.i) s = K.cut(s, [customCut(K, opts.custom, sizes)]);
     if (opts.lengths) {
       // drawn in (x, z) on the -y face, pushed in along y, and turned onto it, as the gauge's names are
       const mine = opts.lengths.labels.filter((l) => l.sec === sec.i), Z0 = w / 2 - DEEP, Z1 = w / 2 + 1;
@@ -5445,8 +5468,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return best;
   }
 
-  function facesOn(sec, rods, sizes, T, gauge, notches, o) {
-    const out = { section: sec.i, arrows: [], top: null, brand: null, warnings: [] };
+  /** What's free on a piece's sides and top: the plain stretch between its joints, and what's already there, as boxes in (x, z). */
+  function faceSpace(sec, rods, sizes, T, gauge, notches, o) {
     const hzAt = (x) => (sec.i === 0 ? T.hz(x) : sizes.h / 2), all = 1e3, c = SCREW.head / 2 + 1;
     const a = sec.prev ? sec.prev.t + JOINT.down[1] + 1 : MOUTH + 2, b = sec.next ? sec.next.t - JOINT.flare[0] - 1 : sec.x1 - 1;
     const driven = rods.find((r) => r.driven), through = sec.next ? sec.next.through : [];
@@ -5471,6 +5494,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const clear = (list, x0, x1, z0, z1) => x0 >= a && x1 <= b && list.every(([p0, p1, q0, q1]) => x1 < p0 || x0 > p1 || z1 < q0 || z0 > q1);
     const onSide = (k, x0, x1, z0, z1) => clear(blocks[k], x0, x1, z0, z1) && z1 <= Math.min(hzAt(x0), hzAt(x1)) - 1.5 && z0 >= 1.5 - Math.min(hzAt(x0), hzAt(x1));
     const near = (x) => { const xs = []; for (let d = 0; d <= b - a; d += 0.5) xs.push(x + d, x - d); return xs; };
+    return { a, b, hzAt, blocks, clear, onSide, near };
+  }
+
+  function facesOn(sec, rods, sizes, T, gauge, notches, o) {
+    const out = { section: sec.i, arrows: [], top: null, brand: null, warnings: [] };
+    const { a, b, hzAt, blocks, clear, onSide, near } = faceSpace(sec, rods, sizes, T, gauge, notches, o), all = 1e3;
     const mid = (a + b) / 2;
     if (o.brand) {
       // full size on either side, or a little smaller if it must
@@ -5504,6 +5533,44 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       else out.top = { x, k, pitch, W, y0: yLo + (yHi - yLo - 5 * k) / 2, z: hzAt(x), ang: sec.i === 0 ? T.ang : 0 };
     }
     return out;
+  }
+
+  /**
+   * The owner's own text (2026-11-08): a name, a call sign, a phone number, a club. Capitals, digits and a little punctuation,
+   * along a side wherever there's a clear stretch, the last piece first, clear of the arrows and the name; smaller if it must.
+   */
+  function planCustom(sections, rods, sizes, T, gauge, notches, o, faces) {
+    const raw = String(o.customText || "").toUpperCase().replace(/\s+/g, " ").trim();
+    if (!raw) return null;
+    const dropped = [...new Set(raw.split("").filter((ch) => ch !== " " && !LETTERS[ch]))];
+    const kept = raw.split("").filter((ch) => ch === " " || LETTERS[ch]).join("").replace(/\s+/g, " ").trim();
+    const text = kept.slice(0, CUSTOM_MAX).trim(), out = { text, placed: null, warnings: [] };
+    if (dropped.length) out.warnings.push(`Your text can't include ${dropped.join(" ")}, so ${dropped.length > 1 ? "those were" : "that was"} left out.`);
+    if (kept.length > CUSTOM_MAX) out.warnings.push(`Your text is cut to its first ${CUSTOM_MAX} characters.`);
+    if (!text) return out;
+    for (const k of [1, 0.8, 0.65]) {
+      for (const sec of sections.slice().reverse()) {
+        const F = faceSpace(sec, rods, sizes, T, gauge, notches, o);
+        if (faces && faces.section === sec.i) {
+          if (faces.brand) F.blocks[faces.brand.side].push([faces.brand.x - faces.brand.W / 2 - 3, faces.brand.x + faces.brand.W / 2 + 3, -1e3, 1e3]);
+          faces.arrows.forEach((A) => F.blocks[A.side].push([A.x - ARROW.width / 2 - 3, A.x + ARROW.width / 2 + 3, -1e3, 1e3]));
+        }
+        const pitch = 4.4 * k, W = textWidth(text, k, pitch), zh = 2.5 * k + 0.6;
+        for (const side of [1, -1]) {
+          const x = F.near((F.a + F.b) / 2).find((q) => F.onSide(side, q - W / 2 - 1, q + W / 2 + 1, -zh, zh));
+          if (x !== undefined) { out.placed = { section: sec.i, side, x, k, pitch, W }; return out; }
+        }
+      }
+    }
+    out.warnings.push(`There's no clear stretch on the boom's sides long enough for "${text}". Shorten it, or leave off Yagi Studio's name to make room.`);
+    return out;
+  }
+
+  /* The owner's text, cut as the name is: drawn on the -y face, and turned half round for the +y face. */
+  function customCut(K, C, sizes) {
+    const P = C.placed, Z0 = sizes.w / 2 - DEEP, Z1 = sizes.w / 2 + 1;
+    const m = K.turn(K.fuse(K.word(C.text, -P.W / 2, -2.5 * P.k, P.k, Z0, Z1, SIDE_TEXT.stroke, P.pitch)), [90, 0, 0]);
+    return K.at(P.side < 0 ? m : K.turn(m, [0, 0, 180]), [P.x, 0, 0]);
   }
 
   /* The arrows, TOP and the name, as planFaces placed them. Writing on a side is drawn on the -y face, reading from outside it,
@@ -5704,10 +5771,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 
   /**
    * Plans the parts without making any: the sections, the gauge's marks and any warnings, for the page to show as you type.
-   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, mount, screws, pilot }
+   * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, customText, mount, screws, pilot }
    */
   function planParts(design, opts) {
-    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
+    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, customText: "", mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
     const rods = rodsOf(design, o.fit), sizes = boomSizes(rods), warnings = [];
     if (rods.length < 2) throw new Error("A boom needs at least two rods.");
     rods.forEach((r, i) => {
@@ -5771,8 +5838,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (gauge && gauge.fits && gauge.unlabelled.length) warnings.push(`There was no clear way to label ${gauge.unlabelled.join(", ")} on the gauge, so ${gauge.unlabelled.length > 1 ? "those marks have" : "that mark has"} no name. Counting along them still works.`);
     const faces = planFaces(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, Object.assign({}, o, { lengthLabels: lengths }));
     if (faces) warnings.push(...faces.warnings);
+    const custom = planCustom(sections, rods, sizes, taper, gauge && gauge.fits ? gauge : null, notches, Object.assign({}, o, { lengthLabels: lengths }), faces);
+    if (custom) warnings.push(...custom.warnings);
     if (o.notches && !notches) warnings.push(`There's no clear ${CAL_SPAN} mm stretch on the first piece's top for the check notches, away from the rods and the driven element's window. To check the print's size instead, measure with calipers between the outsides of two rods' holes far apart, and compare with their spacing plus a hole's width.`);
-    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, lengths, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
+    return { o, rods, sizes, sections, taper, gauge: gauge && gauge.fits ? gauge : null, notches, faces, lengths, custom, warnings, boom, bed, cornerPieces, onePiece: boom * o.scale + BRIM };
   }
 
   /** How to lay a part on the bed, in words, when the file as it opens won't do. Files always lie along x. */
@@ -5800,7 +5869,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     };
     try {
       sections.forEach((sec) => {
-        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, screws: o.screws, pilot: o.pilot });
+        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, custom: plan.custom, screws: o.screws, pilot: o.pilot });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
         // a tapered piece is turned to lie on its bottom face, which slopes by the taper's angle
@@ -5831,7 +5900,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   function partsNotes(design, result) {
     const { plan, parts } = result, { o, rods, sections } = plan, L = [];
     const joints = sections.length - 1, driven = rods.find((r) => r.driven);
-    L.push(`${design.name}: printing and building`, "", "NEW AND UNTESTED: nothing from Yagi Studio's 3D print tab has been printed yet. Print one, measure it and test-fit it before you rely on it.", "", "PRINTING", `0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
+    L.push(`${design.name}: printing and building`, "", "TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes. NOT YET PRINTED: the mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", "", "PRINTING", `0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
       `X-Y hole compensation ${HOLE_COMP} mm for the boom and coupon: their holes are modelled for it and come out too small without it. A mount's fine with or without it.`,
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short. For SUNLU ASA it's estimated at 99.65%, from a printed boom. Other brands differ." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
     parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
@@ -5845,6 +5914,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (plan.lengths && plan.lengths.labels.length) {
       const seen = [], each = plan.lengths.labels.filter((l) => !seen.includes(l.rod) && seen.push(l.rod));
       L.push("", "ROD LENGTHS ON THE BOOM", `Each rod's length to cut is written on the screws' side, beside its hole, so the boom says which rods it takes. The driven element's two halves each have their own: the length to cut each half${plan.o.allowance > 0 ? `, ${(+plan.o.allowance).toFixed(1)} mm longer in all than the model's guess` : ", with no trimming allowance set"}, as on the gauge and the Cut list. Then trim both tips equally by the VNA's readings, not to a length.`, ...each.map((l) => `  ${l.rod}: ${l.text} mm${l.driven ? " each half" : ""}`));
+    }
+    if (plan.custom && plan.custom.placed) {
+      const P = plan.custom.placed, piece = sections.length === 1 ? "the boom" : P.section === 0 ? "the rear piece" : P.section === sections.length - 1 ? "the front piece" : `piece ${P.section + 1}`;
+      L.push("", "YOUR TEXT", `"${plan.custom.text}", on the ${P.side > 0 ? "coax's" : "screws'"} side of ${piece}, ${(5 * P.k).toFixed(1)} mm tall.`);
     }
     if (plan.faces && (plan.faces.top || plan.faces.arrows.length)) L.push("", "WHICH WAY UP", "TOP marks the boom's top, the face with the gauge's V, and the arrows on both sides point to it.");
     const T = plan.taper;
@@ -6323,7 +6396,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       return 0.5 * (lo + hi);
     };
 
-    const describe = (id, title, why, change) => {
+    // A change finer than anyone cuts to is no change: it's left out before the option is judged, so that what's predicted is
+    // what will be done (the owner's plan once said "D2: file 0.1 mm", against ±0.3 mm cutting).
+    const CUT_TOL = 0.3;
+    const describe = (id, title, why, given) => {
+      const change = {};
+      Object.keys(given).forEach((i) => { if (Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
       const s = built(change), at = run.fixed(s);
       const m = at(target, 1);
       const curve = [];
@@ -6334,7 +6412,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       const v = valley(s);
       const steps = base.elements.map((e, i) => {
         const dL = change[i] || 0;
-        const action = Math.abs(dL) < 0.05 ? "keep" : dL < 0 ? "file" : "new";
+        const action = Math.abs(dL) < CUT_TOL ? "keep" : dL < 0 ? "file" : "new";
         return { rod: names[i], role: roles[i], from: e.L, to: e.L + dL, change: dL, action };
       });
       const newRods = steps.filter((t) => t.action === "new").length;
@@ -6390,7 +6468,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         const c = {};
         directors.forEach((i) => { c[i] = x; });
         c[drv] = tuneDriven(c);
-        options.push(describe("directors", "Change all the directors",
+        options.push(describe("directors", "Change all the directors, and the driven element to match",
           "The directors decide where the valley sits. Changing them together keeps the design's balance, so it holds the most gain.", c));
       }
     }
@@ -6407,16 +6485,23 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       if (x === null || Math.abs(x) > 8) continue;
       const c = { [i]: x };
       c[drv] = tuneDriven(c);
-      const o = describe("single", `Change only ${names[i]}`, `One rod to change. ${names[i]} moves the valley most for its length, but changing one rod alone costs some gain.`, c);
+      // every director option retunes the driven element too, and its title says so
+      const o = describe("single", `Change ${names[i]}, and the driven element to match`, `${names[i]} moves the valley most for its length, but changing one director alone costs some gain.`, c);
       if (!bestSingle || o.gain - 2 * Math.max(0, o.swr - 1.5) > bestSingle.gain - 2 * Math.max(0, bestSingle.swr - 1.5)) bestSingle = o;
     }
     if (bestSingle) options.push(bestSingle);
     // 4. no cutting at all: bend the driven element and D1, which are close enough for it to work
     const bent = bendOption();
     if (bent) options.push(bent);
-    // what's worth doing: gain, a good match, and as few new rods as possible
-    const score = (o) => o.gain - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
-    options.sort((a, b) => score(b) - score(a));
+    // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
+    // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
+    const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
+    const distinct = options.filter((o, i) => work(o) !== "" && options.findIndex((q) => work(q) === work(o)) === i);
+    const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
+    const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
+    distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));
+    options.length = 0;
+    options.push(...distinct);
     return { now: none, options };
   }
 
@@ -7793,6 +7878,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     printgauge: ["The rod-cutting gauge", "A V along the top of the boom with a mark for each rod's length. Lay a rod in the V against the wall at its front end, by the 0, and cut it at the middle of its mark: each mark is 0.6 mm wide, so its edges are 0.3 mm short and 0.3 mm long. The marks come from the design's lengths when you make the files, so make the boom again if tuning changes a rod. Leave it off to cut with calipers or the Cut list's guide instead."],
     printcheck: ["The check notches", "Two notches on the top of the boom, 100 mm apart between their inner walls. Set your calipers' outside jaws into the notches and close them on the top between them. If it reads 100.00 mm, within about 0.15 mm, the print is true and so are the gauge's marks. They're open to the boom's edge so that hole compensation can't move them."],
     favor: ["Make the best of", "Once a design has the gain you asked for and stays within your limits, this is what the search spends what's left on. Lowest SWR gives the best match. Highest F/B rejects most from behind. Both raises whichever of the two is worse, with SWR counted as return loss. A longer boom or another rod pays for them. SWR stops counting at 1.04 and F/B at 40 dB, as past those a real build can't hold on to them."],
+    boomtext: ["Your own text", "Anything you'd like on the boom: your name, call sign, a phone number, a club or the antenna's name. It's cut into a side wherever there's a clear stretch, 5 mm tall, smaller if it must be to fit. Capitals, digits, spaces and - . , : ' / ( ) # + only: lowercase is written as capitals, and anything else is left out. Up to 40 characters."],
     forgiving: ["Forgiving?", "A short Build check of each polished design: 48 simulated builds with every rod cut and placed about 0.3 mm off, and the driven element trimmed on a VNA, as you would. Yes means 9 in 10 or more keep SWR under your limit at the target, Mostly 6 in 10 or more, and Fussy fewer: build that one with more care. The Build check tab does the full version."],
     gain: ["Gain", "How much stronger the signal is straight ahead than from a reference antenna. dBd compares with a plain dipole, dBi with an ideal point source; dBi is always 2.15 higher. Every 3 dB doubles the power."],
     fb: ["Front-to-back", "How much stronger the antenna is straight ahead than straight behind. F/B 20 dB means 1/100 of the power goes directly backward. Higher means it ignores more from directly behind."],
@@ -9420,7 +9506,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         }),
       };
       if (plan.options[0] && !plan.options.some((o) => o.id === T.chosen)) T.chosen = plan.options[0].id;
-      if (T.lastTop !== plan.options[0].id) { T.chosen = plan.options[0].id; T.lastTop = plan.options[0].id; }
+      if (plan.options[0] && T.lastTop !== plan.options[0].id) { T.chosen = plan.options[0].id; T.lastTop = plan.options[0].id; }      // none left once changes under 0.3 mm count as none
     } catch (err) {
       A.toast("The fit stopped: " + err.message);
     }
@@ -9547,8 +9633,11 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     // judged at the target itself: on a one-channel network that's all that counts. At SWR 1.5, 4% of the power comes back, 0.18 dB.
     const good = atT !== null && atT <= 1.5;
     if (good) {
+      // a clear first answer, as an option of its own: leave it (the owner, 2026-11-08)
       const lost = -10 * Math.log10(1 - Math.pow((atT - 1) / (atT + 1), 2));
-      html += `<p><span class="pill good">Already good</span> At your target, ${fmt(targetF(), 3)} MHz, your readings show SWR ${fmt(atT, 2)}: ${fmt(lost, 2)} dB lost to the match. No change below can win back more than that. Glue the rods and move on. The options are only if you want to try for a little more, and a cut or a file can't be undone.</p>`;
+      html += `<div class="option leave-it"><div class="row" style="justify-content:space-between"><b>Recommended: leave it as it is</b><span class="pill good">Already good</span></div>
+        <p style="margin:4px 0">At your target, ${fmt(targetF(), 3)} MHz, your readings show <b>SWR ${fmt(atT, 2)}</b>: ${fmt(lost, 2)} dB lost to the match, about ${fmt(100 * (1 - Math.pow(10, -lost / 10)), 0)}% of the power. Nothing below can win back more than that, and every cut or file is for keeps. Glue the rods and mount it.</p></div>
+        <p class="note" style="margin-top:6px"><b>Only if you want to try for a little more:</b></p>`;
     }
     // a rough fit, or a driven element it can't pin down, can't be trusted with a cut: on the owner's antenna, filing what such a
     // fit called best took SWR at the target from 1.23 to 1.61 (2026-11-08)
@@ -10703,7 +10792,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -10715,7 +10804,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill warn">New and untested</span> Nothing from this tab has been printed yet. The boom's fork-and-tongue joint, cutting marks, check notches and label are new, and so are the hand grip, the tripod mount and the painter pole's arm. Print one and check it before you rely on it.</p>
+            <p class="note"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill warn">Mounts not yet</span> The mast clamp, painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
             <div>${bedFields("p")}</div>
             <p id="p-pieces" role="status" style="font-weight:600"></p>
@@ -10730,6 +10819,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
             <label class="check"><input type="checkbox" id="p-label"> Up arrows on both sides of the boom, and TOP on its top</label>
             <label class="check"><input type="checkbox" id="p-lengths"> Each rod's length on the boom's side, beside its hole</label>
             <label class="check"><input type="checkbox" id="p-brand"> Yagi Studio on the boom's side</label>
+            <div class="field"><label for="p-text">Your own text on the boom's side ${A.help("boomtext")}</label><input class="txt-in" id="p-text" maxlength="60" placeholder="Name, call sign, phone number, club…" autocomplete="off"></div>
             <label class="check"><input type="checkbox" id="p-screws"> Holes for M3 screws to hold the rods ${A.help("printscrews")}</label>
             <div class="field-grid" id="p-pilot-wrap"><div class="field"><label for="p-pilot">Screw holes, mm</label><select class="sel" id="p-pilot">${YS.PARTS.SCREW.pilots.map((v) => `<option value="${v}">${v.toFixed(1)}</option>`).join("")}</select></div></div>
             <div class="row"><button class="btn primary" id="p-run">Make the files</button></div>
@@ -10752,6 +10842,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const d = S.design, host = $("#p-plan"), run = $("#p-run");
     $("#p-bar-wrap").hidden = !PRINT.useBar;
     $("#p-screws").checked = !!d.screws;
+    if (document.activeElement !== $("#p-text")) $("#p-text").value = d.boomText || "";
     $("#p-pilot-wrap").hidden = !d.screws;
     let plan;
     try {
@@ -10795,7 +10886,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm${p.placing ? `. ${p.place.fits ? "" : '<span class="pill warn">Check that</span> '}${esc(p.placing)}` : ""}</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
       </tbody></table>
       <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
-      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. They've only been checked as models, not printed, so measure the check notches and test-fit the parts before you rely on them.</p>`;
+      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. The boom has been printed, built and tuned; the mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it.</p>`;
     const name = S.design.name.replace(/[^\w-]+/g, "_");
     const notes = () => A.download(`${name}_build_notes.txt`, YS.partsNotes(S.design, R), "text/plain");
     const one = (p) => A.download(p.file, YS.meshToStl(p.mesh, p.id), "model/stl");
@@ -10878,6 +10969,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       $("#p-lengths").onchange = (e) => { PRINT.lengths = e.target.checked; changed(); };
       // screws belong to the design, as the New design dialog asks about them, so that they're remembered with it
       $("#p-screws").onchange = (e) => { S.design.screws = e.target.checked; A.commit(); changed(); };
+      // kept with the design, as the screws are, so each antenna keeps its own
+      $("#p-text").onchange = (e) => { S.design.boomText = e.target.value.trim(); A.commit(); changed(); };
       $("#p-pilot").value = String(PRINT.pilot);
       $("#p-pilot").onchange = (e) => { PRINT.pilot = +e.target.value; changed(); };
       $("#p-run").onclick = runPrint;

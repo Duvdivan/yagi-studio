@@ -18,6 +18,8 @@ require("fs").mkdirSync(OUT, { recursive: true });
 const URL_ = "http://localhost:8765/";
 const results = [];
 const ok = (name, pass, detail) => { results.push(pass); console.log(`${pass ? "pass" : "FAIL"}  ${name}${detail !== undefined ? ": " + detail : ""}`); };
+// the default design's SWR at 910.5 MHz: the DuvYagi as built, at its design lengths (the first prototype's was 1.25)
+const DEFAULT_SWR = 1.092;
 const atTarget = (p) => p.evaluate(() => { const S = YS.app.S, d = S.design; const r = S.rows.reduce((a, b) => (Math.abs(b.f - d.f0) < Math.abs(a.f - d.f0) ? b : a)); return r.swr; });
 
 async function chrome() {
@@ -49,7 +51,7 @@ async function chrome() {
   await p.click("#radio-later").catch(() => {});
   await p.waitForFunction(() => YS.app.S.rows && YS.app.S.rows.length && YS.app.S.solvedQuality === YS.app.S.quality, null, { timeout: 30000 });
   const swr = await atTarget(p);
-  ok("with no network it opens and solves in its workers", Math.abs(swr - 1.25) < 0.02, `SWR ${swr.toFixed(3)}, ${await p.evaluate(() => YS.app.pool.threads)} threads`);
+  ok("with no network it opens and solves in its workers", Math.abs(swr - DEFAULT_SWR) < 0.02, `SWR ${swr.toFixed(3)}, ${await p.evaluate(() => YS.app.pool.threads)} threads`);
   ok("and its fonts come from the device", await p.evaluate(async () => { await document.fonts.ready; return document.fonts.check("14px 'IBM Plex Sans'") && [...document.fonts].some((f) => f.status === "loaded"); }));
   await p.goto(URL_ + "#tune");
   await p.waitForTimeout(800);
@@ -108,7 +110,7 @@ async function ios(name, device) {
   await p.click("#radio-later").catch(() => {});
   await p.waitForFunction(() => YS.app.S.rows && YS.app.S.rows.length && YS.app.S.solvedQuality === YS.app.S.quality, null, { timeout: 60000 });
   const swr = await atTarget(p);
-  ok(`${name}: the solver gives the same answer in WebKit`, Math.abs(swr - 1.25) < 0.02, `SWR ${swr.toFixed(3)}, ${await p.evaluate(() => YS.app.pool.threads)} threads`);
+  ok(`${name}: the solver gives the same answer in WebKit`, Math.abs(swr - DEFAULT_SWR) < 0.02, `SWR ${swr.toFixed(3)}, ${await p.evaluate(() => YS.app.pool.threads)} threads`);
   const clipped = await p.evaluate(() => {
     const c = document.createElement("canvas").getContext("2d");
     return [...document.querySelectorAll(".rods input.num")].filter((e) => e.offsetParent).map((e) => {
@@ -132,7 +134,7 @@ async function ios(name, device) {
   await p.press(cell, "Tab");
   // the old answer stays on show, marked as solved, until the first draft of the new one lands
   await p.waitForFunction((was) => { const S = YS.app.S, d = S.design, r = S.rows.reduce((a, b) => (Math.abs(b.f - d.f0) < Math.abs(a.f - d.f0) ? b : a)); return Math.abs(r.swr - was) > 1e-6 && S.solvedQuality === S.quality; }, straight, { timeout: 120000 }).catch(() => {});
-  ok(`${name}: bent rods solve`, Math.abs((await atTarget(p)) - 1.25) > 0.005, (await atTarget(p)).toFixed(3));
+  ok(`${name}: bent rods solve`, Math.abs((await atTarget(p)) - DEFAULT_SWR) > 0.005, (await atTarget(p)).toFixed(3));
   await p.click("#bend-clear");
   await p.waitForTimeout(800);
 
@@ -141,6 +143,10 @@ async function ios(name, device) {
   await p.waitForTimeout(600);
   const dl = await p.$("[data-dl]");
   await dl.click();
+  // it asks what to call the file first (the owner, 2026-11-08)
+  await p.waitForSelector("#fn-stem");
+  await p.fill("#fn-stem", "my yagi");
+  await p.click("#fn-go");
   await p.waitForTimeout(300);
   const shared = await p.evaluate(() => window.__shared);
   ok(`${name}: a saved file goes to the share sheet`, shared.length === 1 && shared[0].size > 0, JSON.stringify(shared));

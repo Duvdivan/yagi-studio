@@ -74,7 +74,7 @@ const rod = (L, d, cap) => ({ f0: 910.525, feed: 0, gap: 3, z0: 50, endCap: cap,
 
 console.log("\n3. Energy: gain from input power against gain from the integrated pattern");
 {
-  const d = YS.toSolver(YS.PRESETS.duvyagi());
+  const d = YS.toSolver(YS.PRESETS.duvyagi1());
   const lossless = Object.assign({}, d, { elements: d.elements.map((e) => ({ x: e.x, L: e.L, d: e.d, sigma: Infinity })) });
   let w = YS.buildWires(lossless, { quality: "fine" }), ws = YS.workspace(YS.assignOffsets(w));
   let sol = YS.solveAt(w, d.feed, d.gap, 910.525, ws);
@@ -90,7 +90,7 @@ console.log("\n3. Energy: gain from input power against gain from the integrated
 console.log("\n4. Mesh: coarse quality against the finest, on very different antennas");
 {
   const designs = {
-    "DuvYagi 910 MHz": YS.toSolver(YS.PRESETS.duvyagi()),
+    "DuvYagi 910 MHz": YS.toSolver(YS.PRESETS.duvyagi1()),
     "GCARC 915 MHz": YS.toSolver(YS.PRESETS.gcarc()),
     "6 mm rods, 144 MHz": { f0: 144.5, feed: 1, gap: 10, z0: 50, material: "aluminium", elements: [0, 420, 600, 1050, 1650, 2300].map((x, i) => ({ x, L: [1010, 960, 925, 915, 905, 895][i], d: 6 })) },
     "6 mm rods, 1296 MHz": { f0: 1296, feed: 1, gap: 3, z0: 50, material: "copper", elements: [0, 46, 75, 120, 175, 240].map((x, i) => ({ x, L: [110, 100, 92, 90, 89, 88][i], d: 6 })) },
@@ -121,7 +121,7 @@ console.log("\n5. Closed-form answers");
 
 console.log("\n6. Files come back the same");
 {
-  const d = YS.PRESETS.duvyagi(), s = YS.toSolver(d), rows = YS.sweep(s, [900, 910, 920]);
+  const d = YS.PRESETS.duvyagi1(), s = YS.toSolver(d), rows = YS.sweep(s, [900, 910, 920]);
   const ts = YS.parseTouchstone(YS.toTouchstone(rows, 50)).points[1], z = YS.zOfGamma(ts.g, 50);
   check("Touchstone R, ohm", z[0], rows[1].z[0], 0.01);
   // the exact files NanoVNA firmware and NanoVNA-Saver write, and the format's other forms
@@ -144,7 +144,7 @@ console.log("\n6. Files come back the same");
 
 console.log("\n7. The fit: readings made from a known error must give that error back");
 {
-  const d = YS.PRESETS.duvyagi(), target = { directors: -1.7, driven: 2.3, reflector: 0 };
+  const d = YS.PRESETS.duvyagi1(), target = { directors: -1.7, driven: 2.3, reflector: 0 };
   const s = YS.toSolver(d, target);
   const fs2 = [];
   for (let f = 880; f <= 940; f += 4) fs2.push(f);
@@ -166,7 +166,7 @@ console.log("\n7. The fit: readings made from a known error must give that error
 
 console.log("\n8. A sweep file through a cable: R and X give the cable's length and the driven element");
 {
-  const d = YS.PRESETS.duvyagi(), err = { directors: -1.7, driven: 2.3, reflector: 0 };
+  const d = YS.PRESETS.duvyagi1(), err = { directors: -1.7, driven: 2.3, reflector: 0 };
   const realCable = { length: 133, vf: 0.695, lossAt1G: 1.6 };
   const fq = [];
   for (let f = 850; f <= 950; f += 1) fq.push(f);
@@ -222,22 +222,22 @@ console.log("\n11. Radio settings, against the networks' own published numbers")
   check("SX1262's datasheet sensitivity, SF12 125 kHz, dBm", YS.linkStats({ bw: 125, sf: 12, cr: 5 }).sensitivity, -137, 1);
   check("airtime, SF7 125 kHz, 10 bytes, 16 symbol preamble, ms (8 symbols less is 41.2)", YS.linkStats({ bw: 125, sf: 7, cr: 5 }, 10).airtimeMs, 41.2 + 8 * 1.024, 0.1);
   // a design takes a radio's frequency, and only scaling moves the rods
-  const d = YS.PRESETS.duvyagi(), L = d.elements[3].L;
+  const d = YS.PRESETS.duvyagi1(), L = d.elements[3].L;
   const philly = YS.radioFromEntry(YS.RADIO.COMMUNITY[0]);
   YS.applyRadio(d, philly, false);
   check("Philly Mesh's frequency becomes the target, MHz", d.f0, 919.5, 0);
   truth("the band moves with it", d.band[0] < 919.5 && d.band[1] > 919.5);
   check("rods stay unless scaled, mm", d.elements[3].L, L, 0);
-  const e = YS.PRESETS.duvyagi();
+  const e = YS.PRESETS.duvyagi1();
   YS.applyRadio(e, philly, true);
   check("scaled to the wavelength, mm", e.elements[3].L, L * 910.525 / 919.5, 0.001);
   check("FCC limit with this antenna at 22 dBm, EIRP over by, dB (at 12.35 dBi)", YS.linkBudget(philly, 22, 12.35).over, 22 + 12.35 - 36, 0.001);
-  truth("a 62.5 kHz US preset is flagged, and 500 kHz isn't", YS.linkBudget(YS.PRESETS.duvyagi().radio, 22, 12.35).narrow === true && !YS.linkBudget(philly, 22, 12.35).narrow);
+  truth("a 62.5 kHz US preset is flagged, and 500 kHz isn't", YS.linkBudget(YS.PRESETS.duvyagi1().radio, 22, 12.35).narrow === true && !YS.linkBudget(philly, 22, 12.35).narrow);
 }
 
 console.log("\n12. The printed cutting guide");
 {
-  const d = YS.PRESETS.duvyagi(), channels = YS.guideChannels(d, 4);
+  const d = YS.PRESETS.duvyagi1(), channels = YS.guideChannels(d, 4);
   check("the driven element's rods, cut 4 mm long in all, mm", channels.find((c) => c.label === "DE").length, 75, 0.001);
   truth("the driven element's channel cuts two rods", channels.find((c) => c.label === "DE").count === 2);
   const reflector = channels.find((c) => c.label === "R"), g = YS.buildGuide(channels, 100 / 99.64);
@@ -270,7 +270,7 @@ console.log("\n12. The printed cutting guide");
 
 console.log("\n13. Bends and the feed wire in the app");
 {
-  const F = 910.525, d = YS.PRESETS.duvyagi(), plain = YS.sweep(YS.toSolver(d), [F])[0];
+  const F = 910.525, d = YS.PRESETS.duvyagi1(), plain = YS.sweep(YS.toSolver(d), [F])[0];
   // the wire's formula against the model of the real shape, where gaps are worth modeling
   const gr = JSON.parse(cp.execFileSync("python", [path.join(__dirname, "gap_reference.py"), "--json"], { encoding: "utf8", cwd: __dirname, timeout: 300000 }));
   let worst = 0;
@@ -283,7 +283,7 @@ console.log("\n13. Bends and the feed wire in the app");
   // bends, entered as tips in mm, reach the general solver; a straight design never does
   truth("a straight design stays on the fast solver", !YS.isCrooked(YS.toSolver(d)));
   const face = 10, run = 149 / 2 - face, tip = run * Math.sin(5 * Math.PI / 180);
-  const b = YS.PRESETS.duvyagi();
+  const b = YS.PRESETS.duvyagi1();
   b.elements.find((e) => e.type === "driven").bend = { topF: tip, botF: tip };
   const bs = YS.toSolver(b);
   truth("a bend reaches the general solver", YS.isCrooked(bs));
@@ -291,7 +291,7 @@ console.log("\n13. Bends and the feed wire in the app");
   check("both driven tips 5 degrees forward, SWR (the study: 1.78)", bent.swr, 1.78, 0.02);
   truth("it gives every figure the app shows", bent.cuts && bent.bwH > 0 && bent.fieldCuts.e.length === 361 && bent.currents.length === 6 && bent.efficiency > 0.9 && bent.efficiency < 1);
   // the general solver's other figures against the fast one, on straight rods, by forcing the handover
-  const same = YS.toSolver(YS.PRESETS.duvyagi());
+  const same = YS.toSolver(YS.PRESETS.duvyagi1());
   const forced = YS.crooked.sweep(same, [F], { level: 2 })[0], fast = YS.sweep(same, [F], { level: 2 })[0];
   check("same rods: beamwidth across, degrees", forced.bwH, fast.bwH, 0.2);
   check("beamwidth along, degrees", forced.bwE, fast.bwE, 0.2);
@@ -303,7 +303,7 @@ console.log("\n13. Bends and the feed wire in the app");
   gridA.g.forEach((v, i) => { if (gridB.g[i] > -15) gw = Math.max(gw, Math.abs(v - gridB.g[i])); });
   check("the 3D pattern, down to -15 dBi, worst, dB", gw, 0, 0.1);
   // with a mast, too
-  const m = YS.PRESETS.duvyagi();
+  const m = YS.PRESETS.duvyagi1();
   m.mast = { on: true, d: 42, behind: 92, length: 2000 };
   const ms = YS.toSolver(m), ma = YS.crooked.sweep(ms, [F])[0], mb = YS.sweep(ms, [F])[0];
   check("with a mast: R, ohm", ma.z[0], mb.z[0], 0.3);
@@ -311,14 +311,14 @@ console.log("\n13. Bends and the feed wire in the app");
   check("gain, dB", ma.gainDbd, mb.gainDbd, 0.03);
   // the fit with bends: readings from a bent antenna with short directors, with the bends entered, should find the directors
   const err = { directors: -1.7, driven: 0 };
-  const bf = YS.PRESETS.duvyagi();
+  const bf = YS.PRESETS.duvyagi1();
   bf.elements.find((e) => e.type === "driven").bend = { topF: -3, botF: -3 };
   const readings = [];
   for (let f = 890; f <= 935; f += 5) readings.push({ f, swr: YS.sweep(YS.toSolver(bf, err), [f], { quality: "draft" })[0].swr });
   const fit = YS.dispatch("fitReadings", { design: bf, readings, cable: null, free: { directors: true, driven: false, reflector: false }, starts: [{ directors: 0 }, { directors: -3 }], weightPower: 3 });
   check("the fit, with the bends entered, finds the short directors, mm", fit.offsets.directors, err.directors, 0.3);
   // the plan offers bends when they help
-  const short = YS.PRESETS.duvyagi();
+  const short = YS.PRESETS.duvyagi1();
   const plan = YS.dispatch("tunePlan", { design: short, offsets: { directors: -2.1, driven: 1.2, reflector: 0 }, target: F });
   const opt = plan.options.find((o) => o.id === "bend");
   truth("the plan offers bending", !!opt, opt ? opt.bends.map((q) => `${q.rod} ${q.add}`).join(", ") : "");
@@ -329,7 +329,7 @@ console.log("\n13. Bends and the feed wire in the app");
     truth("moving those tips apart", (by.Driven || 0) <= 0 && (by.D1 || 0) >= 0);
   }
   // random bends in the build check
-  const mc = YS.dispatch("monteCarlo", { solver: YS.toSolver(YS.PRESETS.duvyagi()), tol: { rod: 0, pos: 0, bend: 3, trim: false, seed: 5, count: 4 }, quality: "draft" });
+  const mc = YS.dispatch("monteCarlo", { solver: YS.toSolver(YS.PRESETS.duvyagi1()), tol: { rod: 0, pos: 0, bend: 3, trim: false, seed: 5, count: 4 }, quality: "draft" });
   truth("the build check can add bends", mc.length === 4 && new Set(mc.map((q) => q.swr.toFixed(4))).size === 4, mc.map((q) => q.swr.toFixed(2)).join(", "));
 }
 

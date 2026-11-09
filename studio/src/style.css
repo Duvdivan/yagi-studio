@@ -130,6 +130,7 @@ section.plan-side { display: block; }
 .plan-gain { margin-left: auto; font: 500 20px var(--mono); }
 .plan-pick { justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--sunken); border-radius: 7px; padding: 10px 12px; }
 .modal.wide { width: min(980px, 100%); }
+.tbl.wrap-first td:first-child, .tbl.wrap-first th:first-child { white-space: normal; text-align: left; min-width: 110px; }
 .option.leave-it { border: 2px solid var(--good); border-radius: 6px; padding: 8px 10px; }
 .cal-steps { margin: 4px 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--ink2); line-height: 1.45; }
 .modal .plan-h { margin: 12px 0 4px; }

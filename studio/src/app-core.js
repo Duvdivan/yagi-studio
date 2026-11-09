@@ -358,6 +358,31 @@
     try { return root.claude && root.claude.use ? await root.claude.use(name) : null; } catch (e) { return null; }
   };
 
+  /**
+   * Asks what to call a file, filled in with its usual name, the extension kept (the owner, 2026-11-08). Android's own save
+   * screen already asks, so there it isn't asked twice. Resolves to the name, or null if cancelled.
+   */
+  A.askFileName = (name) => new Promise((resolve) => {
+    if (root.ysNative) return resolve(name);
+    const dot = name.lastIndexOf("."), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const close = A.modal(`<h2>Save the file as</h2>
+      <div class="row" style="flex-wrap:nowrap;align-items:center;gap:4px"><input class="txt-in" id="fn-stem" maxlength="120" autocomplete="off" aria-label="File name"><span class="mono">${esc(ext)}</span></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="fn-go">Save</button><button class="btn" id="fn-no">Cancel</button></div>`, (b, cl) => {
+      const input = $("#fn-stem", b);
+      input.value = stem;
+      const go = () => { const v = input.value.trim().replace(/[\\/:*?"<>|]+/g, "_"); if (!v) return; cl(); finish(v + ext); };
+      $("#fn-go", b).onclick = go;
+      $("#fn-no", b).onclick = () => { cl(); finish(null); };
+      input.onkeydown = (e) => { if (e.key === "Enter") go(); };
+      input.focus(); input.select();
+    });
+    // Escape or a tap outside closes it as a cancel
+    const watch = setInterval(() => { if (!document.querySelector("#fn-stem")) { clearInterval(watch); finish(null); } }, 300);
+    void close;
+  });
+
   A.download = async (name, text, type) => {
     if (root.ysNative) {
       try {

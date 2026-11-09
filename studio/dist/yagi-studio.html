@@ -140,6 +140,7 @@ section.plan-side { display: block; }
 .plan-gain { margin-left: auto; font: 500 20px var(--mono); }
 .plan-pick { justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--sunken); border-radius: 7px; padding: 10px 12px; }
 .modal.wide { width: min(980px, 100%); }
+.tbl.wrap-first td:first-child, .tbl.wrap-first th:first-child { white-space: normal; text-align: left; min-width: 110px; }
 .option.leave-it { border: 2px solid var(--good); border-radius: 6px; padding: 8px 10px; }
 .cal-steps { margin: 4px 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--ink2); line-height: 1.45; }
 .modal .plan-h { margin: 12px 0 4px; }
@@ -1985,15 +1986,35 @@ input::placeholder { color: var(--muted); opacity: .75; }
     return makeDesign({ name: `${count}-element ${Math.round(f0)} MHz`, f0, band: [f0 * 0.992, f0 * 1.008], material, elements });
   }
 
+  // the first prototype, cad/parts.py's booms: the solver's reference tests use it, against nec2++ and the full-surface model
   const DUV_POS = [0, 39.8, 73.5, 163.8, 272.4, 378.6];
   const DUV_LEN = [158.6, 149.0, 142.3, 140.8, 138.3, 136.1];
+  // the second, designed, printed, built and tuned in Yagi Studio (the owner, 2026-11-08): its YagiCAD file, and what the owner
+  // measured on its rods (D3 not measured), from the Tune tab
+  const DUV2_POS = [0, 46.2, 86.5, 167.9, 282.3, 381.0];
+  const DUV2_LEN = [160.2, 151.9, 144.9, 142.0, 138.5, 137.1];
+  const DUV2_MEASURED = [160.0, 151.2, 144.7, 142.2, null, 137.4];
   const IN = 25.4;
 
   const PRESETS = {
-    duvyagi: () => makeDesign({
-      name: "DuvYagi 10 dBd (as built)", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
+    duvyagi: () => {
+      const d = makeDesign({
+        name: "DuvYagi 10 dBd (as built)", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
+        radio: { use: "meshcore", title: "USA", f: 910.525, bw: 62.5, sf: 7, cr: 5, rule: "fcc" },
+        notes: "Designed, printed, built and tuned in Yagi Studio: 3.00 mm aluminum with a 1/8 in brass driven element, its two-piece boom printed in ASA from the 3D print tab. Each half of the driven element was filed 2.4 mm from its cut length. Its NanoVNA showed SWR 1.35 at 910.525 MHz through 270 mm of RG178, and it was left as it is.",
+        elements: DUV2_POS.map((x, i) => ({
+          type: typeFor(i, 1), x, L: DUV2_LEN[i], d: i === 1 ? 3.175 : 3.0, material: i === 1 ? "brass" : "aluminium",
+        })),
+        cable: { on: true, kind: "rg178", length: 270, vf: 0.695, lossAt1G: 1.6 },
+      });
+      d.tune = { readings: [], measured: {}, range: [856, 965], target: 910.525, sample: false, free: { directors: true, driven: true, reflector: false } };
+      d.elements.forEach((e, i) => { if (DUV2_MEASURED[i] !== null) d.tune.measured[e.id] = { L: DUV2_MEASURED[i] }; });
+      return d;
+    },
+    duvyagi1: () => makeDesign({
+      name: "DuvYagi first prototype", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
       radio: { use: "meshcore", title: "USA", f: 910.525, bw: 62.5, sf: 7, cr: 5, rule: "fcc" },
-      notes: "The printed prototype: 3.00 mm aluminum with a 1/8 in brass driven element, at the design's lengths.",
+      notes: "The first printed prototype, with cad/parts.py's booms: 3.00 mm aluminum with a 1/8 in brass driven element, at the design's lengths. Its valley measured about 9 MHz above the model's.",
       elements: DUV_POS.map((x, i) => ({
         type: typeFor(i, 1), x, L: DUV_LEN[i], d: i === 1 ? 3.175 : 3.0, material: i === 1 ? "brass" : "aluminium",
       })),
@@ -2013,7 +2034,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
     ghz: () => startingDesign(1296, 10, 3, "copper"),
   };
 
-  /* The first readings of the built antenna, taken from photos of the NanoVNA screen. */
+  /* The first prototype's first readings, taken from photos of the NanoVNA screen. */
   const DUV_SWEEP = [
     { f: 860, swr: 2.9 }, { f: 880, swr: 2.15 }, { f: 895, swr: 1.92 }, { f: 905, swr: 1.92 }, { f: 910, swr: 1.86 },
     { f: 915, swr: 1.5 }, { f: 919, swr: 1.3 }, { f: 923, swr: 1.21 }, { f: 927, swr: 1.45 }, { f: 931, swr: 2.0 }, { f: 936, swr: 2.75 },
@@ -2445,7 +2466,14 @@ input::placeholder { color: var(--muted); opacity: .75; }
     const CUT_TOL = 0.3;
     const describe = (id, title, why, given) => {
       const change = {};
-      Object.keys(given).forEach((i) => { if (Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
+      Object.keys(given).forEach((i) => { if (+i !== drv && Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
+      // An option about directors whose changes all round to nothing is "only the driven element" again: leave it out, as
+      // the owner's plan showed it twice with different numbers. Otherwise the driven element is matched to what's left.
+      if (id !== "driven" && id !== "now" && Object.keys(given).some((i) => +i !== drv) && !Object.keys(change).length) return null;
+      if (given[drv] !== undefined) {
+        const dl = Object.keys(change).length === Object.keys(given).filter((i) => +i !== drv).length ? given[drv] : tuneDriven(change);
+        if (Math.abs(dl) >= CUT_TOL) change[drv] = dl;
+      }
       const s = built(change), at = run.fixed(s);
       const m = at(target, 1);
       const curve = [];
@@ -2531,6 +2559,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
       c[drv] = tuneDriven(c);
       // every director option retunes the driven element too, and its title says so
       const o = describe("single", `Change ${names[i]}, and the driven element to match`, `${names[i]} moves the valley most for its length, but changing one director alone costs some gain.`, c);
+      if (!o) continue;
       if (!bestSingle || o.gain - 2 * Math.max(0, o.swr - 1.5) > bestSingle.gain - 2 * Math.max(0, bestSingle.swr - 1.5)) bestSingle = o;
     }
     if (bestSingle) options.push(bestSingle);
@@ -2540,7 +2569,8 @@ input::placeholder { color: var(--muted); opacity: .75; }
     // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
     // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
     const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
-    const distinct = options.filter((o, i) => work(o) !== "" && options.findIndex((q) => work(q) === work(o)) === i);
+    const kept = options.filter(Boolean);
+    const distinct = kept.filter((o, i) => work(o) !== "" && kept.findIndex((q) => work(q) === work(o)) === i);
     const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
     const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
     distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));
@@ -4204,15 +4234,35 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return makeDesign({ name: `${count}-element ${Math.round(f0)} MHz`, f0, band: [f0 * 0.992, f0 * 1.008], material, elements });
   }
 
+  // the first prototype, cad/parts.py's booms: the solver's reference tests use it, against nec2++ and the full-surface model
   const DUV_POS = [0, 39.8, 73.5, 163.8, 272.4, 378.6];
   const DUV_LEN = [158.6, 149.0, 142.3, 140.8, 138.3, 136.1];
+  // the second, designed, printed, built and tuned in Yagi Studio (the owner, 2026-11-08): its YagiCAD file, and what the owner
+  // measured on its rods (D3 not measured), from the Tune tab
+  const DUV2_POS = [0, 46.2, 86.5, 167.9, 282.3, 381.0];
+  const DUV2_LEN = [160.2, 151.9, 144.9, 142.0, 138.5, 137.1];
+  const DUV2_MEASURED = [160.0, 151.2, 144.7, 142.2, null, 137.4];
   const IN = 25.4;
 
   const PRESETS = {
-    duvyagi: () => makeDesign({
-      name: "DuvYagi 10 dBd (as built)", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
+    duvyagi: () => {
+      const d = makeDesign({
+        name: "DuvYagi 10 dBd (as built)", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
+        radio: { use: "meshcore", title: "USA", f: 910.525, bw: 62.5, sf: 7, cr: 5, rule: "fcc" },
+        notes: "Designed, printed, built and tuned in Yagi Studio: 3.00 mm aluminum with a 1/8 in brass driven element, its two-piece boom printed in ASA from the 3D print tab. Each half of the driven element was filed 2.4 mm from its cut length. Its NanoVNA showed SWR 1.35 at 910.525 MHz through 270 mm of RG178, and it was left as it is.",
+        elements: DUV2_POS.map((x, i) => ({
+          type: typeFor(i, 1), x, L: DUV2_LEN[i], d: i === 1 ? 3.175 : 3.0, material: i === 1 ? "brass" : "aluminium",
+        })),
+        cable: { on: true, kind: "rg178", length: 270, vf: 0.695, lossAt1G: 1.6 },
+      });
+      d.tune = { readings: [], measured: {}, range: [856, 965], target: 910.525, sample: false, free: { directors: true, driven: true, reflector: false } };
+      d.elements.forEach((e, i) => { if (DUV2_MEASURED[i] !== null) d.tune.measured[e.id] = { L: DUV2_MEASURED[i] }; });
+      return d;
+    },
+    duvyagi1: () => makeDesign({
+      name: "DuvYagi first prototype", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
       radio: { use: "meshcore", title: "USA", f: 910.525, bw: 62.5, sf: 7, cr: 5, rule: "fcc" },
-      notes: "The printed prototype: 3.00 mm aluminum with a 1/8 in brass driven element, at the design's lengths.",
+      notes: "The first printed prototype, with cad/parts.py's booms: 3.00 mm aluminum with a 1/8 in brass driven element, at the design's lengths. Its valley measured about 9 MHz above the model's.",
       elements: DUV_POS.map((x, i) => ({
         type: typeFor(i, 1), x, L: DUV_LEN[i], d: i === 1 ? 3.175 : 3.0, material: i === 1 ? "brass" : "aluminium",
       })),
@@ -4232,7 +4282,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     ghz: () => startingDesign(1296, 10, 3, "copper"),
   };
 
-  /* The first readings of the built antenna, taken from photos of the NanoVNA screen. */
+  /* The first prototype's first readings, taken from photos of the NanoVNA screen. */
   const DUV_SWEEP = [
     { f: 860, swr: 2.9 }, { f: 880, swr: 2.15 }, { f: 895, swr: 1.92 }, { f: 905, swr: 1.92 }, { f: 910, swr: 1.86 },
     { f: 915, swr: 1.5 }, { f: 919, swr: 1.3 }, { f: 923, swr: 1.21 }, { f: 927, swr: 1.45 }, { f: 931, swr: 2.0 }, { f: 936, swr: 2.75 },
@@ -6276,7 +6326,14 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const CUT_TOL = 0.3;
     const describe = (id, title, why, given) => {
       const change = {};
-      Object.keys(given).forEach((i) => { if (Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
+      Object.keys(given).forEach((i) => { if (+i !== drv && Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
+      // An option about directors whose changes all round to nothing is "only the driven element" again: leave it out, as
+      // the owner's plan showed it twice with different numbers. Otherwise the driven element is matched to what's left.
+      if (id !== "driven" && id !== "now" && Object.keys(given).some((i) => +i !== drv) && !Object.keys(change).length) return null;
+      if (given[drv] !== undefined) {
+        const dl = Object.keys(change).length === Object.keys(given).filter((i) => +i !== drv).length ? given[drv] : tuneDriven(change);
+        if (Math.abs(dl) >= CUT_TOL) change[drv] = dl;
+      }
       const s = built(change), at = run.fixed(s);
       const m = at(target, 1);
       const curve = [];
@@ -6362,6 +6419,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       c[drv] = tuneDriven(c);
       // every director option retunes the driven element too, and its title says so
       const o = describe("single", `Change ${names[i]}, and the driven element to match`, `${names[i]} moves the valley most for its length, but changing one director alone costs some gain.`, c);
+      if (!o) continue;
       if (!bestSingle || o.gain - 2 * Math.max(0, o.swr - 1.5) > bestSingle.gain - 2 * Math.max(0, bestSingle.swr - 1.5)) bestSingle = o;
     }
     if (bestSingle) options.push(bestSingle);
@@ -6371,7 +6429,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
     // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
     const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
-    const distinct = options.filter((o, i) => work(o) !== "" && options.findIndex((q) => work(q) === work(o)) === i);
+    const kept = options.filter(Boolean);
+    const distinct = kept.filter((o, i) => work(o) !== "" && kept.findIndex((q) => work(q) === work(o)) === i);
     const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
     const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
     distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));
@@ -8079,6 +8138,31 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     try { return root.claude && root.claude.use ? await root.claude.use(name) : null; } catch (e) { return null; }
   };
 
+  /**
+   * Asks what to call a file, filled in with its usual name, the extension kept (the owner, 2026-11-08). Android's own save
+   * screen already asks, so there it isn't asked twice. Resolves to the name, or null if cancelled.
+   */
+  A.askFileName = (name) => new Promise((resolve) => {
+    if (root.ysNative) return resolve(name);
+    const dot = name.lastIndexOf("."), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const close = A.modal(`<h2>Save the file as</h2>
+      <div class="row" style="flex-wrap:nowrap;align-items:center;gap:4px"><input class="txt-in" id="fn-stem" maxlength="120" autocomplete="off" aria-label="File name"><span class="mono">${esc(ext)}</span></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="fn-go">Save</button><button class="btn" id="fn-no">Cancel</button></div>`, (b, cl) => {
+      const input = $("#fn-stem", b);
+      input.value = stem;
+      const go = () => { const v = input.value.trim().replace(/[\\/:*?"<>|]+/g, "_"); if (!v) return; cl(); finish(v + ext); };
+      $("#fn-go", b).onclick = go;
+      $("#fn-no", b).onclick = () => { cl(); finish(null); };
+      input.onkeydown = (e) => { if (e.key === "Enter") go(); };
+      input.focus(); input.select();
+    });
+    // Escape or a tap outside closes it as a cancel
+    const watch = setInterval(() => { if (!document.querySelector("#fn-stem")) { clearInterval(watch); finish(null); } }, 300);
+    void close;
+  });
+
   A.download = async (name, text, type) => {
     if (root.ysNative) {
       try {
@@ -8940,7 +9024,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
 
   let fitTimer = null, fitSeq = 0, vna = null;
   const T = {
-    mode: "draw", fit: null, plan: null, chosen: null, busy: false, models: null,
+    // starts in File or VNA: drawing takes the whole touch, so in Draw a swipe up the page over the chart drew on it (the
+    // owner, on a phone, 2026-11-08). Drawing only works once Draw is pressed.
+    mode: "file", fit: null, plan: null, chosen: null, busy: false, models: null,
   };
   const tune = () => {
     if (!S.design.tune) S.design.tune = A.emptyTune();
@@ -9045,7 +9131,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         </section>
         <div class="row">
           <button class="btn small" id="readings-clear">Clear readings</button>
-          <button class="btn small" id="readings-sample">Load the DuvYagi example</button>
+          <button class="btn small" id="readings-sample">Load the first prototype's example</button>
           <button class="btn small" data-calguide>Calibration guide</button>
           <span class="note" id="readings-count"></span>
         </div>
@@ -9535,7 +9621,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <div class="row" style="margin-top:6px"><button class="btn small" data-apply="${o.id}">${o.bends ? "Put these bends in the design" : "Make these the design's lengths"}</button></div>
       </div>`;
     }).join("");
-    html += `<table class="tbl" style="margin-top:4px"><thead><tr><th>Predicted at target</th><th>SWR</th><th>dBd</th><th>F/B</th></tr></thead><tbody>${row("As it is now", now)}${opts.map((o) => row(esc(o.title.replace("Change ", "").replace(/^./, (c) => c.toUpperCase())), o)).join("")}</tbody></table>`;
+    html += `<div class="scroll-x"><table class="tbl wrap-first" style="margin-top:4px"><thead><tr><th>Predicted at target</th><th>SWR</th><th>dBd</th><th>F/B</th></tr></thead><tbody>${row("As it is now", now)}${opts.map((o) => row(esc(o.title.replace("Change ", "").replace(/^./, (c) => c.toUpperCase())), o)).join("")}</tbody></table></div>`;
     html += `<p class="note">These are predictions from a model fitted to your readings. Make the first change, sweep again, and enter the new curve here: each round should land closer. Keep the old rods until you've checked.</p>`;
     host.innerHTML = html;
     $$("[data-show]", host).forEach((b) => { b.onclick = () => { T.chosen = b.dataset.show; renderPlan(); drawChart(); }; });
@@ -9602,7 +9688,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     });
     $("#readings-clear").onclick = () => { setReadings([]); };
     $("#readings-sample").onclick = () => {
-      if (S.design.name.indexOf("DuvYagi") < 0) A.loadDesign(YS.PRESETS.duvyagi());
+      // the first prototype's photographed readings, with that antenna: they'd mean nothing on another
+      if (S.design.name !== "DuvYagi first prototype") A.loadDesign(YS.PRESETS.duvyagi1());
       const t = tune();
       t.range = [850, 950];
       t.target = 910.525;
@@ -10633,7 +10720,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     ];
     $("#c-files").innerHTML = files.map((f, i) => `<div><div style="font-weight:500;margin-bottom:3px">${esc(f[0])}</div><div class="row"><button class="btn small" data-dl="${i}">Download</button><button class="btn small" data-cp="${i}">Copy</button></div></div>`).join("") +
       `<p class="note">${root.ysNative || (root.ysWeb && root.ysWeb.ios) ? "Download asks where to save each file." : "If Download does nothing, this page is running somewhere that blocks downloads. Copy works everywhere."}</p>`;
-    $$("[data-dl]", $("#c-files")).forEach((b) => { b.onclick = () => { const f = files[+b.dataset.dl]; A.download(f[2], f[1](), f[3]); }; });
+    // a design's files ask what to call them: a name of your own, the extension kept
+    $$("[data-dl]", $("#c-files")).forEach((b) => { b.onclick = async () => { const f = files[+b.dataset.dl], name = await A.askFileName(f[2]); if (name) A.download(name, f[1](), f[3]); }; });
     $$("[data-cp]", $("#c-files")).forEach((b) => { b.onclick = () => { const f = files[+b.dataset.cp]; A.copy(f[1](), f[0]); }; });
   }
 
@@ -10930,7 +11018,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   };
 
   const PRESET_INFO = [
-    ["duvyagi", "DuvYagi 10 dBd", "6 rods, 910 MHz, as built, with its VNA readings"],
+    ["duvyagi", "DuvYagi 10 dBd", "6 rods, 910 MHz, built and tuned, with its measured lengths and cable"],
+    ["duvyagi1", "DuvYagi first prototype", "6 rods, 910 MHz, the first build, with photos of its VNA readings"],
     ["gcarc", "GCARC 915 MHz", "5 rods of 1/16 in brass, the classic window Yagi"],
     ["ism915", "915 MHz starter", "5 rods, not yet optimized"],
     ["eu868", "869 MHz starter", "6 rods, for EU MeshCore and LoRa, not yet optimized"],
@@ -10987,6 +11076,37 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     }
     A.toast(`Saved "${S.design.name}" ${where}.`);
   }
+  /** Save asks for the name, filled in with the design's, so a design can be kept under a name of your own (the owner, 2026-11-08). */
+  function saveAs() {
+    const names = Object.keys(saved());
+    A.modal(`<h2>Save this design</h2>
+      <p>It's kept in this app, under Open. To save a file you can share, use the Cut list's files.</p>
+      <div class="field"><label for="save-name">Name</label><input class="txt-in" id="save-name" maxlength="80" autocomplete="off"></div>
+      <p class="note" id="save-note" style="margin-top:6px"></p>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="save-go">Save</button><button class="btn" id="save-no">Cancel</button></div>`, (b, close) => {
+      const input = $("#save-name", b), note = $("#save-note", b), go = $("#save-go", b);
+      input.value = S.design.name;
+      const check = () => {
+        const n = input.value.trim();
+        go.disabled = !n;
+        note.textContent = !n ? "Give it a name." : n !== S.design.name && names.includes(n) ? `There's already a design saved as "${n}". Saving replaces it.` : n === S.design.name && names.includes(n) ? "This updates the copy saved under this name." : "";
+        go.textContent = n && names.includes(n) ? "Replace it" : "Save";
+      };
+      input.oninput = check;
+      input.onkeydown = (e) => { if (e.key === "Enter" && !go.disabled) go.click(); };
+      $("#save-no", b).onclick = close;
+      go.onclick = async () => {
+        const n = input.value.trim();
+        if (!n) return;
+        if (n !== S.design.name) { S.design.name = n; A.renderChrome(); A.commit(); }
+        close();
+        await saveDesign();
+      };
+      check();
+      input.focus(); input.select();
+    });
+  }
+
   async function deleteSaved(name) {
     const lib = A.storage.read().library || {};
     delete lib[name];
@@ -11015,7 +11135,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
           close();
           const d = YS.PRESETS[b.dataset.preset]();
           A.loadDesign(d, true);
-          if (b.dataset.preset === "duvyagi") withExampleReadings();
+          if (b.dataset.preset === "duvyagi1") withExampleReadings();
           A.go(S.view);
         };
       });
@@ -11083,7 +11203,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <tr><td style="white-space:normal">Gain from input power against gain from integrating the pattern</td><td>within 0.02 dB</td></tr>
       </tbody></table></div>
       <p style="margin-top:10px"><b>Thick rods.</b> On a 3 mm rod at 900 MHz, nec2++ doesn't settle: its feed resistance runs from 53 to 71 ohms as segments increase. This solver settles, within about 0.1 ohm of its finest mesh at Normal.</p>
-      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but designing, polishing and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the DuvYagi's valley measured about 9 MHz above this solver's prediction, cause not yet known. Measure yours.</p>
+      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but designing, polishing and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the first DuvYagi prototype's valley measured about 9 MHz above this solver's prediction, cause not yet known. The second, measured with R and X through its coax, fitted with its directors as cut. Measure yours.</p>
       <p class="note">Yagi Studio is free software: you can use, change and share it under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU Affero General Public License</a>, version 3 or later. It comes with no warranty. <a href="https://github.com/Duvdivan/yagi-studio" target="_blank" rel="noopener">Its source code is on GitHub</a>.</p>
       <div class="row" style="margin-top:8px"><button class="btn" data-close>Close</button></div>`, (b, close) => { $("[data-close]", b).onclick = close; });
   }
@@ -11129,12 +11249,11 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (d) {
       A.loadDesign(YS.makeDesign(d));
     } else {
-      A.loadDesign(YS.PRESETS.duvyagi());
-      withExampleReadings();
+      A.loadDesign(YS.PRESETS.duvyagi());      // the built and tuned one, with its measured lengths and cable
     }
     $("#new-design").onclick = newDesignDialog;
     $("#open").onclick = (e) => openMenu(e.currentTarget);
-    $("#save").onclick = saveDesign;
+    $("#save").onclick = saveAs;
     $("#undo").onclick = A.undo;
     $("#redo").onclick = A.redo;
     $("#theme").onclick = () => setTheme(isDark() ? "light" : "dark");

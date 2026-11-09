@@ -929,7 +929,8 @@
     ];
     $("#c-files").innerHTML = files.map((f, i) => `<div><div style="font-weight:500;margin-bottom:3px">${esc(f[0])}</div><div class="row"><button class="btn small" data-dl="${i}">Download</button><button class="btn small" data-cp="${i}">Copy</button></div></div>`).join("") +
       `<p class="note">${root.ysNative || (root.ysWeb && root.ysWeb.ios) ? "Download asks where to save each file." : "If Download does nothing, this page is running somewhere that blocks downloads. Copy works everywhere."}</p>`;
-    $$("[data-dl]", $("#c-files")).forEach((b) => { b.onclick = () => { const f = files[+b.dataset.dl]; A.download(f[2], f[1](), f[3]); }; });
+    // a design's files ask what to call them: a name of your own, the extension kept
+    $$("[data-dl]", $("#c-files")).forEach((b) => { b.onclick = async () => { const f = files[+b.dataset.dl], name = await A.askFileName(f[2]); if (name) A.download(name, f[1](), f[3]); }; });
     $$("[data-cp]", $("#c-files")).forEach((b) => { b.onclick = () => { const f = files[+b.dataset.cp]; A.copy(f[1](), f[0]); }; });
   }
 

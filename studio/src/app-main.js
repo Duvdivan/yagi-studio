@@ -40,7 +40,8 @@
   };
 
   const PRESET_INFO = [
-    ["duvyagi", "DuvYagi 10 dBd", "6 rods, 910 MHz, as built, with its VNA readings"],
+    ["duvyagi", "DuvYagi 10 dBd", "6 rods, 910 MHz, built and tuned, with its measured lengths and cable"],
+    ["duvyagi1", "DuvYagi first prototype", "6 rods, 910 MHz, the first build, with photos of its VNA readings"],
     ["gcarc", "GCARC 915 MHz", "5 rods of 1/16 in brass, the classic window Yagi"],
     ["ism915", "915 MHz starter", "5 rods, not yet optimized"],
     ["eu868", "869 MHz starter", "6 rods, for EU MeshCore and LoRa, not yet optimized"],
@@ -97,6 +98,37 @@
     }
     A.toast(`Saved "${S.design.name}" ${where}.`);
   }
+  /** Save asks for the name, filled in with the design's, so a design can be kept under a name of your own (the owner, 2026-11-08). */
+  function saveAs() {
+    const names = Object.keys(saved());
+    A.modal(`<h2>Save this design</h2>
+      <p>It's kept in this app, under Open. To save a file you can share, use the Cut list's files.</p>
+      <div class="field"><label for="save-name">Name</label><input class="txt-in" id="save-name" maxlength="80" autocomplete="off"></div>
+      <p class="note" id="save-note" style="margin-top:6px"></p>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="save-go">Save</button><button class="btn" id="save-no">Cancel</button></div>`, (b, close) => {
+      const input = $("#save-name", b), note = $("#save-note", b), go = $("#save-go", b);
+      input.value = S.design.name;
+      const check = () => {
+        const n = input.value.trim();
+        go.disabled = !n;
+        note.textContent = !n ? "Give it a name." : n !== S.design.name && names.includes(n) ? `There's already a design saved as "${n}". Saving replaces it.` : n === S.design.name && names.includes(n) ? "This updates the copy saved under this name." : "";
+        go.textContent = n && names.includes(n) ? "Replace it" : "Save";
+      };
+      input.oninput = check;
+      input.onkeydown = (e) => { if (e.key === "Enter" && !go.disabled) go.click(); };
+      $("#save-no", b).onclick = close;
+      go.onclick = async () => {
+        const n = input.value.trim();
+        if (!n) return;
+        if (n !== S.design.name) { S.design.name = n; A.renderChrome(); A.commit(); }
+        close();
+        await saveDesign();
+      };
+      check();
+      input.focus(); input.select();
+    });
+  }
+
   async function deleteSaved(name) {
     const lib = A.storage.read().library || {};
     delete lib[name];
@@ -125,7 +157,7 @@
           close();
           const d = YS.PRESETS[b.dataset.preset]();
           A.loadDesign(d, true);
-          if (b.dataset.preset === "duvyagi") withExampleReadings();
+          if (b.dataset.preset === "duvyagi1") withExampleReadings();
           A.go(S.view);
         };
       });
@@ -193,7 +225,7 @@
         <tr><td style="white-space:normal">Gain from input power against gain from integrating the pattern</td><td>within 0.02 dB</td></tr>
       </tbody></table></div>
       <p style="margin-top:10px"><b>Thick rods.</b> On a 3 mm rod at 900 MHz, nec2++ doesn't settle: its feed resistance runs from 53 to 71 ohms as segments increase. This solver settles, within about 0.1 ohm of its finest mesh at Normal.</p>
-      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but designing, polishing and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the DuvYagi's valley measured about 9 MHz above this solver's prediction, cause not yet known. Measure yours.</p>
+      <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but designing, polishing and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the first DuvYagi prototype's valley measured about 9 MHz above this solver's prediction, cause not yet known. The second, measured with R and X through its coax, fitted with its directors as cut. Measure yours.</p>
       <p class="note">Yagi Studio is free software: you can use, change and share it under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU Affero General Public License</a>, version 3 or later. It comes with no warranty. <a href="https://github.com/Duvdivan/yagi-studio" target="_blank" rel="noopener">Its source code is on GitHub</a>.</p>
       <div class="row" style="margin-top:8px"><button class="btn" data-close>Close</button></div>`, (b, close) => { $("[data-close]", b).onclick = close; });
   }
@@ -239,12 +271,11 @@
     if (d) {
       A.loadDesign(YS.makeDesign(d));
     } else {
-      A.loadDesign(YS.PRESETS.duvyagi());
-      withExampleReadings();
+      A.loadDesign(YS.PRESETS.duvyagi());      // the built and tuned one, with its measured lengths and cable
     }
     $("#new-design").onclick = newDesignDialog;
     $("#open").onclick = (e) => openMenu(e.currentTarget);
-    $("#save").onclick = saveDesign;
+    $("#save").onclick = saveAs;
     $("#undo").onclick = A.undo;
     $("#redo").onclick = A.redo;
     $("#theme").onclick = () => setTheme(isDark() ? "light" : "dark");

@@ -305,15 +305,35 @@
     return makeDesign({ name: `${count}-element ${Math.round(f0)} MHz`, f0, band: [f0 * 0.992, f0 * 1.008], material, elements });
   }
 
+  // the first prototype, cad/parts.py's booms: the solver's reference tests use it, against nec2++ and the full-surface model
   const DUV_POS = [0, 39.8, 73.5, 163.8, 272.4, 378.6];
   const DUV_LEN = [158.6, 149.0, 142.3, 140.8, 138.3, 136.1];
+  // the second, designed, printed, built and tuned in Yagi Studio (the owner, 2026-11-08): its YagiCAD file, and what the owner
+  // measured on its rods (D3 not measured), from the Tune tab
+  const DUV2_POS = [0, 46.2, 86.5, 167.9, 282.3, 381.0];
+  const DUV2_LEN = [160.2, 151.9, 144.9, 142.0, 138.5, 137.1];
+  const DUV2_MEASURED = [160.0, 151.2, 144.7, 142.2, null, 137.4];
   const IN = 25.4;
 
   const PRESETS = {
-    duvyagi: () => makeDesign({
-      name: "DuvYagi 10 dBd (as built)", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
+    duvyagi: () => {
+      const d = makeDesign({
+        name: "DuvYagi 10 dBd (as built)", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
+        radio: { use: "meshcore", title: "USA", f: 910.525, bw: 62.5, sf: 7, cr: 5, rule: "fcc" },
+        notes: "Designed, printed, built and tuned in Yagi Studio: 3.00 mm aluminum with a 1/8 in brass driven element, its two-piece boom printed in ASA from the 3D print tab. Each half of the driven element was filed 2.4 mm from its cut length. Its NanoVNA showed SWR 1.35 at 910.525 MHz through 270 mm of RG178, and it was left as it is.",
+        elements: DUV2_POS.map((x, i) => ({
+          type: typeFor(i, 1), x, L: DUV2_LEN[i], d: i === 1 ? 3.175 : 3.0, material: i === 1 ? "brass" : "aluminium",
+        })),
+        cable: { on: true, kind: "rg178", length: 270, vf: 0.695, lossAt1G: 1.6 },
+      });
+      d.tune = { readings: [], measured: {}, range: [856, 965], target: 910.525, sample: false, free: { directors: true, driven: true, reflector: false } };
+      d.elements.forEach((e, i) => { if (DUV2_MEASURED[i] !== null) d.tune.measured[e.id] = { L: DUV2_MEASURED[i] }; });
+      return d;
+    },
+    duvyagi1: () => makeDesign({
+      name: "DuvYagi first prototype", f0: 910.525, band: [903.525, 917.525], material: "aluminium", gap: 3,
       radio: { use: "meshcore", title: "USA", f: 910.525, bw: 62.5, sf: 7, cr: 5, rule: "fcc" },
-      notes: "The printed prototype: 3.00 mm aluminum with a 1/8 in brass driven element, at the design's lengths.",
+      notes: "The first printed prototype, with cad/parts.py's booms: 3.00 mm aluminum with a 1/8 in brass driven element, at the design's lengths. Its valley measured about 9 MHz above the model's.",
       elements: DUV_POS.map((x, i) => ({
         type: typeFor(i, 1), x, L: DUV_LEN[i], d: i === 1 ? 3.175 : 3.0, material: i === 1 ? "brass" : "aluminium",
       })),
@@ -333,7 +353,7 @@
     ghz: () => startingDesign(1296, 10, 3, "copper"),
   };
 
-  /* The first readings of the built antenna, taken from photos of the NanoVNA screen. */
+  /* The first prototype's first readings, taken from photos of the NanoVNA screen. */
   const DUV_SWEEP = [
     { f: 860, swr: 2.9 }, { f: 880, swr: 2.15 }, { f: 895, swr: 1.92 }, { f: 905, swr: 1.92 }, { f: 910, swr: 1.86 },
     { f: 915, swr: 1.5 }, { f: 919, swr: 1.3 }, { f: 923, swr: 1.21 }, { f: 927, swr: 1.45 }, { f: 931, swr: 2.0 }, { f: 936, swr: 2.75 },

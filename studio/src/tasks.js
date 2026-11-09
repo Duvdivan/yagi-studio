@@ -419,7 +419,14 @@
     const CUT_TOL = 0.3;
     const describe = (id, title, why, given) => {
       const change = {};
-      Object.keys(given).forEach((i) => { if (Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
+      Object.keys(given).forEach((i) => { if (+i !== drv && Math.abs(given[i]) >= CUT_TOL) change[i] = given[i]; });
+      // An option about directors whose changes all round to nothing is "only the driven element" again: leave it out, as
+      // the owner's plan showed it twice with different numbers. Otherwise the driven element is matched to what's left.
+      if (id !== "driven" && id !== "now" && Object.keys(given).some((i) => +i !== drv) && !Object.keys(change).length) return null;
+      if (given[drv] !== undefined) {
+        const dl = Object.keys(change).length === Object.keys(given).filter((i) => +i !== drv).length ? given[drv] : tuneDriven(change);
+        if (Math.abs(dl) >= CUT_TOL) change[drv] = dl;
+      }
       const s = built(change), at = run.fixed(s);
       const m = at(target, 1);
       const curve = [];
@@ -505,6 +512,7 @@
       c[drv] = tuneDriven(c);
       // every director option retunes the driven element too, and its title says so
       const o = describe("single", `Change ${names[i]}, and the driven element to match`, `${names[i]} moves the valley most for its length, but changing one director alone costs some gain.`, c);
+      if (!o) continue;
       if (!bestSingle || o.gain - 2 * Math.max(0, o.swr - 1.5) > bestSingle.gain - 2 * Math.max(0, bestSingle.swr - 1.5)) bestSingle = o;
     }
     if (bestSingle) options.push(bestSingle);
@@ -514,7 +522,8 @@
     // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
     // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
     const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
-    const distinct = options.filter((o, i) => work(o) !== "" && options.findIndex((q) => work(q) === work(o)) === i);
+    const kept = options.filter(Boolean);
+    const distinct = kept.filter((o, i) => work(o) !== "" && kept.findIndex((q) => work(q) === work(o)) === i);
     const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
     const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
     distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));

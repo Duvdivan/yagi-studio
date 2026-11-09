@@ -10,7 +10,9 @@
 
   let fitTimer = null, fitSeq = 0, vna = null;
   const T = {
-    mode: "draw", fit: null, plan: null, chosen: null, busy: false, models: null,
+    // starts in File or VNA: drawing takes the whole touch, so in Draw a swipe up the page over the chart drew on it (the
+    // owner, on a phone, 2026-11-08). Drawing only works once Draw is pressed.
+    mode: "file", fit: null, plan: null, chosen: null, busy: false, models: null,
   };
   const tune = () => {
     if (!S.design.tune) S.design.tune = A.emptyTune();
@@ -115,7 +117,7 @@
         </section>
         <div class="row">
           <button class="btn small" id="readings-clear">Clear readings</button>
-          <button class="btn small" id="readings-sample">Load the DuvYagi example</button>
+          <button class="btn small" id="readings-sample">Load the first prototype's example</button>
           <button class="btn small" data-calguide>Calibration guide</button>
           <span class="note" id="readings-count"></span>
         </div>
@@ -605,7 +607,7 @@
         <div class="row" style="margin-top:6px"><button class="btn small" data-apply="${o.id}">${o.bends ? "Put these bends in the design" : "Make these the design's lengths"}</button></div>
       </div>`;
     }).join("");
-    html += `<table class="tbl" style="margin-top:4px"><thead><tr><th>Predicted at target</th><th>SWR</th><th>dBd</th><th>F/B</th></tr></thead><tbody>${row("As it is now", now)}${opts.map((o) => row(esc(o.title.replace("Change ", "").replace(/^./, (c) => c.toUpperCase())), o)).join("")}</tbody></table>`;
+    html += `<div class="scroll-x"><table class="tbl wrap-first" style="margin-top:4px"><thead><tr><th>Predicted at target</th><th>SWR</th><th>dBd</th><th>F/B</th></tr></thead><tbody>${row("As it is now", now)}${opts.map((o) => row(esc(o.title.replace("Change ", "").replace(/^./, (c) => c.toUpperCase())), o)).join("")}</tbody></table></div>`;
     html += `<p class="note">These are predictions from a model fitted to your readings. Make the first change, sweep again, and enter the new curve here: each round should land closer. Keep the old rods until you've checked.</p>`;
     host.innerHTML = html;
     $$("[data-show]", host).forEach((b) => { b.onclick = () => { T.chosen = b.dataset.show; renderPlan(); drawChart(); }; });
@@ -672,7 +674,8 @@
     });
     $("#readings-clear").onclick = () => { setReadings([]); };
     $("#readings-sample").onclick = () => {
-      if (S.design.name.indexOf("DuvYagi") < 0) A.loadDesign(YS.PRESETS.duvyagi());
+      // the first prototype's photographed readings, with that antenna: they'd mean nothing on another
+      if (S.design.name !== "DuvYagi first prototype") A.loadDesign(YS.PRESETS.duvyagi1());
       const t = tune();
       t.range = [850, 950];
       t.target = 910.525;

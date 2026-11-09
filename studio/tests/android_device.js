@@ -110,7 +110,7 @@ const topApp = () => { const m = /mCurrentFocus=.*?\{[^ ]+ [^ ]+ ([^}/ ]+)/.exec
   await sleep(2500);
   ok("Philly Mesh sets the target", (await p.ev("YS.app.S.design.f0")) === 919.5);
   ok("the solver ran in worker threads", (await p.ev("YS.app.pool.threads")) >= 1 && (await p.ev("YS.app.S.rows && YS.app.S.rows.length")) > 10, `${await p.ev("YS.app.pool.threads")} threads, ${await p.ev("YS.app.S.rows.length")} frequencies, ${(await p.ev("YS.app.S.solveMs")).toFixed(0)} ms`);
-  ok("the numbers match the PC's", Math.abs((await p.ev("YS.sweep(YS.toSolver(YS.PRESETS.duvyagi()), [910.525], {quality:'normal'})[0].z[0]")) - 40.012) < 0.01);
+  ok("the numbers match the PC's", Math.abs((await p.ev("YS.sweep(YS.toSolver(YS.PRESETS.duvyagi1()), [910.525], {quality:'normal'})[0].z[0]")) - 40.012) < 0.01);
   ok("WebGL for the 3D view", await p.ev(`!!document.createElement("canvas").getContext("webgl")`));
   const fonts = await p.ev(`document.fonts.ready.then(() => [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family).join(", "))`);
   ok("the bundled fonts load with no network", fonts.includes("IBM Plex Sans"), fonts);
@@ -127,7 +127,7 @@ const topApp = () => { const m = /mCurrentFocus=.*?\{[^ ]+ [^ ]+ ([^}/ ]+)/.exec
 
   /* ---- bent rods, on the phone's threads ---- */
   const bent = await p.ev(`(async () => {
-    const d = YS.PRESETS.duvyagi(), run = 149 / 2 - 10, tip = run * Math.sin(5 * Math.PI / 180);
+    const d = YS.PRESETS.duvyagi1(), run = 149 / 2 - 10, tip = run * Math.sin(5 * Math.PI / 180);
     d.elements.find((e) => e.type === "driven").bend = { topF: tip, botF: tip };
     const s = YS.toSolver(d), t = performance.now();
     const rows = await YS.app.pool.sweep(s, YS.app.freqs(), "draft");

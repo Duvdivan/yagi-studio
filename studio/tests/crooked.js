@@ -147,7 +147,7 @@ function foldedChecks(report) {
 
 /** Straight thick rods must give what solver.js gives. */
 function straightCheck(report, quality) {
-  const design = YS.toSolver(YS.PRESETS.duvyagi());
+  const design = YS.toSolver(YS.PRESETS.duvyagi1());
   const a = solve(prepare(design, { quality }), 910.525), b = YS.sweep(design, [910.525], { quality })[0];
   report(`as built, ${quality} mesh`, a, b);
 }
@@ -171,7 +171,7 @@ function printRow(label, r, ref) {
 const AZ = [[0, "forward"], [45, "fwd+side"], [90, "side"], [135, "back+side"], [180, "back"]];
 
 function study() {
-  const base = YS.toSolver(YS.PRESETS.duvyagi());
+  const base = YS.toSolver(YS.PRESETS.duvyagi1());
   base.counts = YS.buildWires(base, { quality: "normal" }).map((w) => w.m);
   const ref = runCase(base, {});
   console.log(`\nDuvYagi as built, straight: ${ref.at.z[0].toFixed(1)} ${ref.at.z[1].toFixed(1)}j ohm, SWR ${ref.at.swr.toFixed(3)}, ${ref.at.gainDbd.toFixed(2)} dBd, F/B ${ref.at.fb.toFixed(1)} dB, valley ${ref.v.f.toFixed(1)} MHz at ${ref.v.swr.toFixed(2)}`);
@@ -267,7 +267,7 @@ function gapStudy() {
   const py = cp.execFileSync("python", [path.join(__dirname, "gap_reference.py"), "--json"], { encoding: "utf8", cwd: __dirname, timeout: 300000 });
   const rows = JSON.parse(py).rows, F0 = 910.525, THIN = 0.15, gaps = [1, 2, 3, 4, 6, 8, 10];
   const lead = (g, r) => rows.find((q) => q.gap === g && q.r === r).dx;
-  const base = YS.toSolver(YS.PRESETS.duvyagi());
+  const base = YS.toSolver(YS.PRESETS.duvyagi1());
   const freqs = [];
   for (let f = 880; f <= 950; f++) freqs.push(f);
   const swrWith = (m, x) => YS.swrOf(m.z[0], m.z[1] + x * m.f / F0, 50);
@@ -304,7 +304,7 @@ function gapStudy() {
  * It's judged against 200 ohm, as a 4:1 balun gives, with the split element against 50 ohm alongside.
  */
 function foldedStudy() {
-  const base = YS.toSolver(YS.PRESETS.duvyagi()), F0 = 910.525, feed = base.feed, grid = [];
+  const base = YS.toSolver(YS.PRESETS.duvyagi1()), F0 = 910.525, feed = base.feed, grid = [];
   for (let f = 880; f <= 945; f += 1) grid.push(f);
   const run = (fold, L, gap) => {
     const elements = base.elements.map((e, i) => (i === feed ? Object.assign({}, e, { L, fold }) : e));

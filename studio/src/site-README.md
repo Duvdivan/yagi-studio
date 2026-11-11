@@ -30,9 +30,9 @@ If you put an antenna on a roof or mast, keep it well clear of power lines all t
 
 It's all in [`studio/`](studio/): `python studio/build.py` rebuilds this page from it, and [`studio/README.md`](studio/README.md) covers the solver, how it was checked and how to run the tests. The Android app is in [`studio/android/`](studio/android/).
 
-## The 3D print tab: boom tested, mounts not yet
+## The 3D print tab: boom and mast clamp tested, other mounts not yet
 
-The app makes printable files for a design's boom and mount. A boom from it has been printed in ASA, built into a working antenna and tuned. The mounts (mast clamp, painter pole arm, hand grip and tripod mount) haven't been printed yet, so test-fit one before you rely on it.
+The app makes printable files for a design's boom and mount. A boom from it has been printed in ASA, built into a working antenna and tuned. So has the mast clamp, with the boom's tail that goes in it: captive M3 nuts in the tail (thin square, standard square or hex) and a tunnel that brings the coax out just in front of the reflector. The clamp prints tilted, in ASA with 5 walls and 40-50% gyroid infill, and needs supports in its strap slots. The other mounts (painter pole arm, hand grip and tripod mount) haven't been printed yet, so test-fit one before you rely on it.
 
 ## License
 

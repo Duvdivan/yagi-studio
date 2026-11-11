@@ -935,7 +935,7 @@
   }
 
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
-  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, lengths: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+  const PRINT = { mount: "mast", nut: "standard", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, lengths: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
   /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
   function bedNow() {
@@ -964,7 +964,7 @@
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, nut: PRINT.nut, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -976,12 +976,13 @@
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill warn">Mounts not yet</span> The mast clamp, painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
+            <p class="note"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill good">Mast clamp printed and tested</span> So is the boom's tail that goes in it, with its nut slots and coax tunnel. <span class="pill warn">Other mounts not yet</span> The painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
             <div>${bedFields("p")}</div>
             <p id="p-pieces" role="status" style="font-weight:600"></p>
             <div class="field-grid">
               <div class="field"><label for="p-mount">Mount</label><select class="sel" id="p-mount">${Object.keys(YS.PARTS.MOUNTS).map((k) => `<option value="${k}">${esc(YS.PARTS.MOUNTS[k].name)}</option>`).join("")}</select></div>
+              <div class="field"><label for="p-nut">Nuts in the boom's tail</label><select class="sel" id="p-nut">${Object.keys(YS.PARTS.NUTS).map((k) => `<option value="${k}">${esc(YS.PARTS.NUTS[k].name)}</option>`).join("")}</select></div>
               <div class="field"><label for="p-fit">Rod holes over the rod, mm ${A.help("printfit")}</label><input class="num" id="p-fit" inputmode="decimal"></div>
               <div class="field"><label for="p-shrink">Shrinkage</label><select class="sel" id="p-shrink"><option value="slicer">My slicer handles it</option><option value="bar">Scale from a test bar</option></select></div>
               <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
@@ -1058,7 +1059,7 @@
         ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm${p.placing ? `. ${p.place.fits ? "" : '<span class="pill warn">Check that</span> '}${esc(p.placing)}` : ""}</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
       </tbody></table>
       <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
-      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. The boom has been printed, built and tuned; the mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it.</p>`;
+      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. The boom and the mast clamp have been printed, built and tested; the other mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it.</p>`;
     const name = S.design.name.replace(/[^\w-]+/g, "_");
     const notes = () => A.download(`${name}_build_notes.txt`, YS.partsNotes(S.design, R), "text/plain");
     const one = (p) => A.download(p.file, YS.meshToStl(p.mesh, p.id), "model/stl");
@@ -1129,6 +1130,8 @@
       const changed = () => { renderPrintPlan(); drawPart(); };
       $("#p-mount").value = PRINT.mount;
       $("#p-mount").onchange = (e) => { PRINT.mount = e.target.value; changed(); };
+      $("#p-nut").value = PRINT.nut;
+      $("#p-nut").onchange = (e) => { PRINT.nut = e.target.value; changed(); };
       bindBed("p", changed);
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });

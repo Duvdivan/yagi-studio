@@ -105,8 +105,19 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
     const z0 = g.zero, xm = z0.x + 1.5 * z0.k, ym = z0.y + 2.5 * z0.k, xb = g.end + (z0.x - g.end) * cos, zt = (x) => T.hz(g.end) + (g.end - x) * Math.tan(T.ang * Math.PI / 180);
     return !inR(xb, ym, zt(xb) - 0.3) && inR(xm, ym, zt(xm) - 0.3) && !inR(xm, z0.y, zt(xm) - 0.3);
   })());
-  // the coax's groove has a flat floor and a 45 degree roof, so it prints without supports (the owner's catch, 2026-11-07)
-  truth("the coax's groove has a flat floor and a 45 degree roof", [[S.w / 2 - 0.2, 2.4, 2.8], [S.w / 2 - 1.2, 1.4, 1.8], [S.w / 2 - 2.3, 0.3, 0.7]].every(([y, open, solid]) => !inR(20, y, open) && inR(20, y, solid) && !inR(20, y, -1.3) && inR(20, y, -1.7)) && inR(20, S.w / 2 - 2.7, 0));
+  // the coax's tunnel (the owner's tested tail, 2026-11-10): its inner side 9.5 mm in from the coax's face as it leaves the window,
+  // straight back, then out through the face just in front of the reflector, and solid round it
+  {
+    const x = 30, yi = S.w / 2 - 9.5;      // just behind the window, before it bends
+    truth("the coax's tunnel leaves the window 9.5 mm deep, point up, and is solid round it", !inR(x, yi + 0.3, 0) && inR(x, yi - 0.3, 0) && !inR(x, yi + 1.6, 1.9) && inR(x, yi + 1.6, 2.6) && inR(x, S.w / 2 - 0.5, 0));
+    truth("and comes out on the coax's face, in front of the reflector", !inR(10, S.w / 2 - 0.3, 0) && inR(20, S.w / 2 - 0.3, 0) && inR(3, S.w / 2 - 0.3, 0));
+  }
+  // the tail's lock: the back M3 and three nut slots, open on the screws' side
+  {
+    const px = REAR + 7, bot = T.zb(px), top = bot + T.Ht, zc = bot + T.Ht / 2, t = 2.4 + 0.3;
+    truth("the tail's nut slots: 10 mm in from its top and bottom, open on the screws' side", !inR(px, -S.w / 2 + 0.3, top - 10 - t / 2) && !inR(px, 0, top - 10 - t / 2) && inR(px, 4, top - 10 - t / 2) && !inR(px, -S.w / 2 + 0.3, bot + 10 + t / 2) && inR(px, -S.w / 2 + 0.3, top - 6));
+    truth("and 10 mm in from its end, on the back M3, which reaches the vertical hole", !inR(REAR + 10 + t / 2, -S.w / 2 + 0.3, zc) && !inR(REAR + 0.2, 0, zc) && !inR(REAR + 5, 0, zc) && inR(REAR + 5, 0, zc + 2));
+  }
   truth("the notches are 100 mm apart between inner walls, along the slope", n && near(n.to - n.from, 100, 1e-9), n && `${n.from.toFixed(1)} to ${n.to.toFixed(1)}`);
   if (n) {
     const y = S.w / 2 - 0.5, z = (x) => T.hz(x) - 1;
@@ -234,7 +245,7 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
 
   console.log("\n2b. Every socket prints standing, opening up, as the handle adapter snapped when flat");
   for (const pol of ["vertical", "horizontal"]) {
-    for (const mount of ["mast", "pole", "grip", "tripod"]) {
+    for (const mount of ["pole", "grip", "tripod"]) {      // the mast clamp prints tilted, which 2f checks
       const r = YS.buildParts(wasm, Object.assign({}, duv, { polarization: pol }), { mount }), m = r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "coupon");
       // straight down the socket's middle from the top of the file: empty for the socket's depth, so nothing is roofed over it
       const cx = m.mesh.t.reduce((a, t) => { for (const v of t) if (v[2] > m.size[2] - 0.001) { a.x0 = Math.min(a.x0, v[0]); a.x1 = Math.max(a.x1, v[0]); a.y0 = Math.min(a.y0, v[1]); a.y1 = Math.max(a.y1, v[1]); } return a; }, { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 });
@@ -266,7 +277,7 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
 
   console.log("\n2d. The bulge that holds the pin's nut: it adds to the socket, takes nothing from its wall, and takes any thickness of nut");
   const side = 4.4 + 1.2 * Math.SQRT2 + 3.6 - 1.2;      // where its 45 degree side would meet the wall
-  for (const mount of ["tripod", "mast", "pole", "grip"]) {
+  for (const mount of ["tripod", "pole", "grip"]) {      // the mast clamp's pinned by the tail's own nuts instead
     const id = { tripod: "tripod_mount", mast: "mast_mount", pole: "pole_arm", grip: "hand_grip" }[mount];
     const r = YS.buildParts(wasm, duv, { mount, bed: BED, inPlace: true, coupon: false }), on = by(r, id), sh = r.plan.sizes.sockH / 2;
     // in place: the bulge is under the socket, on its -z side, below the pin
@@ -293,6 +304,19 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
       const m = YS.buildParts(wasm, Object.assign({}, duv, { polarization: pol }), { mount }).parts.find((p) => !p.id.startsWith("boom") && p.id !== "coupon");
       truth(`${pol}, ${mount}`, flatArea(m.mesh) < limit, `${flatArea(m.mesh).toFixed(0)} mm2 flat, under ${limit}`);
     }
+  }
+
+  console.log("\n2f. The mast clamp, the owner's v3: tilted on the bed, its V's round seat, curved strap slots, the back screw");
+  {
+    const r = YS.buildParts(wasm, duv, { mount: "mast", bed: BED, inPlace: true, coupon: false }), m = by(r, "mast_mount"), hit = (x, y, z) => inside(m.mesh, x, y, z);
+    const px = YS.mastBehind(40);
+    truth("a 40 mm pole sits in the seat about 73 mm behind the reflector", near(px, 73.5, 1), px.toFixed(1));
+    truth("the seat is round, and open to the back", !hit(-px + 19.5, 0, 0) && hit(-px + 20.5, 0, 25) && !hit(-px - 5, 0, 0));
+    truth("the strap slots curve round the pole, 16 mm wide at +-16 mm", [8.5, 23.5, -8.5, -23.5].every((z) => !hit(-px + 2.74 + 28.67, 0, z)) && hit(-px + 2.74 + 28.67, 0, 4.5) && hit(-px + 2.74 + 28.67, 0, 26) && hit(-px + 2.74 + 26.5, 0, 16));
+    truth("the back screw runs from the seat into the tail's end, its head in a recess", !hit(REAR - 1, 0, r.plan.taper.zb(REAR + 7) + r.plan.taper.Ht / 2) && !hit(-px + 21, 3, r.plan.taper.zb(REAR + 7) + r.plan.taper.Ht / 2));
+    truth("rounded where the socket meets the block", hit(REAR - 3 + 0.5, 11.2 + 0.5, 0) && !hit(REAR - 3 + 4, 11.2 + 4, 0));
+    const f = by(YS.buildParts(wasm, duv, { mount: "mast", bed: BED, coupon: false }), "mast_mount");
+    truth("as printed, it lies on its chamfer, with the socket's mouth on the bed too", f.mesh.t.some((t) => t.every((v) => v[2] < 0.01) && t.some((v) => v[0] > 40)), f.size.map((v) => v.toFixed(1)).join(" x "));
   }
 
   console.log("\n3. Scale: a filament that shrinks 0.36%");

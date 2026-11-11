@@ -4971,7 +4971,13 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const GRIP = { width: 30, depth: 34, length: 115, back: 60, chamfer: 5 };   // the hand grip, and how far it's held behind the reflector
   const TRIPOD = { size: 36, back: 34, flats: 11.2, nut: 5.6, shelf: 5, bolt: 6.6 };   // block, and a 1/4-20 nut
   const POLE = { plate: 8, bolts: 14, tilt: 30 };          // the pole socket's plate, and its four M3 bolts either side of centre, and how many degrees the thread's axis rises above the bed
-  const CRADLE = { apex: -62, w: 80, h: 60 };    // the mast's V, from the reflector
+  const CRADLE = { len: 40, w: 80, h: 60, seat: 20, half: 49.5, apexIn: 28.1 };   // the owner's v3 clamp (2026-11-10): the block behind the socket, its V's round seat (radius), the V's faces' angle off the boom, and the V's point in from the block's back
+  const STRAP = { r: 28.67, t: 3.5, w: 16, z: 16, ahead: 2.74, exit: [24, 27] };   // its strap slots: an arc round the pole (mid radius, thickness), each 16 mm wide at z = +-16, the arc's centre ahead of the pole's, and the extra exits into the V for small poles (y)
+  const FILLET = 5;                // mm: where the socket meets the clamp's block
+  const BED_TILT = Math.atan2(8, 11) * 180 / Math.PI;   // degrees: the clamp prints lying on a chamfer across its block's corner and the socket's mouth
+  const NUTS = { thin: { name: "Thin square nuts, 5.3 x 1.75 mm", flats: 5.3, t: 1.75 }, standard: { name: "Standard square nuts, 5.4 x 2.4 mm", flats: 5.4, t: 2.4 }, hex: { name: "Hex nuts, 5.5 mm across flats", flats: 5.5, t: 2.4 } };
+  const NUT_SLOT = { play: 0.3, in: 10 };   // the tail's nut slots: room round a nut and in its thickness, and how far in from the top, the bottom, and the tail's end
+  const TUNNEL = { d: 3.2, above: 0.5, exit: 6, bend: 26 };   // the coax's tunnel, for RG316: across, how far above the window's floor its inner side runs, where it leaves the coax's face in front of the reflector, and the bend's length
 
   /* Letters on a 3 x 5 grid, as bars, so each is a groove a nozzle can follow. */
   const LETTERS = {
@@ -5416,6 +5422,39 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const teardrop = (x, d) => [...arc(x, 0, d / 2, -225, 45, 32), [x, d / 2 * Math.SQRT2]];
   const hexUp = (x, flats) => { const r = flats / Math.sqrt(3); return [0, 1, 2, 3, 4, 5].map((k) => [x + r * Math.sin(k * Math.PI / 3), r * Math.cos(k * Math.PI / 3)]); };
 
+  /* The coax's tunnel (the owner's tested tail, 2026-11-10): a teardrop, point up as the boom prints, from inside the driven element's
+     window straight back under the boom, then bending gently out through the coax's face just in front of the reflector. Its inner
+     side runs just above the window's floor, so the coax comes out low in the solder window. Made as hulls of thin teardrop slices along
+     the path, each square to it, so the point stays up the whole way and it needs no supports. */
+  function coaxTunnel(K, driven, w) {
+    const r = TUNNEL.d / 2, yc = -2 + TUNNEL.above + r, x0 = driven.x - 2, xe = TUNNEL.exit, xb = Math.min(x0, xe + TUNNEL.bend);
+    const yEnd = w / 2 + 2.5, pts = [];
+    for (let x = x0; x > xb; x -= 2) pts.push([x, yc]);
+    for (let i = 1; i <= 24; i++) { const u = i / 24; pts.push([xb - u * (xb - xe), yc + (yEnd - yc) * u * u]); }      // level where it leaves the straight, steepest where it breaks out, about 9 mm in front of the reflector
+    const tear = [...steps(-225, 45, 16).map((d) => [r * Math.cos(d * Math.PI / 180), r * Math.sin(d * Math.PI / 180)]), [0, r * Math.SQRT2]];
+    const slice = (p, q) => { const n = Math.hypot(q[0], q[1]), nx = -q[1] / n, ny = q[0] / n; return tear.map(([u, v]) => [p[0] + nx * u, p[1] + ny * u, v]); };
+    const out = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], dir = [b[0] - a[0], b[1] - a[1]];
+      out.push(K.hull([...slice(a, dir), ...slice(b, dir)]));
+    }
+    return K.fuse(out);
+  }
+
+  /* The tail's lock (the owner's tested tail, 2026-11-10): an M3 hole along its middle from its end through the vertical hole, and
+     slots for captive nuts entered from the screws' side, centred on their holes so a long screw passes straight through: two across
+     the vertical hole, 10 mm in from the top and the bottom, and one across the back hole, 10 mm in from the end. */
+  function tailLock(K, T, nut) {
+    const N = NUTS[nut] || NUTS.standard, px = REAR + 7, w = N.flats + NUT_SLOT.play, t = N.t + NUT_SLOT.play, far = w / 2, near = -60;
+    const bot = T.zb(px), top = bot + T.Ht, zc = bot + T.Ht / 2;
+    return [
+      K.cylX(REAR - 1, 0, zc, M3_BOOM, px - REAR + 3),
+      K.box(px - w / 2, px + w / 2, near, far, top - NUT_SLOT.in - t, top - NUT_SLOT.in),
+      K.box(px - w / 2, px + w / 2, near, far, bot + NUT_SLOT.in, bot + NUT_SLOT.in + t),
+      K.box(REAR + NUT_SLOT.in, REAR + NUT_SLOT.in + t, near, far, zc - w / 2, zc + w / 2),
+    ];
+  }
+
   function boomSection(K, sec, rods, sizes, opts) {
     const { w, h } = sizes, J = jointY(w), T = sizes.taper, tapered = sec.i === 0 && T.m > 0;
     // a tapered section is made tall and cut to the taper's outline; zz reaches through any of it, for holes along the rods
@@ -5440,8 +5479,10 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) cuts.push(K.box(driven.x - WINDOW[0] / 2, driven.x + WINDOW[0] / 2, -2, y + 1, -T.win / 2, T.win / 2));
     // the coax runs from the driven element back to the rear end, on any section it reaches
     // but not through a joint, where there are bolts and a prong's wall in its way: there it runs outside
-    if (driven && sec.x0 < driven.x) cuts.push(coaxGroove(K, sec.prev ? a : sec.x0 - 1, Math.min(driven.x, b), y));
-    if (sec.i === 0) cuts.push(K.cyl(REAR + 7, 0, -zz, M3_BOOM, 2 * zz));      // pins a mount
+    // a tunnel when the driven element is on the first piece; past a joint, the old open groove
+    if (driven && sec.i === 0 && driven.x <= b) cuts.push(coaxTunnel(K, driven, w));
+    else if (driven && sec.x0 < driven.x) cuts.push(coaxGroove(K, sec.prev ? a : sec.x0 - 1, Math.min(driven.x, b), y));
+    if (sec.i === 0) cuts.push(K.cyl(REAR + 7, 0, -zz, M3_BOOM, 2 * zz), ...tailLock(K, T, opts.nut));      // pins a mount
     // screws from the back, at each rod's middle, where they don't change the antenna; the driven element's either side of its window.
     // Not on a rod through a joint's tongue, where the prongs are in the way.
     if (opts.screws) {
@@ -5646,11 +5687,13 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
      round each layer, and printed that way it held. */
   /* The socket over the boom's tail, with an M3 through its walls. It stops behind the reflector, which stays in the boom. Its faces
      are parallel to the tail's, tilted with the taper, and the boom slides in along them. */
-  function socketCuts(K, rods, sizes, front, wideY) {
+  function socketCuts(K, rods, sizes, front, wideY, noGroove) {
     const { w } = sizes, T = sizes.taper, y = w / 2 + PLAY;
     const at = (x, up) => T.zb(x) + (up ? T.Ht + PLAY : -PLAY);
     const cavity = K.acrossY([[REAR, at(REAR, 0)], [front + 1, at(front + 1, 0)], [front + 1, at(front + 1, 1)], [REAR, at(REAR, 1)]], -y, y);
-    return [cavity, K.cyl(REAR + 7, 0, -60, M3, 120), K.box(REAR, front + 1, w / 2 - 1, wideY + 1, -GROOVE / 2, GROOVE / 2)];
+    const out = [cavity, K.cyl(REAR + 7, 0, -60, M3, 120)];
+    if (!noGroove) out.push(K.box(REAR, front + 1, w / 2 - 1, wideY + 1, -GROOVE / 2, GROOVE / 2));
+    return out;
   }
 
   /* A length of arm or socket, rounded along its length unless these are the plain solids. */
@@ -5680,24 +5723,55 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const rollFor = (polar) => (polar === "horizontal" ? [90, 0, 0] : null);
   const rolled = (K, m, roll) => (roll ? K.turn(m, roll) : m);
 
+  /* The owner's v3 clamp (designed in Fusion from the mock-up, printed and tested on the DuvYagi, 2026-11-10). The socket runs straight
+     into a block, with rounded corners where they meet. The block has a V with a round seat for the pole, two strap slots that curve
+     round the pole and run out along the V's faces to the block's back corners, with extra exits into the V for a small pole, and an
+     M3 along the boom's middle from the seat into the tail's back nut. It prints tilted, lying on a chamfer across one front corner of
+     the block and the socket's mouth, so the socket's layers wrap round it; the slots then need supports. Pinned by short screws
+     into the tail's nuts, or a long one straight through. */
+  const clampAt = () => { const bx0 = REAR - WALL - CRADLE.len, apex = bx0 + CRADLE.apexIn; return { bx0, apex, px: apex - CRADLE.seat / Math.sin(CRADLE.half * Math.PI / 180) }; };
+
   function mastMount(K, rods, sizes, roll, soft) {
     const front = MOUTH, sx0 = REAR - WALL, W2 = sizes.w + 2 * WALL + 2 * PLAY, H2 = sizes.sockH + 2 * WALL + 2 * PLAY;
-    const { apex, w: VW } = CRADLE, VH = Math.max(CRADLE.h, (roll ? W2 : H2) + 10), vx0 = apex - 28, vx1 = apex + 12;
-    let s = pipe(K, soft, sx0, front, W2 / 2, H2 / 2, SOFT.rim);
-    s = socketWithNut(K, s, rods, sizes, front, W2 / 2, H2 / 2, soft);
-    s = K.fuse([s, pipe(K, soft, vx1, sx0 + 0.01, W2 / 2, H2 / 2, 0)]);
-    s = rolled(K, s, roll);
-    let block = soft ? K.rbox(vx0, vx1, -VW / 2, VW / 2, -VH / 2, VH / 2, SOFT.block, SOFT.blockRim) : K.box(vx0, vx1, -VW / 2, VW / 2, -VH / 2, VH / 2);
-    const back = apex - vx0 + 1;
-    const cuts = [K.prism([[apex, 0], [vx0 - 1, -back], [vx0 - 1, back]], -VH / 2 - 1, VH / 2 + 1)];
-    [-24, 10].forEach((z0) => cuts.push(K.box(apex + 4, apex + 8, -VW / 2 - 1, VW / 2 + 1, z0, z0 + 14)));     // hose-clamp slots, for bands up to 13 mm
-    // the SMA bulkhead: a 4 mm wall with a 6.6 mm hole, a pocket behind it for the nut and the jumper
-    const ys = VW / 2 - 9;
-    cuts.push(K.cylX(vx1 - 4 - 0.01, ys, 0, 6.6, 5), K.cylX(vx0 - 1, ys, 0, 13, vx1 - 4 - (vx0 - 1)));
-    block = K.cut(block, cuts);
-    s = K.fuse([s, block]);
-    const groove = rolled(K, K.box(vx1 - 0.5, sx0 + 0.5, W2 / 2 - 2.5, W2 / 2 + 1, -GROOVE / 2, GROOVE / 2), roll);    // the coax along the arm
-    return K.cut(s, [groove]);
+    const { bx0, px, apex } = clampAt(), VW = CRADLE.w, VH = Math.max(CRADLE.h, (roll ? W2 : H2) + 10), ry = (roll ? H2 : W2) / 2, rz = (roll ? W2 : H2) / 2;
+    let sock = K.box(sx0 - 0.01, front, -W2 / 2, W2 / 2, -H2 / 2, H2 / 2);
+    sock = K.cut(sock, socketCuts(K, rods, sizes, front, W2 / 2, true));
+    sock = rolled(K, sock, roll);
+    const block = K.box(bx0, sx0, -VW / 2, VW / 2, -VH / 2, VH / 2);
+    // rounded where the socket meets the block, on all four sides
+    const F = FILLET, fil = [];
+    [-1, 1].forEach((sg) => {
+      fil.push(K.cut(K.box(sx0 - 0.01, sx0 + F, sg > 0 ? ry - 0.01 : -ry - F, sg > 0 ? ry + F : -ry + 0.01, -rz, rz), [K.cyl(sx0 + F, sg * (ry + F), -rz - 1, 2 * F, 2 * rz + 2)]));
+      fil.push(K.cut(K.box(sx0 - 0.01, sx0 + F, -ry, ry, sg > 0 ? rz - 0.01 : -rz - F, sg > 0 ? rz + F : -rz + 0.01), [K.cylY(sx0 + F, -ry - 1, sg * (rz + F), 2 * F, 2 * ry + 2)]));
+    });
+    let s = K.fuse([sock, block, ...fil]);
+    if (!roll) s = K.cut(s, socketCuts(K, rods, sizes, front, W2 / 2, true));      // the fillets mustn't close the socket's end
+    const cuts = [];
+    // the V, its point rounded into a seat
+    const t = Math.tan(CRADLE.half * Math.PI / 180), back = bx0 - 1, wide = (apex - back) * t, seat = [], vz = VH / 2 + 1;
+    for (let i = 0; i < 48; i++) { const a = i / 48 * 2 * Math.PI; seat.push([px + CRADLE.seat * Math.cos(a), CRADLE.seat * Math.sin(a)]); }
+    cuts.push(K.hull([...seat, [back, -wide], [back, wide]].flatMap(([x, y]) => [[x, y, -vz], [x, y, vz]])));
+    // the strap slots: an arc round the pole, legs out along the V's faces, and exits into the V
+    const cx = px + STRAP.ahead, ang = 90 - CRADLE.half, c = Math.cos(CRADLE.half * Math.PI / 180), sn = Math.sin(CRADLE.half * Math.PI / 180);
+    [-1, 1].forEach((zs) => {
+      const z0 = zs * STRAP.z - STRAP.w / 2, z1 = z0 + STRAP.w, arcPts = steps(-ang, ang, 24).map((d) => [cx + STRAP.r * Math.cos(d * Math.PI / 180), STRAP.r * Math.sin(d * Math.PI / 180)]);
+      for (let i = 0; i + 1 < arcPts.length; i++) cuts.push(K.bar(arcPts[i][0], arcPts[i][1], arcPts[i + 1][0], arcPts[i + 1][1], z0, z1, STRAP.t));
+      [-1, 1].forEach((sy) => {
+        const p = arcPts[sy > 0 ? arcPts.length - 1 : 0], L = (VW / 2 + 2 - Math.abs(p[1])) / sn;
+        cuts.push(K.bar(p[0], p[1], p[0] - c * L, p[1] + sy * sn * L, z0, z1, STRAP.t));
+        const ym = (STRAP.exit[0] + STRAP.exit[1]) / 2, xl = p[0] - c * (ym - Math.abs(p[1])) / sn;
+        cuts.push(K.box(back, xl, sy > 0 ? STRAP.exit[0] : -STRAP.exit[1], sy > 0 ? STRAP.exit[1] : -STRAP.exit[0], z0, z1));
+      });
+    });
+    // the M3 from the seat into the tail's back nut, its head in a recess opening into the seat
+    const zc = sizes.taper.zb(REAR + 7) + sizes.taper.Ht / 2;
+    cuts.push(K.cylX(px, 0, zc, M3, REAR + 2 - px), K.cylX(px, 0, zc, 7.15, sx0 - 14 - px));
+    // the corner the print lies on, across the block and the socket's mouth, and the other front corner's chamfer
+    const A = [sx0 - 11, -VW / 2], n = Math.hypot(11, 8), u = [11 / n, 8 / n], o = [u[1], -u[0]];
+    const far = (k, m) => [A[0] + u[0] * k + o[0] * m, A[1] + u[1] * k + o[1] * m];
+    cuts.push(K.prism([far(-200, 0), far(200, 0), far(200, 200), far(-200, 200)], -vz - 50, vz + 50));
+    cuts.push(K.prism([[sx0 + 0.5, VW / 2 - 11], [sx0 + 0.5, VW / 2 + 1], [sx0 - 8.7, VW / 2 + 1]], -vz, vz));
+    return K.cut(s, cuts);
   }
 
   /* A socket, an arm behind the reflector, and a block for the hand or the tripod, all made with the rods upright. */
@@ -5813,7 +5887,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   /* ---------- what the page calls ---------- */
   const MOUNTS = {
     none: { name: "No mount" },
-    mast: { name: "Mast or pole clamp", hardware: ["2 hose clamps, for bands up to 13 mm", "1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket"], print: "Stand it on the cradle, socket up, as the file has it. The V's sides are 45 degree overhangs, so it needs no supports." },
+    mast: { name: "Mast or pole clamp", tested: true, hardware: ["2 worm-drive hose clamps, bands up to 15 mm (1/2 in is 12.7 mm)", "2 M3 x 16 screws, one from the top and one from the bottom, into the nuts in the boom's tail. Or 1 M3 x 50 straight through, with a nut", "1 M3 x 30 socket-head screw, from the pole's seat into the nut in the tail's end. Its head sits in the recess in the seat", "3 M3 nuts of the kind chosen for the tail, pushed into its slots from the screws' side"],
+      print: "Print it tilted, lying on the chamfer across the block's corner and the socket's mouth, as the file has it, so the socket's layers wrap all the way round. ASA, 5 walls, 40-50% gyroid infill. The strap slots need supports inside them. Clearing the supports out of the slots takes some work with pliers and a pick, but it's doable. Check a strap slides through every slot before it goes outside." },
     pole: { name: "Painter pole", hardware: ["4 M3 x 40 bolts with nuts, joining the socket's plate to the arm", "1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket"], print: "Two pieces, each printed its best way. The arm stands on its block, socket up, and the pole socket lies tilted as the file has it, thread end up, the angle of the socket that's proven on a pole. Give it tree supports from the bed, and clear any from the thread." },
     grip: { name: "Hand grip", hardware: ["1 M3 x 40 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "Optional: a lanyard through the hole at the bottom"], print: "Stand it as the file has it, with the grip lying on the bed and the socket pointing up, and no supports." },
     tripod: { name: "Camera tripod", hardware: ["1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "1 1/4-20 UNC nut, 7/16 in (11.1 mm) across flats, dropped into the top"], print: "Stand it on the block, socket up, as the file has it, with no supports." },
@@ -5824,7 +5899,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
    * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, customText, mount, screws, pilot }
    */
   function planParts(design, opts) {
-    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, customText: "", mount: "mast", screws: false, pilot: SCREW.pilot }, opts);
+    const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, customText: "", mount: "mast", screws: false, pilot: SCREW.pilot, nut: "standard" }, opts);
     const rods = rodsOf(design, o.fit), sizes = boomSizes(rods), warnings = [];
     if (rods.length < 2) throw new Error("A boom needs at least two rods.");
     rods.forEach((r, i) => {
@@ -5909,7 +5984,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const safe = design.name.replace(/[^\w-]+/g, "_");
     const add = (id, name, solid, turn, print) => {
       // inPlace, for tests: left where it sits on the antenna, unturned and unscaled, so that parts can be fitted together
-      const placed = o.inPlace ? K.at(solid, [0, 0, 0]) : K.place(solid, turn, o.scale), b = placed.boundingBox();
+      // a turn can be a function, for turns about more than one axis in an order of its own
+      const placed = o.inPlace ? K.at(solid, [0, 0, 0]) : typeof turn === "function" ? K.place(turn(solid), null, o.scale) : K.place(solid, turn, o.scale), b = placed.boundingBox();
       if (placed.status() !== "NoError") throw new Error(`${name} didn't come out as a solid: ${placed.status()}`);
       out.push({ id, name, file: `${safe}_${id}.stl`, mesh: K.mesh(placed), volume: placed.volume(), genus: placed.genus(),
         size: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]], print });
@@ -5919,7 +5995,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     };
     try {
       sections.forEach((sec) => {
-        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, custom: plan.custom, screws: o.screws, pilot: o.pilot });
+        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, custom: plan.custom, screws: o.screws, pilot: o.pilot, nut: o.nut });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
         // a tapered piece is turned to lie on its bottom face, which slopes by the taper's angle
@@ -5929,7 +6005,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
           : "As the file has it, lying flat with its side up, and the joint's faces standing. A brim helps.");
       });
       const roll = rollFor(design.polarization), soft = o.soft !== false;
-      if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.mast.print);
+      // turned so the chamfer it lies on faces down: about z to square it with y, then -y onto the bed
+      if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll, soft), (m) => K.turn(K.turn(m, [0, 0, -BED_TILT]), [90, 0, 0]), MOUNTS.mast.print);
       if (o.mount === "pole") {
         add("pole_arm", "Painter pole arm", poleArm(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.pole.print);
         add("pole_socket", "Painter pole socket", poleSocket(K), [90 - POLE.tilt, 0, 0], MOUNTS.pole.print);
@@ -5944,13 +6021,13 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   /** How far the mast's centre ends up behind the reflector in the clamp, for the design's mast setting. */
-  const mastBehind = (d) => -CRADLE.apex + d * Math.SQRT1_2;
+  const mastBehind = (d) => { const { px } = clampAt(), R = CRADLE.seat; return d <= 2 * R ? -(px + R - d / 2) : -px + (d / 2 - R) / Math.sin(CRADLE.half * Math.PI / 180); };
 
   /** What to print and buy, as text to keep with the files. */
   function partsNotes(design, result) {
     const { plan, parts } = result, { o, rods, sections } = plan, L = [];
     const joints = sections.length - 1, driven = rods.find((r) => r.driven);
-    L.push(`${design.name}: printing and building`, "", "TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes. NOT YET PRINTED: the mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", "", "PRINTING", `0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
+    L.push(`${design.name}: printing and building`, "", "TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes, and the mast clamp, with the boom's tail (its nut slots and coax tunnel). NOT YET PRINTED: the other mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", "", "PRINTING", `The boom: 0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, ...(o.mount === "mast" ? ["The mast clamp: ASA, 5 walls, 40-50% gyroid infill, printed tilted as the file has it, with supports in its strap slots (below)."] : []), "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
       `X-Y hole compensation ${HOLE_COMP} mm for the boom and coupon: their holes are modelled for it and come out too small without it. A mount's fine with or without it.`,
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short. For SUNLU ASA it's estimated at 99.65%, from a printed boom. Other brands differ." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
     parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
@@ -5986,13 +6063,15 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         "In the models, a screw at a rod's middle changes nothing, because it sits where the field across the rod is zero. The two on the driven element move the tuning by about 1 MHz. Fit them all before you trim on the VNA, and leave them in.");
     }
     if (o.mount !== "none") L.push("", "MOUNTING", `Push the boom's tail into the socket until it stops, and fit the pin. The socket ends ${-MOUTH} mm behind the reflector, so the reflector stays in the boom, glued if you like.`);
+    if (o.mount === "mast") L.push("", "THE MAST CLAMP", MOUNTS.mast.print, `Before the boom goes in, push the three nuts (${(NUTS[o.nut] || NUTS.standard).name.toLowerCase()}) into the tail's slots from the screws' side, and run a screw through each to line it up. Then slide the tail in, and fit a short screw from the top and one from the bottom into the tail's nuts, or one long one straight through, and the back screw from the pole's seat into the nut in the tail's end. Strap it to the pole with two hose clamps through the curved slots, or through the extra exits into the V for a thin pole.`);
+    if (driven && plan.sections[0].x1 >= driven.x && !(plan.sections[0].prev)) L.push("", "THE COAX", `It runs in a tunnel from the solder window back under the boom, and out through the coax's side just in front of the reflector, then back along the outside of the socket. Thread it through before soldering, from the window end. ${TUNNEL.d} mm across: made for RG316 (2.5 mm) or thinner. Seal both ends with neutral cure silicone.`);
     L.push("", "HARDWARE");
     rods.forEach((r) => L.push(`  ${r.driven ? `${r.name}: 2 rods` : `${r.name}: 1 rod`}, ${r.d} mm ${r.material === "aluminium" ? "aluminum" : r.material}`));
     if (joints) {
       const grip = 2 * jointY(plan.sizes.w).thick - JOINT.bolt.headDepth - JOINT.bolt.nutDepth + JOINT.bolt.nut, bolt = [20, 25, 30, 35, 40, 50].find((n) => n >= grip) || Math.ceil(grip);
       L.push(`  ${2 * joints} M3 x ${bolt} socket-head bolts with nuts, across the joint${joints > 1 ? "s" : ""}. The heads and nuts sit in the recesses in the prongs`);
     }
-    if (driven) L.push("  Coax, soldered at the window at the driven element, running back along the groove");
+    if (driven) L.push("  Coax, RG316 or thinner, soldered at the window at the driven element, through the tunnel");
     if (o.screws) {
       const through = sections.flatMap((s) => (s.next ? s.next.through : []));
       const n = rods.filter((r) => !r.driven && !through.includes(r)).length + (driven && T.drivenScrews ? 2 : 0);
@@ -6026,7 +6105,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     return loading;
   }
 
-  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, MOUTH, SCREW, WINDOW, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt }, planParts, buildParts, partsNotes, mastBehind, loadManifold, partPlacing: placing });
+  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, MOUTH, SCREW, WINDOW, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt, NUTS }, planParts, buildParts, partsNotes, mastBehind, loadManifold, partPlacing: placing });
   YS.PARTS.JOINT = JOINT;
 })(typeof globalThis !== "undefined" ? globalThis : this);
 
@@ -10851,7 +10930,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   }
 
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
-  const PRINT = { mount: "mast", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, lengths: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+  const PRINT = { mount: "mast", nut: "standard", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, lengths: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
 
   /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
   function bedNow() {
@@ -10880,7 +10959,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, nut: PRINT.nut, screws: !!S.design.screws, pilot: PRINT.pilot };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -10892,12 +10971,13 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill warn">Mounts not yet</span> The mast clamp, painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
+            <p class="note"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill good">Mast clamp printed and tested</span> So is the boom's tail that goes in it, with its nut slots and coax tunnel. <span class="pill warn">Other mounts not yet</span> The painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
             <div>${bedFields("p")}</div>
             <p id="p-pieces" role="status" style="font-weight:600"></p>
             <div class="field-grid">
               <div class="field"><label for="p-mount">Mount</label><select class="sel" id="p-mount">${Object.keys(YS.PARTS.MOUNTS).map((k) => `<option value="${k}">${esc(YS.PARTS.MOUNTS[k].name)}</option>`).join("")}</select></div>
+              <div class="field"><label for="p-nut">Nuts in the boom's tail</label><select class="sel" id="p-nut">${Object.keys(YS.PARTS.NUTS).map((k) => `<option value="${k}">${esc(YS.PARTS.NUTS[k].name)}</option>`).join("")}</select></div>
               <div class="field"><label for="p-fit">Rod holes over the rod, mm ${A.help("printfit")}</label><input class="num" id="p-fit" inputmode="decimal"></div>
               <div class="field"><label for="p-shrink">Shrinkage</label><select class="sel" id="p-shrink"><option value="slicer">My slicer handles it</option><option value="bar">Scale from a test bar</option></select></div>
               <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
@@ -10974,7 +11054,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm${p.placing ? `. ${p.place.fits ? "" : '<span class="pill warn">Check that</span> '}${esc(p.placing)}` : ""}</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
       </tbody></table>
       <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
-      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. The boom has been printed, built and tuned; the mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it.</p>`;
+      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. The boom and the mast clamp have been printed, built and tested; the other mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it.</p>`;
     const name = S.design.name.replace(/[^\w-]+/g, "_");
     const notes = () => A.download(`${name}_build_notes.txt`, YS.partsNotes(S.design, R), "text/plain");
     const one = (p) => A.download(p.file, YS.meshToStl(p.mesh, p.id), "model/stl");
@@ -11045,6 +11125,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       const changed = () => { renderPrintPlan(); drawPart(); };
       $("#p-mount").value = PRINT.mount;
       $("#p-mount").onchange = (e) => { PRINT.mount = e.target.value; changed(); };
+      $("#p-nut").value = PRINT.nut;
+      $("#p-nut").onchange = (e) => { PRINT.nut = e.target.value; changed(); };
       bindBed("p", changed);
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });

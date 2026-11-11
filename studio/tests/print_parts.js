@@ -223,7 +223,7 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
       const boom = solidOf(r.parts[0]), m = solidOf(r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "pole_socket"));
       const a = Math.atan(r.plan.taper.m), out = [2, 10, 30].map((d) => Manifold.intersection(boom.translate([d * Math.cos(a), 0, d * Math.sin(a)]), m).volume());
       truth(`${mount}: the tail seats in the socket, and slides out along its faces`, Manifold.intersection(boom, m).volume() < 0.01 && out.every((v) => v < 0.01), out.map((v) => v.toFixed(3)).join(" "));
-      truth(`${mount}: the socket stops behind the reflector, which stays in the boom`, !inside(r.parts.find((p) => p.id === m.id || (!p.id.startsWith("boom") && p.id !== "pole_socket")).mesh, 0, 0, 0) && (() => { const q = r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "pole_socket"); return q.mesh.t.flat().every((v) => v[0] <= MOUTH + 1e-3); })());
+      truth(`${mount}: the socket stops behind the reflector, which stays in the boom`, !inside(r.parts.find((p) => p.id === m.id || (!p.id.startsWith("boom") && p.id !== "pole_socket")).mesh, 0, 0, 0) && (() => { const q = r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "pole_socket"); return q.mesh.t.flat().every((v) => v[0] <= MOUTH + (mount === "mast" ? 1 : 1e-3)); })());      // the mast clamp's kickstand reaches 0.8 mm past the mouth, beside the boom
     }
   }
   const notes = YS.partsNotes(duv, full);

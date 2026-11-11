@@ -4849,7 +4849,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const CRADLE = { len: 40, w: 80, h: 60, seat: 20, half: 49.5, apexIn: 28.1 };   // the owner's v3 clamp (2026-11-10): the block behind the socket, its V's round seat (radius), the V's faces' angle off the boom, and the V's point in from the block's back
   const STRAP = { r: 28.67, t: 3.5, w: 16, z: 16, ahead: 2.74, exit: [24, 27] };   // its strap slots: an arc round the pole (mid radius, thickness), each 16 mm wide at z = +-16, the arc's centre ahead of the pole's, and the extra exits into the V for small poles (y)
   const FILLET = 5;                // mm: where the socket meets the clamp's block
-  const BED_TILT = Math.atan2(8, 11) * 180 / Math.PI;   // degrees: the clamp prints lying on a chamfer across its block's corner and the socket's mouth
+  const BED_TILT = 35;             // degrees, as the owner's v3: the clamp prints lying on a chamfer across its block's corner and the socket's mouth
   const NUTS = { thin: { name: "Thin square nuts, 5.3 x 1.75 mm", flats: 5.3, t: 1.75 }, standard: { name: "Standard square nuts, 5.4 x 2.4 mm", flats: 5.4, t: 2.4 }, hex: { name: "Hex nuts, 5.5 mm across flats", flats: 5.5, t: 2.4 } };
   const NUT_SLOT = { play: 0.3, in: 10 };   // the tail's nut slots: room round a nut and in its thickness, and how far in from the top, the bottom, and the tail's end
   const TUNNEL = { d: 3.2, above: 0.5, exit: 6, bend: 26 };   // the coax's tunnel, for RG316: across, how far above the window's floor its inner side runs, where it leaves the coax's face in front of the reflector, and the bend's length
@@ -5619,6 +5619,12 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       fil.push(K.cut(K.box(sx0 - 0.01, sx0 + F, sg > 0 ? ry - 0.01 : -ry - F, sg > 0 ? ry + F : -ry + 0.01, -rz, rz), [K.cyl(sx0 + F, sg * (ry + F), -rz - 1, 2 * F, 2 * rz + 2)]));
       fil.push(K.cut(K.box(sx0 - 0.01, sx0 + F, -ry, ry, sg > 0 ? rz - 0.01 : -rz - F, sg > 0 ? rz + F : -rz + 0.01), [K.cylY(sx0 + F, -ry - 1, sg * (rz + F), 2 * F, 2 * ry + 2)]));
     });
+    // and the four corners where those rounds meet, each a quarter of the round's profile turned about the socket's corner
+    const prof = [[0, 0], [F, 0], ...Array.from({ length: 9 }, (_, i) => { const a = -Math.PI / 2 - i / 8 * Math.PI / 2; return [F + F * Math.cos(a), F + F * Math.sin(a)]; })];
+    [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([a, b]) => {
+      const ring = K.at(K.turn(K.revolve(prof), [0, 90, 0]), [sx0 - 0.01, a * ry, b * rz]);
+      fil.push(K.meet(ring, K.box(sx0 - 0.02, sx0 + F, a > 0 ? ry - 0.01 : -ry - F, a > 0 ? ry + F : -ry + 0.01, b > 0 ? rz - 0.01 : -rz - F, b > 0 ? rz + F : -rz + 0.01)));
+    });
     let s = K.fuse([sock, block, ...fil]);
     if (!roll) s = K.cut(s, socketCuts(K, rods, sizes, front, W2 / 2, true));      // the fillets mustn't close the socket's end
     const cuts = [];
@@ -5642,11 +5648,16 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     const zc = sizes.taper.zb(REAR + 7) + sizes.taper.Ht / 2;
     cuts.push(K.cylX(px, 0, zc, M3, REAR + 2 - px), K.cylX(px, 0, zc, 7.15, sx0 - 14 - px));
     // the corner the print lies on, across the block and the socket's mouth, and the other front corner's chamfer
-    const A = [sx0 - 11, -VW / 2], n = Math.hypot(11, 8), u = [11 / n, 8 / n], o = [u[1], -u[0]];
+    const A = [sx0 - 11, -VW / 2], u = [Math.cos(BED_TILT * Math.PI / 180), Math.sin(BED_TILT * Math.PI / 180)], o = [u[1], -u[0]];
     const far = (k, m) => [A[0] + u[0] * k + o[0] * m, A[1] + u[1] * k + o[1] * m];
     cuts.push(K.prism([far(-200, 0), far(200, 0), far(200, 200), far(-200, 200)], -vz - 50, vz + 50));
     cuts.push(K.prism([[sx0 + 0.5, VW / 2 - 11], [sx0 + 0.5, VW / 2 + 1], [sx0 - 8.7, VW / 2 + 1]], -vz, vz));
-    return K.cut(s, cuts);
+    s = K.cut(s, cuts);
+    // the owner's kickstand: a little foot at the socket's mouth, out to the bed's plane, so the socket's end stands on the bed
+    // instead of being cut away by it
+    const onBed = (y) => [A[0] + (y - A[1]) / Math.tan(BED_TILT * Math.PI / 180), y];
+    const foot = K.prism([[front - 2.2, -ry], onBed(-ry - 1.02), onBed(-ry + 0.56), [front, -ry + 1.7], [front - 2.5, -ry + 1.7]], -rz, rz);
+    return K.fuse([s, foot]);
   }
 
   /* A socket, an arm behind the reflector, and a block for the hand or the tripod, all made with the rods upright. */

@@ -7,7 +7,7 @@
  * every rod at the right place, joints clear of the rods, and marks at the right lengths. Exits non-zero on a failure.
  */
 const fs = require("fs"), path = require("path");
-for (const f of ["guide", "pole-socket", "parts"]) require(path.join(__dirname, "..", "src", f + ".js"));
+for (const f of ["solver", "rf", "guide", "pole-socket", "mast-clamp", "parts"]) require(path.join(__dirname, "..", "src", f + ".js"));
 const YS = globalThis.YS;
 
 let failed = 0;
@@ -223,7 +223,7 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
       const boom = solidOf(r.parts[0]), m = solidOf(r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "pole_socket"));
       const a = Math.atan(r.plan.taper.m), out = [2, 10, 30].map((d) => Manifold.intersection(boom.translate([d * Math.cos(a), 0, d * Math.sin(a)]), m).volume());
       truth(`${mount}: the tail seats in the socket, and slides out along its faces`, Manifold.intersection(boom, m).volume() < 0.01 && out.every((v) => v < 0.01), out.map((v) => v.toFixed(3)).join(" "));
-      truth(`${mount}: the socket stops behind the reflector, which stays in the boom`, !inside(r.parts.find((p) => p.id === m.id || (!p.id.startsWith("boom") && p.id !== "pole_socket")).mesh, 0, 0, 0) && (() => { const q = r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "pole_socket"); return q.mesh.t.flat().every((v) => v[0] <= MOUTH + (mount === "mast" ? 1 : 1e-3)); })());      // the mast clamp's kickstand reaches 0.8 mm past the mouth, beside the boom
+      truth(`${mount}: the socket stops behind the reflector, which stays in the boom`, !inside(r.parts.find((p) => p.id === m.id || (!p.id.startsWith("boom") && p.id !== "pole_socket")).mesh, 0, 0, 0) && (() => { const q = r.parts.find((p) => !p.id.startsWith("boom") && p.id !== "pole_socket"); return q.mesh.t.flat().every((v) => v[0] <= MOUTH + 1e-3); })());
     }
   }
   const notes = YS.partsNotes(duv, full);
@@ -292,7 +292,7 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
   }
   truth("the bolts listed still reach through a nut in the recess", /M3 x 30[^"]*recess/.test(JSON.stringify(YS.PARTS.MOUNTS.tripod.hardware)) && /M3 x 40[^"]*recess/.test(JSON.stringify(YS.PARTS.MOUNTS.grip.hardware)) && 26.4 + 2.4 <= 30 && 30 + 2.4 <= 40);
 
-  console.log("\n2e. Nothing flat hangs in the air as printed, but the tops of round holes and the mast clamp's two slots, which are short bridges");
+  console.log("\n2e. Nothing flat hangs in the air as printed, but the tops of round holes");
   const flatArea = (mesh) => mesh.t.reduce((sum, [a, b, c]) => {
     const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
     const nx = u[1] * v[2] - u[2] * v[1], ny = u[2] * v[0] - u[0] * v[2], nz = u[0] * v[1] - u[1] * v[0], len = Math.hypot(nx, ny, nz);
@@ -300,23 +300,68 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
   }, 0);
   // the pole arm's four bolt holes run across its block, and their round tops grew with the taller socket the tapered boom needs
   for (const pol of ["vertical", "horizontal"]) {
-    for (const [mount, limit] of [["mast", 2400], ["pole", 90], ["grip", 60], ["tripod", 60]]) {
+    for (const [mount, limit] of [["mast", 30], ["pole", 90], ["grip", 60], ["tripod", 60]]) {
       const m = YS.buildParts(wasm, Object.assign({}, duv, { polarization: pol }), { mount }).parts.find((p) => !p.id.startsWith("boom") && p.id !== "coupon");
       truth(`${pol}, ${mount}`, flatArea(m.mesh) < limit, `${flatArea(m.mesh).toFixed(0)} mm2 flat, under ${limit}`);
     }
   }
 
-  console.log("\n2f. The mast clamp, the owner's v3: tilted on the bed, its V's round seat, curved strap slots, the back screw");
+  console.log("\n2f. The mast clamp as made here, for a boom the owner's doesn't fit, in v5's shape: on its keel, its V's round seat, curved strap slots, the back screw");
   {
-    const r = YS.buildParts(wasm, duv, { mount: "mast", bed: BED, inPlace: true, coupon: false }), m = by(r, "mast_mount"), hit = (x, y, z) => inside(m.mesh, x, y, z);
+    const r = YS.buildParts(wasm, duv, { mount: "mast", bed: BED, inPlace: true, coupon: false, ownersClamp: false }), m = by(r, "mast_mount"), hit = (x, y, z) => inside(m.mesh, x, y, z);
     const px = YS.mastBehind(40);
     truth("a 40 mm pole sits in the seat about 73 mm behind the reflector", near(px, 73.5, 1), px.toFixed(1));
     truth("the seat is round, and open to the back", !hit(-px + 19.5, 0, 0) && hit(-px + 20.5, 0, 25) && !hit(-px - 5, 0, 0));
     truth("the strap slots curve round the pole, 16 mm wide at +-16 mm", [8.5, 23.5, -8.5, -23.5].every((z) => !hit(-px + 2.74 + 28.67, 0, z)) && hit(-px + 2.74 + 28.67, 0, 4.5) && hit(-px + 2.74 + 28.67, 0, 26) && hit(-px + 2.74 + 26.5, 0, 16));
     truth("the back screw runs from the seat into the tail's end, its head in a recess", !hit(REAR - 1, 0, r.plan.taper.zb(REAR + 7) + r.plan.taper.Ht / 2) && !hit(-px + 21, 3, r.plan.taper.zb(REAR + 7) + r.plan.taper.Ht / 2));
     truth("rounded where the socket meets the block", hit(REAR - 3 + 0.5, 11.2 + 0.5, 0) && !hit(REAR - 3 + 4, 11.2 + 4, 0));
-    const f = by(YS.buildParts(wasm, duv, { mount: "mast", bed: BED, coupon: false }), "mast_mount");
-    truth("as printed, it lies on its chamfer, with the socket's mouth on the bed too", f.mesh.t.some((t) => t.every((v) => v[2] < 0.01) && t.some((v) => v[0] > 40)), f.size.map((v) => v.toFixed(1)).join(" x "));
+    const f = by(YS.buildParts(wasm, duv, { mount: "mast", bed: BED, coupon: false, ownersClamp: false }), "mast_mount");
+    // the keel: its point 22.5 mm in from the block's back and 23.65 below its bottom, 45-degree faces, the front corners rounded 20 mm
+    const bx0 = REAR - 3 - 40, VH = 60, az = -VH / 2 - 23.65;
+    truth("a keel under the block, a 90-degree V across its width", hit(bx0 + 22.5, 35, az + 4) && !hit(bx0 + 22.5 - 6, 35, az + 4) && !hit(bx0 + 22.5 + 6, 35, az + 4) && hit(bx0 + 2, 35, az + 20.5 + 0.5) && !hit(bx0 + 2, 35, az + 20.5 - 0.5));      // its back face, just under the block's back edge
+    truth("the block's front corners rounded 20 mm", !hit(REAR - 3 - 2, 39, 0) && hit(REAR - 3 - 21, 39, 0) && hit(REAR - 3 - 2, 25, 0));
+    // as printed: on the keel's back face, the socket pointing up at 45, and nothing flatter than 40 degrees hanging over the bed
+    let bed = 0, flat = 0;
+    for (const [a, b, c] of f.mesh.t) {
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      const nx = u[1] * v[2] - u[2] * v[1], ny = u[2] * v[0] - u[0] * v[2], nz = u[0] * v[1] - u[1] * v[0], len = Math.hypot(nx, ny, nz);
+      if (!len) continue;
+      if (Math.max(a[2], b[2], c[2]) < 0.01) bed += len / 2;
+      else if (-nz / len > Math.cos(40 * Math.PI / 180) && Math.min(a[2], b[2], c[2]) > 0.3) flat += len / 2;      // hangs at under 40 degrees
+    }
+    truth("as printed, it stands on the keel's back face", bed > 600, `${bed.toFixed(0)} mm2 on the bed, ${f.size.map((v) => v.toFixed(1)).join(" x ")}`);
+    truth("and nothing hangs at under 40 degrees but the tops of round holes: no supports", flat < 150, `${flat.toFixed(0)} mm2`);
+  }
+
+  console.log("\n2g. The owner's own clamp, v5, unchanged, wherever a boom's tail fits it: every standard boom's tail is 38.3 mm");
+  {
+    const own = (d, o) => by(YS.buildParts(wasm, d, Object.assign({ mount: "mast", bed: BED, coupon: false }, o)), "mast_mount");
+    const tails = Object.keys(YS.PRESETS).map((k) => [k, YS.planParts(YS.PRESETS[k](), { bed: BED }).taper.Ht]);
+    truth("the tail is 38.3 mm on every tapered standard boom", tails.every(([k, H]) => k === "two" || k === "seventy" || Math.abs(H - 38.3) < 1e-9), tails.map(([k, H]) => `${k} ${H.toFixed(1)}`).join(", "));
+    const d = own(duv);
+    truth("the DuvYagi gets the owner's clamp, unchanged", d.owners && Math.abs(d.volume - 160454) < 5, `${d.volume.toFixed(0)} mm3, ${d.mesh.t.length} triangles`);
+    const g = own(YS.PRESETS.gcarc());
+    truth("so do the 8 dBd DuvYagi, GCARC's and the EU 868 boom, tipped a little", g.owners && own(YS.PRESETS.duvyagi8()).owners && own(YS.PRESETS.eu868()).owners, `${g.tip.toFixed(2)} degrees nose-down`);
+    truth("but rods horizontal, or a bigger boom, get one made here", !own(Object.assign({}, duv, { polarization: "horizontal" })).owners && !own(YS.PRESETS.seventy()).owners);
+    truth("the notes say which", /the clamp that was printed and tested, unchanged/.test(YS.partsNotes(duv, YS.buildParts(wasm, duv, { mount: "mast", bed: BED, coupon: false }))) && /made here in the same shape/.test(YS.partsNotes(YS.PRESETS.seventy(), YS.buildParts(wasm, YS.PRESETS.seventy(), { mount: "mast", bed: BED, coupon: false }))));
+    // the screws line up: each of the clamp's holes, found from its edges, carries on through the tail's own, on a steeper tail
+    // too (a bed that won't take the boom corner to corner makes a shorter first piece and a steeper taper)
+    const openMid = (mesh, along, fixed, from, to) => {      // the middle of the first gap along a line, from..to
+      let a = null, b = null;
+      for (let t = from; t <= to; t += 0.02) { const open = !inside(mesh, ...along(t, fixed)); if (open && a === null) a = t; if (!open && a !== null) { b = t; break; } }
+      return a === null || b === null ? NaN : (a + b) / 2;
+    };
+    for (const [k, bed] of [["duvyagi", BED], ["gcarc", BED], ["duvyagi", { x: 256, y: 256, z: 256 }]]) {
+      const r = YS.buildParts(wasm, YS.PRESETS[k](), { mount: "mast", bed, coupon: false, inPlace: true }), m = by(r, "mast_mount"), boom = r.parts[0], T = r.plan.taper, px = REAR + 7;
+      const zt = T.zb(px) + T.Ht + 1.8, zb = T.zb(px) - 1.8, alongX = (t, z) => [t, 0, z], alongZ = (t, x) => [x, 0, t];
+      const xt = openMid(m.mesh, alongX, zt, px - 3, px + 3), xb = openMid(m.mesh, alongX, zb, px - 3, px + 3);
+      const zc = T.zb(px) + T.Ht / 2, z1 = openMid(m.mesh, alongZ, REAR - 5, zc - 4, zc + 4), z2 = openMid(m.mesh, alongZ, REAR - 12, zc - 4, zc + 4);
+      const ring = [[0, 0], [0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8]], solidAt = (x, y, z) => inside(m.mesh, x, y, z) || inside(boom.mesh, x, y, z);
+      let clearV = Number.isFinite(xt + xb), clearB = Number.isFinite(z1 + z2);
+      for (let z = zb; clearV && z <= zt; z += 0.5) { const x = xb + (xt - xb) * (z - zb) / (zt - zb); if (ring.some(([dx, dy]) => solidAt(x + dx, dy, z))) clearV = false; }
+      for (let x = REAR - 12; clearB && x <= REAR + 6; x += 0.5) { const z = z2 + (z1 - z2) * (x - (REAR - 12)) / 7; if (ring.some(([dy, dz]) => solidAt(x, dy, z + dz))) clearB = false; }
+      truth(`${k}${bed === BED ? "" : ", a steeper taper"}: the clamp's vertical screw hole and its back one carry on through the tail's, 1.6 mm clear across`, clearV && clearB, `tipped ${m.tip.toFixed(2)} degrees; the vertical hole's ends ${(xt - px).toFixed(2)}, ${(xb - px).toFixed(2)} mm off the tail's straight line`);
+    }
   }
 
   console.log("\n3. Scale: a filament that shrinks 0.36%");

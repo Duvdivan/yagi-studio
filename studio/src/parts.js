@@ -19,6 +19,7 @@
   const BOOM_W = 16, BOOM_H = 20;  // the boom's width (y) and height (z), for rods up to 3.2 mm: the hole's length holds the rod straight
   const REAR = -32;                // the boom's rear end, from the reflector: a tail for a mount's socket, which stops behind the reflector
   const MOUTH = -5;                // where a mount's socket ends, behind the reflector, so the reflector stays glued in the boom while it's mounted
+  const TAIL_H = 38.3;             // mm: the tail's height on every tapered boom whose driven element needs no more, so that one clamp fits them all (the owner, 2026-11-11: the tested DuvYagi's)
   const FRONT = 10;                // how far it runs past the last rod
   const FIT = 0.05;                // rod holes over the rod's diameter, before hole compensation
   const HOLE_COMP = 0.125;         // the slicer's X-Y hole compensation these are modelled for, per side
@@ -73,7 +74,8 @@
   const CRADLE = { len: 40, w: 80, h: 60, seat: 20, half: 49.5, apexIn: 28.1 };   // the owner's v3 clamp (2026-11-10): the block behind the socket, its V's round seat (radius), the V's faces' angle off the boom, and the V's point in from the block's back
   const STRAP = { r: 28.67, t: 3.5, w: 16, z: 16, ahead: 2.74, exit: [24, 27] };   // its strap slots: an arc round the pole (mid radius, thickness), each 16 mm wide at z = +-16, the arc's centre ahead of the pole's, and the extra exits into the V for small poles (y)
   const FILLET = 5;                // mm: where the socket meets the clamp's block
-  const BED_TILT = 35;             // degrees, as the owner's v3: the clamp prints lying on a chamfer across its block's corner and the socket's mouth
+  const KEEL = { in: 22.5, below: 23.65, r: 3, tilt: 45 };   // the owner's v5 clamp (2026-11-11, printed well with no supports): a 90-degree keel under the block, its point this far in from the block's back and below its bottom (mm), rounded (mm); it prints on the keel's back face, tilted this many degrees
+  const CORNER_R = 20;             // mm: v5's rounds on the block's two front corners
   const NUTS = { thin: { name: "Thin square nuts, 5.3 x 1.75 mm", flats: 5.3, t: 1.75 }, standard: { name: "Standard square nuts, 5.4 x 2.4 mm", flats: 5.4, t: 2.4 }, hex: { name: "Hex nuts, 5.5 mm across flats", flats: 5.5, t: 2.4 } };
   const NUT_SLOT = { play: 0.3, in: 10 };   // the tail's nut slots: room round a nut and in its thickness, and how far in from the top, the bottom, and the tail's end
   const TUNNEL = { d: 3.2, above: 0.5, exit: 6, bend: 26 };   // the coax's tunnel, for RG316: across, how far above the window's floor its inner side runs, where it leaves the coax's face in front of the reflector, and the bend's length
@@ -165,9 +167,9 @@
       turn: (m, r) => keep(m.rotate(r)),
       at: (m, t) => keep(m.translate(t)),
       /* A solid from base-64 Float32 positions and Uint32 triangles. */
-      fromData: (positions, triangles) => {
+      fromData: (positions, triangles, bits) => {
         const bytes = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u.buffer; };
-        return keep(new Manifold(new wasm.Mesh({ numProp: 3, vertProperties: new Float32Array(bytes(positions)), triVerts: new Uint32Array(bytes(triangles)) })));
+        return keep(new Manifold(new wasm.Mesh({ numProp: 3, vertProperties: new Float32Array(bytes(positions)), triVerts: Uint32Array.from(bits === 16 ? new Uint16Array(bytes(triangles)) : new Uint32Array(bytes(triangles))) })));
       },
       cut: (a, list) => (list.length ? keep(a.subtract(keep(Manifold.union(list)))) : a),
       fuse: (list) => keep(Manifold.union(list)),
@@ -286,7 +288,7 @@
     // the layout alone, which the check notches use with or without the gauge
     // On a tapered boom the tail's top slopes down behind the socket's mouth, so the V carries on along it to the rear end, as a
     // second V: then its only end is the wall, and nobody measures from the wrong end (the owner's catch, 2026-11-07).
-    const tail = taper.m ? { x0: REAR - 1, x1: MOUTH + 0.5, px: MOUTH, pz: taper.hz(MOUTH), ang: -taper.ang } : null;
+    const tail = taper.m ? { x0: REAR - 1, x1: MOUTH + 0.5, px: MOUTH, pz: taper.top, ang: -taper.ang } : null;
     // a 0 on the top just past the wall, on the V's line, where lengths are measured from
     const zero = { x: end + 1.2, y: sizes.chY - 1.75, k: 0.7 };
     const layout = { stop, end, vFrom, top: taper.hz(end), ang: taper.ang, marks: [], tail, zero };
@@ -434,6 +436,10 @@
    * sloped face, so its holes stand a degree or two off vertical. Behind the reflector, the tail that goes in a mount's socket has
    * its two faces parallel, carrying on the bottom face's slope, so that it slides in: a socket can't follow a boom that widens
    * going in. hz(x) is the half height from the socket's mouth forward, and zb(x) the bottom face, anywhere on the section.
+   * The tail is TAIL_H tall whatever the boom (the owner's point, 2026-11-11): the slope that gives the driven element its
+   * window would otherwise carry on behind it, and leave each design's tail a different height, from how far its driven element
+   * is from the reflector. Only the top steps at the socket's mouth, where the socket hides it, so the bottom stays one flat face
+   * to print on and nothing in front of the mouth changes. A boom whose driven element needs more gets a tail that tall.
    */
   function planTaper(rods, sections, sizes) {
     const h2 = sizes.h / 2, s0 = sections[0], end = s0.next ? s0.next.t : s0.x1, driven = rods.find((r) => r.driven);
@@ -445,8 +451,9 @@
       if (m > most) { m = most; capped = true; }
       win = Math.min(WINDOW[1], Math.max(WINDOW_SHORT, 2 * (h2 + m * (end - driven.x)) - sizes.h));
     }
-    const hz = (x) => h2 + m * Math.max(0, end - x), zb = (x) => -hz(x), Ht = 2 * hz(MOUTH);
-    const t = { m, end, ang: Math.atan(m) * 180 / Math.PI, hz, zb, Ht, win, capped, half: hz(REAR), peak: Math.max(sizes.h, Ht) };
+    const hz = (x) => h2 + m * Math.max(0, end - x), zb = (x) => -hz(x);
+    const Ht = m ? Math.max(TAIL_H, 2 * hz(driven.x)) : 2 * h2, top = zb(MOUTH) + Ht;      // the tail's height, and its top at the mouth
+    const t = { m, end, ang: Math.atan(m) * 180 / Math.PI, hz, zb, Ht, top, win, capped, half: Math.max(hz(REAR), top), peak: Math.max(sizes.h, Ht, 2 * hz(MOUTH)) };
     if (driven && driven.x < end) {
       // the driven element's screws go halfway along the plastic each half passes through
       const hzD = hz(driven.x), zs = (win / 2 + hzD) / 2, big = SCREW.pilots[SCREW.pilots.length - 1] / 2;
@@ -458,14 +465,14 @@
   /* How long the first section is on the bed, lying on its sloped face: its ends lean, so it's a little longer than along the boom. */
   function leanLength(T, s, h) {
     const a = Math.atan(T.m), c = Math.cos(a), sn = Math.sin(a);
-    const xs = [[REAR, T.zb(REAR)], [REAR, T.zb(REAR) + T.Ht], [MOUTH, T.hz(MOUTH)], [s.x1, -h / 2], [s.x1, h / 2]].map(([x, z]) => x * c + z * sn);
+    const xs = [[REAR, T.zb(REAR)], [REAR, T.zb(REAR) + T.Ht], [MOUTH, T.hz(MOUTH)], [MOUTH, T.top], [s.x1, -h / 2], [s.x1, h / 2]].map(([x, z]) => x * c + z * sn);
     return Math.max(...xs) - Math.min(...xs);
   }
 
   /* The taper's outline in (x, z), to cut the first section to. */
   const taperOutline = (T, h2) => {
     const x0 = REAR - 2, far = T.end + 100;
-    return [[x0, T.zb(x0)], [T.end, -h2], [far, -h2], [far, h2], [T.end, h2], [MOUTH, T.hz(MOUTH)], [x0, T.zb(x0) + T.Ht]];
+    return [[x0, T.zb(x0)], [T.end, -h2], [far, -h2], [far, h2], [T.end, h2], [MOUTH, T.hz(MOUTH)], [MOUTH, T.top], [x0, T.zb(x0) + T.Ht]];
   };
 
   /* A hole under M3 from the boom's back into a rod's hole, with a lead-in, so that a screw cuts its own thread and presses on the
@@ -581,7 +588,14 @@
     // a tunnel when the driven element is on the first piece; past a joint, the old open groove
     if (driven && sec.i === 0 && driven.x <= b) cuts.push(coaxTunnel(K, driven, w));
     else if (driven && sec.x0 < driven.x) cuts.push(coaxGroove(K, sec.prev ? a : sec.x0 - 1, Math.min(driven.x, b), y));
-    if (sec.i === 0) cuts.push(K.cyl(REAR + 7, 0, -zz, M3_BOOM, 2 * zz), ...tailLock(K, T, opts.nut));      // pins a mount
+    if (sec.i === 0) {
+      // pins a mount. In the owner's clamp, the tail's holes and nuts turn and move to meet the clamp's own screws, which a
+      // steeper tail tips a little in its socket
+      let lock = [K.cyl(REAR + 7, 0, -zz, M3_BOOM, 2 * zz), ...tailLock(K, T, opts.nut)];
+      const f = opts.clamp, px = REAR + 7, zc = T.zb(px) + T.Ht / 2;
+      if (f) lock = lock.map((c) => K.at(K.turn(K.at(c, [-px, 0, -zc]), [0, f.turn, 0]), [f.screws[0], 0, f.screws[1]]));
+      cuts.push(...lock);
+    }
     // screws from the back, at each rod's middle, where they don't change the antenna; the driven element's either side of its window.
     // Not on a rod through a joint's tongue, where the prongs are in the way.
     if (opts.screws) {
@@ -825,9 +839,11 @@
   /* The owner's v3 clamp (designed in Fusion from the mock-up, printed and tested on the DuvYagi, 2026-11-10). The socket runs straight
      into a block, with rounded corners where they meet. The block has a V with a round seat for the pole, two strap slots that curve
      round the pole and run out along the V's faces to the block's back corners, with extra exits into the V for a small pole, and an
-     M3 along the boom's middle from the seat into the tail's back nut. It prints tilted, lying on a chamfer across one front corner of
-     the block and the socket's mouth, so the socket's layers wrap round it; the slots then need supports. Pinned by short screws
-     into the tail's nuts, or a long one straight through. */
+     M3 along the boom's middle from the seat into the tail's back nut. A keel under the block, a 90-degree V across its width, is what
+     it prints on: lying on the keel's back face, the socket points up and back at 45 degrees, and the slots' roofs, the block's back
+     and the socket's underside all slope at 45, so it needs no supports at all (the owner's v5, 2026-11-11). Its layers then run
+     across the socket and the block's arms, where a fall or a twist would break it. Pinned by short screws into the tail's nuts, or a
+     long one straight through. */
   const clampAt = () => { const bx0 = REAR - WALL - CRADLE.len, apex = bx0 + CRADLE.apexIn; return { bx0, apex, px: apex - CRADLE.seat / Math.sin(CRADLE.half * Math.PI / 180) }; };
 
   function mastMount(K, rods, sizes, roll, soft) {
@@ -837,6 +853,11 @@
     sock = K.cut(sock, socketCuts(K, rods, sizes, front, W2 / 2, true));
     sock = rolled(K, sock, roll);
     const block = K.box(bx0, sx0, -VW / 2, VW / 2, -VH / 2, VH / 2);
+    // the keel: 45-degree faces down to a rounded point, its back face just under the block's back edge
+    const ax = bx0 + KEEL.in, az = -VH / 2 - KEEL.below, kr = KEEL.r, kc = az + kr * Math.SQRT2;
+    const keel = K.acrossY([[bx0, -VH / 2 + 0.5], [bx0, az + (ax - bx0)],
+      ...steps(-135, -45, 8).map((d) => [ax + kr * Math.cos(d * Math.PI / 180), kc + kr * Math.sin(d * Math.PI / 180)]),
+      [sx0, az + (sx0 - ax)], [sx0, -VH / 2 + 0.5]], -VW / 2, VW / 2);
     // rounded where the socket meets the block, on all four sides
     const F = FILLET, fil = [];
     [-1, 1].forEach((sg) => {
@@ -849,11 +870,11 @@
       const ring = K.at(K.turn(K.revolve(prof), [0, 90, 0]), [sx0 - 0.01, a * ry, b * rz]);
       fil.push(K.meet(ring, K.box(sx0 - 0.02, sx0 + F, a > 0 ? ry - 0.01 : -ry - F, a > 0 ? ry + F : -ry + 0.01, b > 0 ? rz - 0.01 : -rz - F, b > 0 ? rz + F : -rz + 0.01)));
     });
-    let s = K.fuse([sock, block, ...fil]);
+    let s = K.fuse([sock, block, keel, ...fil]);
     if (!roll) s = K.cut(s, socketCuts(K, rods, sizes, front, W2 / 2, true));      // the fillets mustn't close the socket's end
     const cuts = [];
     // the V, its point rounded into a seat
-    const t = Math.tan(CRADLE.half * Math.PI / 180), back = bx0 - 1, wide = (apex - back) * t, seat = [], vz = VH / 2 + 1;
+    const t = Math.tan(CRADLE.half * Math.PI / 180), back = bx0 - 1, wide = (apex - back) * t, seat = [], vz = VH / 2 + KEEL.below + 2;
     for (let i = 0; i < 48; i++) { const a = i / 48 * 2 * Math.PI; seat.push([px + CRADLE.seat * Math.cos(a), CRADLE.seat * Math.sin(a)]); }
     cuts.push(K.hull([...seat, [back, -wide], [back, wide]].flatMap(([x, y]) => [[x, y, -vz], [x, y, vz]])));
     // the strap slots: an arc round the pole, legs out along the V's faces, and exits into the V
@@ -871,17 +892,37 @@
     // the M3 from the seat into the tail's back nut, its head in a recess opening into the seat
     const zc = sizes.taper.zb(REAR + 7) + sizes.taper.Ht / 2;
     cuts.push(K.cylX(px, 0, zc, M3, REAR + 2 - px), K.cylX(px, 0, zc, 7.15, sx0 - 14 - px));
-    // the corner the print lies on, across the block and the socket's mouth, and the other front corner's chamfer
-    const A = [sx0 - 11, -VW / 2], u = [Math.cos(BED_TILT * Math.PI / 180), Math.sin(BED_TILT * Math.PI / 180)], o = [u[1], -u[0]];
-    const far = (k, m) => [A[0] + u[0] * k + o[0] * m, A[1] + u[1] * k + o[1] * m];
-    cuts.push(K.prism([far(-200, 0), far(200, 0), far(200, 200), far(-200, 200)], -vz - 50, vz + 50));
-    cuts.push(K.prism([[sx0 + 0.5, VW / 2 - 11], [sx0 + 0.5, VW / 2 + 1], [sx0 - 8.7, VW / 2 + 1]], -vz, vz));
-    s = K.cut(s, cuts);
-    // the owner's kickstand: a little foot at the socket's mouth, out to the bed's plane, so the socket's end stands on the bed
-    // instead of being cut away by it
-    const onBed = (y) => [A[0] + (y - A[1]) / Math.tan(BED_TILT * Math.PI / 180), y];
-    const foot = K.prism([[front - 2.2, -ry], onBed(-ry - 1.02), onBed(-ry + 0.56), [front, -ry + 1.7], [front - 2.5, -ry + 1.7]], -rz, rz);
-    return K.fuse([s, foot]);
+    // the block's two front corners rounded, top to keel
+    const R = CORNER_R;
+    [-1, 1].forEach((sg) => cuts.push(K.cut(K.box(sx0 - R, sx0 + 1, sg > 0 ? VW / 2 - R : -VW / 2 - 1, sg > 0 ? VW / 2 + 1 : -VW / 2 + R, -vz, vz),
+      [K.cyl(sx0 - R, sg * (VW / 2 - R), -vz - 1, 2 * R, 2 * vz + 2)])));
+    return K.cut(s, cuts);
+  }
+
+  /* The owner's own clamp, v5, unchanged (src/mast-clamp.js), wherever a boom's tail fits it: the standard tail, rods vertical, on
+     the standard boom's width. Its socket is a level box a little taller than the tail, which holds the tail's slope by its
+     diagonal corners, so a tail sloping more than the box allows tips the boom nose-down by the difference. Returns null where
+     it doesn't fit, and otherwise the part in the owner's frame for printing, the part lined up on the boom, and that tip. */
+  function clampFit(sizes, roll, want) {
+    const C = YS.MAST_CLAMP, T = sizes.taper;
+    if (!C || want === false || roll || sizes.w !== BOOM_W || !T.m || Math.abs(T.Ht - TAIL_H) > 0.01) return null;
+    const L = MOUTH - REAR;
+    // the tail's slope in the box, the box's on the boom, and the room left at each corner: 0.05 mm at least, which a printed
+    // tail takes up anyway, so that the model's faces don't touch
+    const r = Math.max(0, Math.min(T.m, (C.height - T.Ht - 0.1) / L)), sc = T.m - r, e = (C.height - T.Ht - L * r) / 2;
+    const f0 = T.zb(REAR) - e + sc * L;                     // the box's floor at the mouth, on the boom
+    const turn = Math.atan(C.slope) - Math.atan(sc), c = Math.cos(turn), s = Math.sin(turn);
+    // the tail stops 0.2 mm short of the socket's end, where the owner's socket rounds its floor's back corner
+    const at = [MOUTH - 0.2, 0, f0], on = (x, z) => { const u = x - C.mouth, v = z - C.floor; return [at[0] + u * c + v * s, at[2] - u * s + v * c]; };
+    // where its two screws cross, on the boom, which the tail's own holes and nuts are turned and moved to meet
+    return { C, at, turn: turn * 180 / Math.PI, tip: Math.atan(sc) * 180 / Math.PI, screws: on(C.hx, C.bz) };
+  }
+  function ownersClamp(K, sizes, roll, want) {
+    const f = clampFit(sizes, roll, want);
+    if (!f) return null;
+    const raw = K.fromData(f.C.positions, f.C.triangles, f.C.bits);
+    const fitted = K.at(K.turn(K.at(raw, [-f.C.mouth, 0, -f.C.floor]), [0, f.turn, 0]), f.at);
+    return { raw, fitted, tip: f.tip };
   }
 
   /* A socket, an arm behind the reflector, and a block for the hand or the tripod, all made with the rods upright. */
@@ -998,7 +1039,7 @@
   const MOUNTS = {
     none: { name: "No mount" },
     mast: { name: "Mast or pole clamp", tested: true, hardware: ["2 worm-drive hose clamps, bands up to 15 mm (1/2 in is 12.7 mm)", "2 M3 x 16 screws, one from the top and one from the bottom, into the nuts in the boom's tail. Or 1 M3 x 50 straight through, with a nut", "1 M3 x 30 socket-head screw, from the pole's seat into the nut in the tail's end. Its head sits in the recess in the seat", "3 M3 nuts of the kind chosen for the tail, pushed into its slots from the screws' side"],
-      print: "Print it tilted, lying on the chamfer across the block's corner and the socket's mouth, as the file has it, so the socket's layers wrap all the way round. ASA, 5 walls, 40-50% gyroid infill. The strap slots need supports inside them. Clearing the supports out of the slots takes some work with pliers and a pick, but it's doable. Check a strap slides through every slot before it goes outside." },
+      print: "Print it as the file has it: lying on the back face of the keel under the block, with the socket pointing up at 45 degrees. Every face that hangs over the bed then slopes at 45 degrees, the strap slots' roofs too, so it needs no supports at all. The layers run across the socket and the block's arms, so they're strongest where a fall or a twist would break it. ASA, 5 walls, 40-50% gyroid infill, and a brim: it stands on a narrow face, and its weight sits close to that face's edge. Check a strap slides through every slot before it goes outside." },
     pole: { name: "Painter pole", hardware: ["4 M3 x 40 bolts with nuts, joining the socket's plate to the arm", "1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket"], print: "Two pieces, each printed its best way. The arm stands on its block, socket up, and the pole socket lies tilted as the file has it, thread end up, the angle of the socket that's proven on a pole. Give it tree supports from the bed, and clear any from the thread." },
     grip: { name: "Hand grip", hardware: ["1 M3 x 40 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "Optional: a lanyard through the hole at the bottom"], print: "Stand it as the file has it, with the grip lying on the bed and the socket pointing up, and no supports." },
     tripod: { name: "Camera tripod", hardware: ["1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "1 1/4-20 UNC nut, 7/16 in (11.1 mm) across flats, dropped into the top"], print: "Stand it on the block, socket up, as the file has it, with no supports." },
@@ -1105,7 +1146,7 @@
     };
     try {
       sections.forEach((sec) => {
-        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, custom: plan.custom, screws: o.screws, pilot: o.pilot, nut: o.nut });
+        const solid = boomSection(K, sec, rods, sizes, { gauge: plan.gauge, notches: plan.notches, faces: plan.faces, lengths: plan.lengths, custom: plan.custom, screws: o.screws, pilot: o.pilot, nut: o.nut, clamp: o.mount === "mast" ? clampFit(sizes, rollFor(design.polarization), o.ownersClamp) : null });
         const nameIt = sections.length === 1 ? "Boom" : sec.i === 0 ? "Rear boom" : sec.i === sections.length - 1 ? "Front boom" : `Boom, section ${sec.i + 1}`;
         const id = sections.length === 1 ? "boom" : sec.i === 0 ? "boom_rear" : sec.i === sections.length - 1 ? "boom_front" : `boom_${sec.i + 1}`;
         // a tapered piece is turned to lie on its bottom face, which slopes by the taper's angle
@@ -1116,7 +1157,11 @@
       });
       const roll = rollFor(design.polarization), soft = o.soft !== false;
       // turned so the chamfer it lies on faces down: about z to square it with y, then -y onto the bed
-      if (o.mount === "mast") add("mast_mount", MOUNTS.mast.name, mastMount(K, rods, sizes, roll, soft), (m) => K.turn(K.turn(m, [0, 0, -BED_TILT]), [90, 0, 0]), MOUNTS.mast.print);
+      if (o.mount === "mast") {
+        const own = ownersClamp(K, sizes, roll, o.ownersClamp);      // ownersClamp: false, for tests, makes it here            // the owner's own where the tail fits it, else made here in its shape
+        add("mast_mount", MOUNTS.mast.name, own ? (o.inPlace ? own.fitted : own.raw) : mastMount(K, rods, sizes, roll, soft), [0, -KEEL.tilt, 0], MOUNTS.mast.print);      // on the keel's back face, the socket pointing up
+        Object.assign(out[out.length - 1], { owners: !!own, tip: own ? own.tip : 0 });
+      }
       if (o.mount === "pole") {
         add("pole_arm", "Painter pole arm", poleArm(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.pole.print);
         add("pole_socket", "Painter pole socket", poleSocket(K), [90 - POLE.tilt, 0, 0], MOUNTS.pole.print);
@@ -1137,7 +1182,7 @@
   function partsNotes(design, result) {
     const { plan, parts } = result, { o, rods, sections } = plan, L = [];
     const joints = sections.length - 1, driven = rods.find((r) => r.driven);
-    L.push(`${design.name}: printing and building`, "", "TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes, and the mast clamp, with the boom's tail (its nut slots and coax tunnel). NOT YET PRINTED: the other mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", "", "PRINTING", `The boom: 0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, ...(o.mount === "mast" ? ["The mast clamp: ASA, 5 walls, 40-50% gyroid infill, printed tilted as the file has it, with supports in its strap slots (below)."] : []), "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
+    L.push(`${design.name}: printing and building`, "", "TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes, and the mast clamp, with the boom's tail (its nut slots and coax tunnel). NOT YET PRINTED: the other mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", "", "PRINTING", `The boom: 0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, ...(o.mount === "mast" ? ["The mast clamp: ASA, 5 walls, 40-50% gyroid infill, a brim, lying on its keel as the file has it, no supports (below)."] : []), "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
       `X-Y hole compensation ${HOLE_COMP} mm for the boom and coupon: their holes are modelled for it and come out too small without it. A mount's fine with or without it.`,
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short. For SUNLU ASA it's estimated at 99.65%, from a printed boom. Other brands differ." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
     parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
@@ -1147,7 +1192,7 @@
       L.push("", "CUTTING RODS WITH THE GAUGE", "Lay the rod in the V on top of the boom, with its end against the wall at the V's front end, by the 0. It can run off the boom's rear end. Each mark runs over the edge and down the side to its rod's name. Each mark is 0.6 mm wide and its middle is the length: its edge toward the 0 is 0.3 mm short, its other edge 0.3 mm long. Cut a little past the mark, away from the 0, then file to the mark's middle. Measure the first rod with calipers before you trust the rest.");
       plan.gauge.marks.forEach((m) => L.push(`  ${m.rod}: ${m.length.toFixed(1)} mm`));
     }
-    if (joints) L.push("", "THE JOINT" + (joints > 1 ? "S" : ""), "Slide the tongue into the fork, ridges into grooves, until it stops. If it binds, sand the ridges, not the tongue's faces. Tighten the bolts only until the prongs close on the V: too much bends them. A little glue on the faces makes it stronger if you'll never take it apart. If a rod passes through the tongue, slide the joint together before fitting that rod.");
+    if (joints) L.push("", "THE JOINT" + (joints > 1 ? "S" : ""), "Slide the tongue into the fork, ridges into grooves, until it stops. If it binds, sand the ridges, not the tongue's faces. Tighten the bolts only until the prongs close on the V: too much bends them. If you'll never take it apart, weld it: in ASA, brush a little acetone on the mating faces just before bolting it together, and the faces fuse into one piece (the owner's ASA joint couldn't be separated even with the bolts out). Keep it out of the rod holes, and let it stand a day before loading it. Acetone barely touches PETG; use glue there. If a rod passes through the tongue, slide the joint together before fitting that rod.");
     if (plan.lengths && plan.lengths.labels.length) {
       const seen = [], each = plan.lengths.labels.filter((l) => !seen.includes(l.rod) && seen.push(l.rod));
       L.push("", "ROD LENGTHS ON THE BOOM", `Each rod's length to cut is written on the screws' side, beside its hole, so the boom says which rods it takes. The driven element's two halves each have their own: the length to cut each half${plan.o.allowance > 0 ? `, ${(+plan.o.allowance).toFixed(1)} mm longer in all than the model's guess` : ", with no trimming allowance set"}, as on the gauge and the Cut list. Then trim both tips equally by the VNA's readings, not to a length.`, ...each.map((l) => `  ${l.rod}: ${l.text} mm${l.driven ? " each half" : ""}`));
@@ -1173,7 +1218,11 @@
         "In the models, a screw at a rod's middle changes nothing, because it sits where the field across the rod is zero. The two on the driven element move the tuning by about 1 MHz. Fit them all before you trim on the VNA, and leave them in.");
     }
     if (o.mount !== "none") L.push("", "MOUNTING", `Push the boom's tail into the socket until it stops, and fit the pin. The socket ends ${-MOUTH} mm behind the reflector, so the reflector stays in the boom, glued if you like.`);
-    if (o.mount === "mast") L.push("", "THE MAST CLAMP", MOUNTS.mast.print, `Before the boom goes in, push the three nuts (${(NUTS[o.nut] || NUTS.standard).name.toLowerCase()}) into the tail's slots from the screws' side, and run a screw through each to line it up. Then slide the tail in, and fit a short screw from the top and one from the bottom into the tail's nuts, or one long one straight through, and the back screw from the pole's seat into the nut in the tail's end. Strap it to the pole with two hose clamps through the curved slots, or through the extra exits into the V for a thin pole.`);
+    const clamp = parts.find((p) => p.id === "mast_mount");
+    if (clamp) L.push("", "THE MAST CLAMP", clamp.owners
+      ? `This is the clamp that was printed and tested, unchanged, every fillet.${clamp.tip > 0.5 ? ` This boom's tail slopes more than the one it was made for, so the boom sits about ${clamp.tip.toFixed(1)} degrees nose-down in it, which makes no difference to the antenna.` : ""}`
+      : `This design's boom doesn't take the printed clamp (${design.polarization === "horizontal" ? "its rods are horizontal" : "its boom's tail or width is a different size"}), so this one is made here in the same shape: the same V, strap slots, screws and keel, without the printed one's small edge rounds. It hasn't been printed itself.`);
+    if (o.mount === "mast") L.push(MOUNTS.mast.print, `Before the boom goes in, push the three nuts (${(NUTS[o.nut] || NUTS.standard).name.toLowerCase()}) into the tail's slots from the screws' side, and run a screw through each to line it up. Then slide the tail in, and fit a short screw from the top and one from the bottom into the tail's nuts, or one long one straight through, and the back screw from the pole's seat into the nut in the tail's end. Strap it to the pole with two hose clamps through the curved slots, or through the extra exits into the V for a thin pole.`);
     if (driven && plan.sections[0].x1 >= driven.x && !(plan.sections[0].prev)) L.push("", "THE COAX", `It runs in a tunnel from the solder window back under the boom, and out through the coax's side just in front of the reflector, then back along the outside of the socket. Thread it through before soldering, from the window end. ${TUNNEL.d} mm across: made for RG316 (2.5 mm) or thinner. Seal both ends with neutral cure silicone.`);
     L.push("", "HARDWARE");
     rods.forEach((r) => L.push(`  ${r.driven ? `${r.name}: 2 rods` : `${r.name}: 1 rod`}, ${r.d} mm ${r.material === "aluminium" ? "aluminum" : r.material}`));

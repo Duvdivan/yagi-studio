@@ -41,6 +41,7 @@
 
   const PRESET_INFO = [
     ["duvyagi", "DuvYagi 10 dBd", "6 rods, 910 MHz, built and tuned, with its measured lengths and cable"],
+    ["duvyagi8", "DuvYagi 8 dBd", "5 rods, 910 MHz, a shorter boom, two built and tested"],
     ["duvyagi1", "DuvYagi first prototype", "6 rods, 910 MHz, the first build, with photos of its VNA readings"],
     ["gcarc", "GCARC 915 MHz", "5 rods of 1/16 in brass, the classic window Yagi"],
     ["ism915", "915 MHz starter", "5 rods, not yet optimized"],

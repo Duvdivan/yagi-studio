@@ -17,8 +17,8 @@ android {
         applicationId = "com.duvdivan.duvyagistudio"
         minSdk = 26             // Android 8: a WebView that updates, and adaptive icons
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
     }
 
     signingConfigs {

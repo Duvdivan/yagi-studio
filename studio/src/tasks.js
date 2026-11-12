@@ -386,14 +386,20 @@
     const valley = (s) => valleyOf(run, s, target - span, target + span, 41);
     const drv = base.feed;
 
-    /** The driven change that cancels the reactance at the target. */
+    /**
+     * The driven change that gives the lowest SWR at the target. Not the one that cancels the reactance: with the feed's
+     * resistance off 50 ohm, that can be worse than leaving it (the owner's two 8 dBd antennas, 2026-11-11: it said file 0.9 mm
+     * off, for SWR 1.42 to 1.52). A scan in 1.5 mm steps, then a golden-section search round the best of them.
+     */
     const tuneDriven = (change) => {
-      const x = (dL) => run(built(Object.assign({}, change, { [drv]: dL })), target).z[1];
-      let a = -12, b = 12, fa = x(a), fb = x(b);
-      if (fa * fb > 0) return Math.abs(fa) < Math.abs(fb) ? a : b;
-      for (let i = 0; i < 22 && b - a > 0.02; i++) {
-        const m = 0.5 * (a + b), fm = x(m);
-        if (fa * fm <= 0) { b = m; fb = fm; } else { a = m; fa = fm; }
+      const swr = (dL) => run(built(Object.assign({}, change, { [drv]: dL })), target).swr;
+      let best = 0, low = Infinity;
+      for (let dL = -12; dL <= 12.001; dL += 1.5) { const v = swr(dL); if (v < low) { low = v; best = dL; } }
+      let a = Math.max(-12, best - 1.5), b = Math.min(12, best + 1.5);
+      const g = (Math.sqrt(5) - 1) / 2;
+      let c = b - g * (b - a), d = a + g * (b - a), fc = swr(c), fd = swr(d);
+      for (let i = 0; i < 18 && b - a > 0.02; i++) {
+        if (fc < fd) { b = d; d = c; fd = fc; c = b - g * (b - a); fc = swr(c); } else { a = c; c = d; fc = fd; d = a + g * (b - a); fd = swr(d); }
       }
       return 0.5 * (a + b);
     };
@@ -478,7 +484,7 @@
       }
       const m = YS.crooked.metrics(sys, target, 0);
       const bends = [[drv, best.dr], [d1, best.dd]].filter((q) => q[1]).map(([i, add]) => ({ rod: names[i], add }));
-      return { id: "bend", title: "Bend the rods instead of cutting", why: "No cutting, and you can undo it. It moves the tips of the two rods nearest the feed. It fixes the match, but it can't bring back gain that rods of the wrong length cost.",
+      return { id: "bend", title: "Bend the rods instead of cutting", why: `No cutting, and you can undo it. It moves the tips of ${bends.length > 1 ? "the two rods nearest the feed" : bends[0].rod === names[drv] ? "the driven element" : `${bends[0].rod}, the rod in front of the driven element`}. It fixes the match, but it can't bring back gain that rods of the wrong length cost.`,
         steps: [], bends, newRods: 0, swr: m.swr, gain: m.gainDbd, fb: m.fb, z: m.z, valley: lowest.f, valleySwr: lowest.swr, curve };
     };
 
@@ -522,7 +528,8 @@
     // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
     // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
     const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
-    const kept = options.filter(Boolean);
+    // and only what does better than leaving it: a better match, or more gain the model can tell apart
+    const kept = options.filter((o) => o && (o.swr < none.swr - 0.02 || o.gain > none.gain + 0.05));
     const distinct = kept.filter((o, i) => work(o) !== "" && kept.findIndex((q) => work(q) === work(o)) === i);
     const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
     const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;

@@ -313,6 +313,10 @@
   const DUV2_POS = [0, 46.2, 86.5, 167.9, 282.3, 381.0];
   const DUV2_LEN = [160.2, 151.9, 144.9, 142.0, 138.5, 137.1];
   const DUV2_MEASURED = [160.0, 151.2, 144.7, 142.2, null, 137.4];
+  // the third and fourth, two of the same 8 dBd design, printed, built and swept (the owner, 2026-11-11): its file from Yagi
+  // Studio's Design tab, at the design's lengths, which both were cut from
+  const DUV8_POS = [0, 24.925, 40.9, 118.8, 195.0];
+  const DUV8_LEN = [164.8, 156.6, 147.2, 144.6, 140.3];
   const IN = 25.4;
 
   const PRESETS = {
@@ -328,6 +332,21 @@
       });
       d.tune = { readings: [], measured: {}, range: [856, 965], target: 910.525, sample: false, free: { directors: true, driven: true, reflector: false } };
       d.elements.forEach((e, i) => { if (DUV2_MEASURED[i] !== null) d.tune.measured[e.id] = { L: DUV2_MEASURED[i] }; });
+      return d;
+    },
+    duvyagi8: () => {
+      const d = makeDesign({
+        name: "DuvYagi 8 dBd", f0: 910.525, band: [908, 912], material: "aluminium", gap: 3,
+        radio: { use: "meshcore", title: "USA", f: 910.525, bw: 62.5, sf: 7, cr: 5, rule: "fcc" },
+        notes: "Designed in Yagi Studio and built twice: 3.00 mm aluminum with a 1/8 in brass driven element, its boom printed from the 3D print tab. Swept through about 250 mm of RG316, the first showed SWR 1.46 at 910.525 MHz (best 1.05 at 918.1 MHz), with rods of 162.7, 162.3, 146.9, 144.3 and 139.5 mm; the second SWR 1.18 (best 1.13 at 914.9 MHz), with 163.9, 160.8, 146.8, 144.4 and 138.5 mm. Both were left as they are. Both driven elements were cut longer than the design's 156.6 mm, and still acted several mm short, so the halves' gap at the feed is likely wider than the 3 mm modelled.",
+        elements: DUV8_POS.map((x, i) => ({
+          type: typeFor(i, 1), x, L: DUV8_LEN[i], d: i === 1 ? 3.175 : 3.0, material: i === 1 ? "brass" : "aluminium",
+        })),
+        cable: { on: true, kind: "rg316", length: 250, vf: 0.695, lossAt1G: 1.0 },
+      });
+      d.boomText = "DuvYagi 8dBd";
+      d.screws = true;
+      d.tune = { readings: [], measured: {}, range: [856, 965], target: 910.525, sample: false, free: { directors: true, driven: true, reflector: false } };
       return d;
     },
     duvyagi1: () => makeDesign({

@@ -15,13 +15,22 @@ Open it once with a network, then install it, and it runs with no network after 
 
 Designs stay in your browser on that device, so use Save to keep a copy.
 
+### The Android app
+
+There's also an Android app, the same Yagi Studio packaged for phones and tablets (Android 8 or newer). It connects to a NanoVNA over USB through an OTG adapter, which a browser on a phone can't.
+
+- **Download:** `YagiStudio.apk` from the [latest release](https://github.com/Duvdivan/yagi-studio/releases/latest). Open it on your phone, and allow installs from the app that opened it (your browser or Files), because it isn't from the Play Store. Play Protect may say it doesn't know the developer.
+- **It doesn't update itself.** The web version does. Check Releases for new versions, and install a new one over the old: your designs stay. Uninstalling removes them, so Save a copy first.
+- **Each release is signed with the same key.** Its certificate's SHA-256 fingerprint is in each release's notes, so you can check the file is genuine.
+- **Tested** in Android's emulator. It's new on real phones, and its NanoVNA link hasn't been tried on real hardware yet, so please report what doesn't work in Issues.
+
 **Privacy:** the site counts visits with [GoatCounter](https://www.goatcounter.com/), which uses no cookies and keeps nothing that identifies you: the page, the referring site, the screen size, the browser and the country. It sends nothing else, as your designs and readings never leave your device. If your browser asks sites not to track you (Do Not Track or Global Privacy Control), it isn't counted at all. The Android app counts nothing; it doesn't even ask for network access.
 
 ## What to know first
 
 - **Trust a VNA over any model.** The solver matches other references closely, but it hasn't been proven against built hardware. The one antenna measured so far has its best match about 9 MHz above the prediction, and the cause isn't known yet. "How far to trust it" in the app has the details.
 - **Testing:** it has run in desktop Chrome and in Safari's engine on a PC. It's new on real iPhones and iPads, so please report what doesn't work in this repository's Issues.
-- **NanoVNA:** Connect NanoVNA works over USB in desktop Chrome and Edge. iPhones and iPads don't allow it, so save a `.s1p` file and load that.
+- **NanoVNA:** Connect NanoVNA works over USB in desktop Chrome and Edge, and in the Android app. iPhones and iPads don't allow it, so save a `.s1p` file and load that.
 - **Power limits** shown in the app are a rough guide, not legal advice. Check your local rules.
 
 If you put an antenna on a roof or mast, keep it well clear of power lines all the way up and down, and follow your local rules on grounding and lightning protection.

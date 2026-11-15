@@ -18,7 +18,9 @@
   const COUNTER = "yagi-studio";                    // the GoatCounter site code: counts go to https://yagi-studio.goatcounter.com
   const COUNTED_ON = "duvdivan.github.io";           // the published site; anywhere else counts nothing
   const nav = root.navigator;
+  const ANDROID_APP = "https://github.com/Duvdivan/yagi-studio/releases/latest";   // the Android app's newest release
   const ios = /iPhone|iPad|iPod/.test(nav.userAgent) || (nav.platform === "MacIntel" && nav.maxTouchPoints > 1);
+  const android = /Android/.test(nav.userAgent);
   const installed = () => (root.matchMedia && matchMedia("(display-mode: standalone)").matches) || nav.standalone === true;
 
   /* Resolves true once saved and false if the person backed out. Resolves null where the share sheet
@@ -36,7 +38,7 @@
     }
   }
 
-  root.ysWeb = { ios, save };
+  root.ysWeb = { ios, save, androidApp: ANDROID_APP };
 
   /* One hit: "/" for a visit in a browser, "/installed" for one from the home screen, and the "install" event
      when someone installs it. Offline, the request fails quietly. */
@@ -78,7 +80,9 @@
   root.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     offer = e;
-    const show = () => hint('Install this as an app, to use it with no network. <button class="btn" data-hint-install>Install</button>', (bar, close) => {
+    // on Android, the APK too, for those who'd rather have it: this one updates itself and the APK doesn't, so it comes second
+    const apk = android ? ` Or get the <a href="${ANDROID_APP}" target="_blank" rel="noopener">Android app</a>, which doesn't update itself.` : "";
+    const show = () => hint(`Install this as an app, to use it with no network. <button class="btn" data-hint-install>Install</button>${apk}`, (bar, close) => {
       bar.querySelector("[data-hint-install]").onclick = async () => {
         offer.prompt();
         await offer.userChoice;

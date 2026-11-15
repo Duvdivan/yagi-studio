@@ -4,7 +4,9 @@ Yagi Studio as an Android app. It runs entirely on the phone, with no server and
 
 ## Installing it
 
-Build the APK as below, copy it to your phone and open it. Android will ask you to allow installs from whichever app opened it (Files, for example), because it isn't from the Play Store. It needs Android 8 or newer.
+Download `YagiStudio.apk` from the [latest release](https://github.com/Duvdivan/yagi-studio/releases/latest), or build it as below, then open it on your phone. Android will ask you to allow installs from whichever app opened it (your browser or Files, for example), because it isn't from the Play Store. It needs Android 8 or newer. It doesn't update itself, since it has no network access: install a new release over the old one, which keeps your designs.
+
+The licences travel inside the APK, under `assets/`: the AGPL's, Manifold's and the fonts'.
 
 Your designs are kept on the phone, inside the app. Uninstalling removes them, so use Save to keep a copy first.
 

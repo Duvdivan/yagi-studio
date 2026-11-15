@@ -357,6 +357,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
 
 /* the web app: how to install it */
 .install-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line2); border-radius: 8px; font-size: 13px; }
+.install-hint a { color: var(--accent); }
 </style>
 <div id="app">
   <header class="top">
@@ -2835,7 +2836,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   const COUNTER = "yagi-studio";                    // the GoatCounter site code: counts go to https://yagi-studio.goatcounter.com
   const COUNTED_ON = "duvdivan.github.io";           // the published site; anywhere else counts nothing
   const nav = root.navigator;
+  const ANDROID_APP = "https://github.com/Duvdivan/yagi-studio/releases/latest";   // the Android app's newest release
   const ios = /iPhone|iPad|iPod/.test(nav.userAgent) || (nav.platform === "MacIntel" && nav.maxTouchPoints > 1);
+  const android = /Android/.test(nav.userAgent);
   const installed = () => (root.matchMedia && matchMedia("(display-mode: standalone)").matches) || nav.standalone === true;
 
   /* Resolves true once saved and false if the person backed out. Resolves null where the share sheet
@@ -2853,7 +2856,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
     }
   }
 
-  root.ysWeb = { ios, save };
+  root.ysWeb = { ios, save, androidApp: ANDROID_APP };
 
   /* One hit: "/" for a visit in a browser, "/installed" for one from the home screen, and the "install" event
      when someone installs it. Offline, the request fails quietly. */
@@ -2895,7 +2898,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
   root.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     offer = e;
-    const show = () => hint('Install this as an app, to use it with no network. <button class="btn" data-hint-install>Install</button>', (bar, close) => {
+    // on Android, the APK too, for those who'd rather have it: this one updates itself and the APK doesn't, so it comes second
+    const apk = android ? ` Or get the <a href="${ANDROID_APP}" target="_blank" rel="noopener">Android app</a>, which doesn't update itself.` : "";
+    const show = () => hint(`Install this as an app, to use it with no network. <button class="btn" data-hint-install>Install</button>${apk}`, (bar, close) => {
       bar.querySelector("[data-hint-install]").onclick = async () => {
         offer.prompt();
         await offer.userChoice;
@@ -11912,6 +11917,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
       <p style="margin-top:10px"><b>Thick rods.</b> On a 3 mm rod at 900 MHz, nec2++ doesn't settle: its feed resistance runs from 53 to 71 ohms as segments increase. This solver settles, within about 0.1 ohm of its finest mesh at Normal.</p>
       <p><b>What it leaves out.</b> Bent and off-center rods are modeled, but designing, polishing and the exported files treat them as straight. It doesn't model folded dipoles or gamma matches, a metal boom, the coax radiating, plastic around the rods, or nearby objects. Real antennas can differ, and the first real one differs: the first DuvYagi prototype's valley measured about 9 MHz above this solver's prediction, cause not yet known. The second, measured with R and X through its coax, fitted with its directors as cut. Measure yours.</p>
       <p class="note">Yagi Studio is free software: you can use, change and share it under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU Affero General Public License</a>, version 3 or later. It comes with no warranty. <a href="https://github.com/Duvdivan/yagi-studio" target="_blank" rel="noopener">Its source code is on GitHub</a>.</p>
+      ${window.ysWeb && ysWeb.androidApp ? `<p class="note">There's an Android app too: <a href="${ysWeb.androidApp}" target="_blank" rel="noopener">download it from GitHub</a>. This page updates itself and the app doesn't, so check there for new versions.</p>` : ""}
       <div class="row" style="margin-top:8px"><button class="btn" data-close>Close</button></div>`, (b, close) => { $("[data-close]", b).onclick = close; });
   }
 

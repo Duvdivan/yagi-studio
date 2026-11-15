@@ -65,6 +65,9 @@ def android():
                     f"src: url(fonts/{file}) format('woff2'); }}\n" for family, weight, file in ANDROID_FONTS)
     out = HERE / "android" / "app" / "src" / "main" / "assets"
     out.mkdir(parents=True, exist_ok=True)
+    # the licences go inside the APK with it: the AGPL's and Manifold's (Apache 2.0) ask for a copy wherever the app goes
+    shutil.copy(HERE / "LICENSE", out / "LICENSE.txt")
+    shutil.copy(SRC / "vendor" / "manifold-LICENSE", out / "manifold-LICENSE.txt")
     full = document(page("Yagi Studio", f"<style>\n{faces}</style>", read("android-shim.js") + "\n"))
     (out / "index.html").write_text(full, encoding="utf-8")
     print(f"android/app/src/main/assets/index.html  {len(full) / 1024:.0f} KB")

@@ -10,6 +10,8 @@ android/build/
 android/app/build/
 android/local.properties
 android/app/src/main/assets/index.html
+android/app/src/main/assets/LICENSE.txt
+android/app/src/main/assets/manifold-LICENSE.txt
 
 # built from android; hand it out rather than keeping it in git
 dist/YagiStudio.apk

@@ -98,6 +98,10 @@ function crossings(verts, tris, x, y) {
   console.log(`the vertical screw at x ${hxTop.toFixed(3)} through the top wall and ${hxBot.toFixed(3)} through the bottom; the back screw at z ${bz.toFixed(3)}`);
   if (Math.abs(hxTop - hxBot) > 0.05) throw new Error("The vertical screw's hole isn't vertical.");
   const hx = (hxTop + hxBot) / 2;
+  // its width: a ray across it, near the mouth, halfway up; the two crossings either side of the middle are its walls
+  const across = verts.map((v) => [v[0], v[2], v[1]]), ys = crossings(across, tris, mouth - 3, atMouth + height / 2);
+  const wl = Math.max(...ys.filter((v) => v < 0)), wr = Math.min(...ys.filter((v) => v > 0)), width = wr - wl;
+  console.log(`it's ${width.toFixed(3)} mm wide inside, from y ${wl.toFixed(3)} to ${wr.toFixed(3)}`);
   const g = solid.getMesh(), pos = new Float32Array(g.vertProperties.length / g.numProp * 3);
   for (let i = 0; i < pos.length / 3; i++) for (let k = 0; k < 3; k++) pos[3 * i + k] = g.vertProperties[g.numProp * i + k];
   const nv = pos.length / 3, idx = nv < 65536 ? Uint16Array.from(g.triVerts) : Uint32Array.from(g.triVerts);
@@ -107,14 +111,15 @@ function crossings(verts, tris, x, y) {
  * ${from}: don't edit by hand. In the owner's frame: the socket's mouth at x = mouth, the pole's V toward -x, z up as used.
  * floor is the socket's floor at the mouth, slope its rise per mm toward the mouth, and height the socket's inside height near
  * the mouth, from rays up through the socket, and back is where its back wall is, from rays along it. hx is where the
- * vertical screw's hole is along x, and bz the back screw's height, which the boom's tail lines its own up with.
+ * vertical screw's hole is along x, and bz the back screw's height, which the boom's tail lines its own up with. inside is the
+ * socket's width inside. parts.js fills the socket and cuts it again to fit each boom's tail, so the boom sits level.
  * Little-endian Float32 positions and Uint${idx.BYTES_PER_ELEMENT * 8} triangles, in base 64.
  */
 (function (root) {
   "use strict";
   const YS = root.YS || (root.YS = {});
   YS.MAST_CLAMP = {
-    mouth: ${mouth.toFixed(4)}, floor: ${atMouth.toFixed(4)}, slope: ${slope.toFixed(6)}, height: ${height.toFixed(4)}, back: ${back.toFixed(4)}, hx: ${hx.toFixed(4)}, bz: ${bz.toFixed(4)}, width: ${(b.max[1] - b.min[1]).toFixed(3)}, bits: ${idx.BYTES_PER_ELEMENT * 8},
+    mouth: ${mouth.toFixed(4)}, floor: ${atMouth.toFixed(4)}, slope: ${slope.toFixed(6)}, height: ${height.toFixed(4)}, back: ${back.toFixed(4)}, hx: ${hx.toFixed(4)}, bz: ${bz.toFixed(4)}, inside: ${width.toFixed(4)}, width: ${(b.max[1] - b.min[1]).toFixed(3)}, bits: ${idx.BYTES_PER_ELEMENT * 8},
     positions: "${b64(pos)}",
     triangles: "${b64(idx)}",
   };

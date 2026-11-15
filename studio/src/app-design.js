@@ -7,7 +7,7 @@
   const YS = root.YS, A = YS.app, S = A.S;
   const { $, $$, esc, fmt } = A;
 
-  const METALS = { aluminium: "Alum.", brass: "Brass", copper: "Copper", steel: "Steel", perfect: "Ideal" };
+  const METALS = { aluminium: "Alum.", brass: "Brass", copper: "Copper", steel: "Stainl.", perfect: "Ideal" };
   let layout = null, view3d = null, inited = false;
 
   function template() {
@@ -66,6 +66,20 @@
             <div class="field-grid" id="wire-fields">
               <div class="field"><label for="wire-d">Coax centre wire, mm</label><input class="num" id="wire-d" inputmode="decimal"></div>
               <div class="field"><label>Adds at the target</label><div class="note" id="wire-note" style="padding-top:6px"></div></div>
+            </div>
+            <label class="check"><input type="checkbox" id="coil-on"> A coil or a hairpin across the feed ${A.help("coil")}</label>
+            <div class="field-grid" id="coil-fields">
+              <div class="field"><label for="coil-kind">Made as</label><select class="sel" id="coil-kind"><option value="coil">A coil</option><option value="hairpin">A hairpin</option></select></div>
+              <div class="field" id="coil-nh-f"><label for="coil-nh">Coil, nH</label><input class="num" id="coil-nh" inputmode="decimal"></div>
+              <div class="field" id="hp-len-f"><label for="hp-len">Hairpin, mm long</label><input class="num" id="hp-len" inputmode="decimal"></div>
+              <div class="field" id="hp-sp-f"><label for="hp-sp">Its legs, mm apart</label><input class="num" id="hp-sp" inputmode="decimal"></div>
+              <div class="field" id="hp-d-f"><label for="hp-d">Its wire, mm</label><input class="num" id="hp-d" inputmode="decimal"></div>
+              <div class="field"><label>At the target</label><div class="note" id="coil-note" style="padding-top:6px"></div></div>
+            </div>
+            <label class="check"><input type="checkbox" id="cap-on"> A capacitor in series at the feed ${A.help("cap")}</label>
+            <div class="field-grid" id="cap-fields">
+              <div class="field"><label for="cap-pf">Capacitor, pF</label><input class="num" id="cap-pf" inputmode="decimal"></div>
+              <div class="field"><label>At the target</label><div class="note" id="cap-note" style="padding-top:6px"></div></div>
             </div>
             <p class="note">Folded dipoles aren't offered. ${A.help("folded")}</p>
             <label class="check"><input type="checkbox" id="endcap"> Solid rods with flat ends ${A.help("endcap")}</label>
@@ -174,6 +188,24 @@
       syncRodsValues();
       change(c);
     } });
+    // across the feed: a coil (nH) or a hairpin (its size), never both; off unless ticked
+    const PIN = { length: 13, spacing: 5, d: 0.64 };       // a start: GCARC's 15 nH, in 22 AWG legs 5 mm apart
+    const setShunt = (kind) => {
+      const x = d();
+      if (kind === "coil") { x.coil = S.lastCoil || 15; x.hairpin = null; }
+      else if (kind === "hairpin") { x.hairpin = Object.assign({}, S.lastPin || PIN); x.coil = 0; }
+      else { x.coil = 0; x.hairpin = null; }
+    };
+    $("#coil-on").onchange = (e) => { setShunt(e.target.checked ? S.lastShunt || "coil" : null); A.commit(); syncWire(); change(false); };
+    $("#coil-kind").onchange = (e) => { S.lastShunt = e.target.value; setShunt(e.target.value); A.commit(); syncWire(); change(false); };
+    A.bindNum($("#coil-nh"), { get: () => d().coil || S.lastCoil || 15, min: 1, max: 500, decimals: 1, set: (v, c) => { S.lastCoil = v; if (d().coil) d().coil = v; syncWire(); change(c); } });
+    const pinNum = (id, key, min, max, decimals) => A.bindNum($(id), { get: () => (d().hairpin || S.lastPin || PIN)[key], min, max, decimals,
+      set: (v, c) => { const h = Object.assign({}, d().hairpin || S.lastPin || PIN, { [key]: v }); S.lastPin = h; if (d().hairpin) d().hairpin = h; syncWire(); change(c); } });
+    pinNum("#hp-len", "length", 1, 80, 1);
+    pinNum("#hp-sp", "spacing", 1, 30, 1);
+    pinNum("#hp-d", "d", 0.2, 3, 2);
+    $("#cap-on").onchange = (e) => { d().seriesC = e.target.checked ? (S.lastCap || 10) : 0; A.commit(); syncWire(); change(false); };
+    A.bindNum($("#cap-pf"), { get: () => d().seriesC || S.lastCap || 10, min: 0.5, max: 1000, decimals: 1, set: (v, c) => { S.lastCap = v; if (d().seriesC) d().seriesC = v; syncWire(); change(c); } });
     $("#wire-on").onchange = (e) => { d().feedWire = e.target.checked ? (S.lastWire || 0.3) : 0; A.commit(); syncWire(); change(false); };
     A.bindNum($("#wire-d"), { get: () => d().feedWire || S.lastWire || 0.3, min: 0.05, max: 10, decimals: 2, set: (v, c) => { S.lastWire = v; if (d().feedWire) d().feedWire = v; syncWire(); change(c); } });
     A.bindNum($("#bend-face"), { get: () => (d().boomFace === undefined ? 10 : d().boomFace), min: 0, max: 500, decimals: 1, set: (v, c) => { d().boomFace = v; change(c); } });
@@ -262,7 +294,7 @@
   function renderRods() {
     const d = S.design, t = $("#rods");
     const sorted = d.elements.slice().sort((a, b) => a.x - b.x);
-    t.innerHTML = `<colgroup><col style="width:58px"><col style="width:56px"><col style="width:56px"><col style="width:44px"><col style="width:60px"><col style="width:16px"></colgroup><thead><tr><th>Rod</th><th>From R</th><th>Length</th><th>Dia.</th><th>Metal</th><th></th></tr></thead><tbody>` + sorted.map((e, i) => `
+    t.innerHTML = `<colgroup><col style="width:58px"><col style="width:56px"><col style="width:56px"><col style="width:44px"><col style="width:60px"><col style="width:16px"></colgroup><thead><tr><th>Rod</th><th>From R</th><th>Length</th><th>Dia.</th><th>Metal ${A.help("metal")}</th><th></th></tr></thead><tbody>` + sorted.map((e, i) => `
       <tr data-id="${e.id}">
         <td class="rod-name">${esc(e.name)}</td>
         <td><input class="num" data-f="x" aria-label="${esc(e.name)} position" inputmode="decimal" ${i === 0 ? "disabled" : ""}></td>
@@ -297,6 +329,18 @@
     $("#wire-fields").hidden = !on;
     const x = driven ? YS.feedWireX(d, driven.d / 2) * d.f0 : 0;
     $("#wire-note").textContent = on ? `+${x.toFixed(1)} ohm in series` : "";
+    const pin = !!(d.hairpin && d.hairpin.length > 0), coil = pin || d.coil > 0;
+    $("#coil-on").checked = coil;
+    $("#coil-fields").hidden = !coil;
+    $("#coil-kind").value = pin ? "hairpin" : "coil";
+    $("#coil-nh-f").hidden = pin;
+    ["#hp-len-f", "#hp-sp-f", "#hp-d-f"].forEach((id) => { $(id).hidden = !pin; });
+    const xs = coil ? YS.shuntX(YS.matchOf(d) || {}, d.f0) : 0;
+    $("#coil-note").textContent = coil ? `${xs.toFixed(0)} ohm across the feed${pin ? `, like ${(xs / (2 * Math.PI * d.f0 * 1e-3)).toFixed(1)} nH` : ""}` : "";
+    const cap = d.seriesC > 0;
+    $("#cap-on").checked = cap;
+    $("#cap-fields").hidden = !cap;
+    $("#cap-note").textContent = cap ? `${(1e6 / (2 * Math.PI * d.f0 * d.seriesC)).toFixed(0)} ohm in series` : "";
   }
 
   /** A row for each rod: off center, then each tip, along the boom and across it. */

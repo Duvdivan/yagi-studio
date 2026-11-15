@@ -75,6 +75,7 @@
   const STRAP = { r: 28.67, t: 3.5, w: 16, z: 16, ahead: 2.74, exit: [24, 27] };   // its strap slots: an arc round the pole (mid radius, thickness), each 16 mm wide at z = +-16, the arc's centre ahead of the pole's, and the extra exits into the V for small poles (y)
   const FILLET = 5;                // mm: where the socket meets the clamp's block
   const KEEL = { in: 22.5, below: 23.65, r: 3, tilt: 45 };   // the owner's v5 clamp (2026-11-11, printed well with no supports): a 90-degree keel under the block, its point this far in from the block's back and below its bottom (mm), rounded (mm); it prints on the keel's back face, tilted this many degrees
+  const SOCKET_IN = 0.18;          // mm: the owner's clamp's socket, its inside edges rounded, as the owner rounded its back corners
   const CORNER_R = 20;             // mm: v5's rounds on the block's two front corners
   const NUTS = { thin: { name: "Thin square nuts, 5.3 x 1.75 mm", flats: 5.3, t: 1.75 }, standard: { name: "Standard square nuts, 5.4 x 2.4 mm", flats: 5.4, t: 2.4 }, hex: { name: "Hex nuts, 5.5 mm across flats", flats: 5.5, t: 2.4 } };
   const NUT_SLOT = { play: 0.3, in: 10 };   // the tail's nut slots: room round a nut and in its thickness, and how far in from the top, the bottom, and the tail's end
@@ -899,30 +900,41 @@
     return K.cut(s, cuts);
   }
 
-  /* The owner's own clamp, v5, unchanged (src/mast-clamp.js), wherever a boom's tail fits it: the standard tail, rods vertical, on
-     the standard boom's width. Its socket is a level box a little taller than the tail, which holds the tail's slope by its
-     diagonal corners, so a tail sloping more than the box allows tips the boom nose-down by the difference. Returns null where
-     it doesn't fit, and otherwise the part in the owner's frame for printing, the part lined up on the boom, and that tip. */
+  /* The owner's own clamp, v5 (src/mast-clamp.js), wherever a boom's tail fits it: the standard tail, rods vertical, on the
+     standard boom's width. Everything outside is the owner's, every fillet; only the socket is made here, for each boom. The
+     owner's socket is a level box a little taller than the tail, which holds the tail's slope by its diagonal corners and tips
+     the boom by what's left over, and the slope is each design's own (1.9 to 3.2 degrees). So the box is filled, and a socket
+     cut that follows this boom's tail, with PLAY round it as the owner's has, its inside edges rounded SOCKET_IN as the owner's
+     back corners are, and its back wall 0.2 mm deeper, so the tail seats past those rounds: the boom sits level, right way up
+     (the owner, 2026-11-12). Returns null where it doesn't fit. */
   function clampFit(sizes, roll, want) {
     const C = YS.MAST_CLAMP, T = sizes.taper;
     if (!C || want === false || roll || sizes.w !== BOOM_W || !T.m || Math.abs(T.Ht - TAIL_H) > 0.01) return null;
-    const L = MOUTH - REAR;
-    // the tail's slope in the box, the box's on the boom, and the room left at each corner: 0.05 mm at least, which a printed
-    // tail takes up anyway, so that the model's faces don't touch
-    const r = Math.max(0, Math.min(T.m, (C.height - T.Ht - 0.1) / L)), sc = T.m - r, e = (C.height - T.Ht - L * r) / 2;
-    const f0 = T.zb(REAR) - e + sc * L;                     // the box's floor at the mouth, on the boom
-    const turn = Math.atan(C.slope) - Math.atan(sc), c = Math.cos(turn), s = Math.sin(turn);
-    // the tail stops 0.2 mm short of the socket's end, where the owner's socket rounds its floor's back corner
-    const at = [MOUTH - 0.2, 0, f0], on = (x, z) => { const u = x - C.mouth, v = z - C.floor; return [at[0] + u * c + v * s, at[2] - u * s + v * c]; };
-    // where its two screws cross, on the boom, which the tail's own holes and nuts are turned and moved to meet
-    return { C, at, turn: turn * 180 / Math.PI, tip: Math.atan(sc) * 180 / Math.PI, screws: on(C.hx, C.bz) };
+    // the owner's part, moved without turning: its mouth on the boom's, its box centred on the tail halfway down the socket
+    const mid = (REAR + MOUTH) / 2, at = [MOUTH - C.mouth, 0, T.zb(mid) + T.Ht / 2 - (C.floor + C.height / 2)];
+    // where its two screws cross, on the boom: the tail's own holes and nuts move to meet them, but don't turn, as both are square
+    return { C, at, turn: 0, tip: 0, screws: [C.hx + at[0], C.bz + at[2]] };
   }
-  function ownersClamp(K, sizes, roll, want) {
+  function ownersClamp(K, sizes, roll, want, rods) {
     const f = clampFit(sizes, roll, want);
     if (!f) return null;
-    const raw = K.fromData(f.C.positions, f.C.triangles, f.C.bits);
-    const fitted = K.at(K.turn(K.at(raw, [-f.C.mouth, 0, -f.C.floor]), [0, f.turn, 0]), f.at);
-    return { raw, fitted, tip: f.tip };
+    const C = f.C, T = sizes.taper, raw = K.at(K.fromData(C.positions, C.triangles, C.bits), f.at);
+    // fill the owner's box, a hair into its walls, up to its mouth
+    const x0 = C.back + f.at[0], z0 = C.floor + f.at[2], hy = C.inside / 2;
+    const filled = K.fuse([raw, K.box(x0 - 0.01, MOUTH, -hy - 0.01, hy + 0.01, z0 - 0.01, z0 + C.height + 0.01)]);
+    // and cut this tail's socket: its eight corners, each a small ball, hulled, so every inside edge is rounded
+    const r = SOCKET_IN, y = sizes.w / 2 + PLAY - r, xa = REAR - 0.2 + r, xb = MOUTH + 1 + r, ball = [];
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 12; j++) {
+      const th = Math.PI * (i + 0.5) / 6, ph = 2 * Math.PI * j / 12;
+      ball.push([r * Math.sin(th) * Math.cos(ph), r * Math.sin(th) * Math.sin(ph), r * Math.cos(th)]);
+    }
+    ball.push([0, 0, r], [0, 0, -r]);
+    const corners = [];
+    for (const x of [xa, xb]) for (const sy of [-1, 1]) for (const up of [0, 1]) corners.push([x, sy * y, T.zb(x) + (up ? T.Ht + PLAY - r : -PLAY + r)]);
+    const cavity = K.hull(corners.flatMap(([cx, cy, cz]) => ball.map(([a, b, c]) => [cx + a, cy + b, cz + c])));
+    const fitted = K.cut(filled, [cavity, K.cyl(REAR + 7, 0, -60, M3, 120)]);
+    // printed in the owner's frame: the same part, moved back, so its keel and its 45 degree lie are as the owner set them
+    return { raw: K.at(fitted, [-f.at[0], 0, -f.at[2]]), fitted, tip: 0 };
   }
 
   /* A socket, an arm behind the reflector, and a block for the hand or the tripod, all made with the rods upright. */
@@ -1158,7 +1170,7 @@
       const roll = rollFor(design.polarization), soft = o.soft !== false;
       // turned so the chamfer it lies on faces down: about z to square it with y, then -y onto the bed
       if (o.mount === "mast") {
-        const own = ownersClamp(K, sizes, roll, o.ownersClamp);      // ownersClamp: false, for tests, makes it here            // the owner's own where the tail fits it, else made here in its shape
+        const own = ownersClamp(K, sizes, roll, o.ownersClamp, rods);      // ownersClamp: false, for tests, makes it here            // the owner's own where the tail fits it, else made here in its shape
         add("mast_mount", MOUNTS.mast.name, own ? (o.inPlace ? own.fitted : own.raw) : mastMount(K, rods, sizes, roll, soft), [0, -KEEL.tilt, 0], MOUNTS.mast.print);      // on the keel's back face, the socket pointing up
         Object.assign(out[out.length - 1], { owners: !!own, tip: own ? own.tip : 0 });
       }
@@ -1220,7 +1232,7 @@
     if (o.mount !== "none") L.push("", "MOUNTING", `Push the boom's tail into the socket until it stops, and fit the pin. The socket ends ${-MOUTH} mm behind the reflector, so the reflector stays in the boom, glued if you like.`);
     const clamp = parts.find((p) => p.id === "mast_mount");
     if (clamp) L.push("", "THE MAST CLAMP", clamp.owners
-      ? `This is the clamp that was printed and tested, unchanged, every fillet.${clamp.tip > 0.5 ? ` This boom's tail slopes more than the one it was made for, so the boom sits about ${clamp.tip.toFixed(1)} degrees nose-down in it, which makes no difference to the antenna.` : ""}`
+      ? "This is the clamp that was printed and tested, every fillet, with its socket cut to this boom's tail so the boom sits level. Put the boom in with TOP up: upside down it sits a few degrees off level, and its screws may not line up."
       : `This design's boom doesn't take the printed clamp (${design.polarization === "horizontal" ? "its rods are horizontal" : "its boom's tail or width is a different size"}), so this one is made here in the same shape: the same V, strap slots, screws and keel, without the printed one's small edge rounds. It hasn't been printed itself.`);
     if (o.mount === "mast") L.push(MOUNTS.mast.print, `Before the boom goes in, push the three nuts (${(NUTS[o.nut] || NUTS.standard).name.toLowerCase()}) into the tail's slots from the screws' side, and run a screw through each to line it up. Then slide the tail in, and fit a short screw from the top and one from the bottom into the tail's nuts, or one long one straight through, and the back screw from the pole's seat into the nut in the tail's end. Strap it to the pole with two hose clamps through the curved slots, or through the extra exits into the V for a thin pole.`);
     if (driven && plan.sections[0].x1 >= driven.x && !(plan.sections[0].prev)) L.push("", "THE COAX", `It runs in a tunnel from the solder window back under the boom, and out through the coax's side just in front of the reflector, then back along the outside of the socket. Thread it through before soldering, from the window end. ${TUNNEL.d} mm across: made for RG316 (2.5 mm) or thinner. Seal both ends with neutral cure silicone.`);

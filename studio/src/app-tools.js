@@ -108,7 +108,7 @@
             <h3 class="plan-h">4. What you'll build it from</h3>
             <div class="field-grid plan-four">
               <div class="field"><label for="w-rod">Rods, mm across</label><input class="num" id="w-rod" inputmode="decimal"></div>
-              <div class="field"><label for="w-metal">Rods' metal</label>${plainSelect("w-metal", METAL_OPTIONS)}</div>
+              <div class="field"><label for="w-metal">Rods' metal ${A.help("metal")}</label>${plainSelect("w-metal", METAL_OPTIONS)}</div>
               <div class="field"><label for="w-driven">Driven element, mm across</label><input class="num" id="w-driven" inputmode="decimal"></div>
               <div class="field"><label for="w-dmetal">Its metal</label>${plainSelect("w-dmetal", METAL_OPTIONS)}</div>
             </div>

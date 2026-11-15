@@ -366,6 +366,20 @@
    * design: the antenna with the measured lengths in it. Each option lists what to do to each rod.
    * Filing only shortens a rod; anything longer means cutting a new one.
    */
+  const HAIRPIN = { spacing: 5, d: 0.64, most: 60 };   // the hairpins the Tune tab suggests: 22 AWG legs 5 mm apart, up to 60 mm long (a quarter wave is 82)
+  const E12 = [1, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];   // standard capacitor values, per decade
+
+  /**
+   * A single loop of 22 AWG wire with the given inductance, nH: its diameter, mm, from L = mu0 R (ln(8R/a) - 2) for a ring of
+   * radius R and wire radius a. Its ends add a little more, so it's a starting size, to squeeze or open on the VNA.
+   */
+  function loopFor(nH) {
+    const a = 0.32, L = (R) => 1.25664 * R * (Math.log(8 * R / a) - 2);
+    let lo = 0.5, hi = 60;
+    for (let i = 0; i < 40; i++) { const m = 0.5 * (lo + hi); if (L(m) < nH) lo = m; else hi = m; }
+    return 2 * lo;
+  }
+
   function tunePlan({ design, offsets, target }) {
     const base = YS.toSolver(Object.assign({}, design, { asBuilt: null }));
     const plain = runner(base, "draft"), bendFix = bendCorrection(base, 0.94 * target, 1.06 * target);
@@ -488,6 +502,80 @@
         steps: [], bends, newRods: 0, swr: m.swr, gain: m.gainDbd, fb: m.fb, z: m.z, valley: lowest.f, valleySwr: lowest.swr, curve };
     };
 
+    /**
+     * Something added at the feed instead of new rods (the owner's idea, 2026-11-12: a wire is far easier than a new set of
+     * rods): a hairpin across it, a capacitor in series, or both. Each is sized for the lowest SWR at the target, from the
+     * feed's impedance with nothing added, then the hairpin put back first, as it sits nearest the rods. A capacitor is offered
+     * at the nearest standard value. Only what isn't already on the antenna is offered.
+     */
+    const matchOptions = () => {
+      const s0 = built({}), has = YS.matchOf(s0) || {}, bare = Object.assign({}, s0, { coil: 0, hairpin: null, seriesC: 0 });
+      const raw = run(bare, target).z, z0 = base.z0 || 50, swrOf = (z) => YS.swrOf(z[0], z[1], z0);
+      const shunt = has.hairpin ? { hairpin: has.hairpin } : has.coil ? { coil: has.coil } : {};
+      const swrWith = (m) => swrOf(YS.feedMatch(raw, Object.assign({}, m), target));
+      const pin = (len) => ({ length: len, spacing: HAIRPIN.spacing, d: HAIRPIN.d });
+      // the best hairpin length for a given capacitor (or none), on a 0.5 mm grid as it's bent by hand
+      const bestPin = (cap) => {
+        let best = null;
+        for (let len = 1; len <= HAIRPIN.most; len += 0.5) { const v = swrWith({ hairpin: pin(len), cap }); if (!best || v < best.swr) best = { len, swr: v }; }
+        return best;
+      };
+      // the best standard capacitor for a given shunt (or none): the reactance that cancels what's left, then E12 values near it
+      const bestCap = (sh) => {
+        let best = null;
+        for (let k = -1; k <= 2; k++) for (const v of E12) { const pF = v * Math.pow(10, k), s = swrWith(Object.assign({}, sh, { cap: pF })); if (!best || s < best.swr) best = { pF, swr: s }; }
+        return best;
+      };
+      const make = (id, title, why, extra, adds, dL) => {
+        const s = Object.assign({}, dL ? built({ [drv]: dL }) : s0, extra), at = run.fixed(s), m = at(target, 1), curve = [];
+        for (let i = 0; i <= 60; i++) { const f = target * (0.95 + 0.1 * i / 60); curve.push({ f, swr: at(f).swr }); }
+        const v = valley(s);
+        const steps = base.elements.map((e, i) => {
+          const c = i === drv && dL ? dL : 0;
+          return { rod: names[i], role: roles[i], from: e.L, to: e.L + c, change: c, action: c ? "file" : "keep" };
+        });
+        return { id, title, why, steps, adds, newRods: 0, swr: m.swr, gain: m.gainDbd, fb: m.fb, z: m.z, valley: v.f, valleySwr: v.swr, curve };
+      };
+      const nH = (len) => YS.shuntX({ hairpin: pin(len) }, target) / (2 * Math.PI * target * 1e-3);
+      const pinAdd = (len) => ({ kind: "hairpin", length: len, spacing: HAIRPIN.spacing, d: HAIRPIN.d, nH: nH(len), loop: loopFor(nH(len)) });
+      const out = [], undo = " You can take it off again, and bend it shorter or longer on the VNA.";
+      let p = null, c = null;
+      if (!has.hairpin && !has.coil) {
+        p = bestPin(has.cap);
+        out.push(make("hairpin", "Add a hairpin across the feed", "No new rods: a U of wire soldered from one driven half to the other, beside the coax. It cancels a driven element that acts short, and lifts its resistance toward 50 ohm." + undo,
+          { coil: 0, hairpin: pin(p.len) }, [pinAdd(p.len)]));
+      }
+      if (!has.cap) {
+        c = bestCap(shunt);
+        out.push(make("cap", "Add a capacitor at the feed", "No new rods: a small capacitor between the coax's centre wire and its driven half. It takes off the reactance of a driven element that acts long. You can take it off again.",
+          { seriesC: c.pF }, [{ kind: "cap", pF: c.pF }]));
+      }
+      // GCARC's own way: the driven element filed a little short, so that it looks partly like a capacitor, and a hairpin across
+      // it. Where the resistance is under 50 ohm, a hairpin alone can't reach it, and this can. Filing in 0.5 mm steps, up to 12
+      if (!has.hairpin && !has.coil) {
+        let best = null;
+        for (let dL = -0.5; dL >= -12; dL -= 0.5) {
+          const zr = run(Object.assign({}, built({ [drv]: dL }), { coil: 0, hairpin: null, seriesC: 0 }), target).z;
+          for (let len = 1; len <= HAIRPIN.most; len += 0.5) {
+            const v = swrOf(YS.feedMatch(zr, { hairpin: pin(len), cap: has.cap }, target));
+            // a little more SWR is worth less filing, which is for keeps: 0.005 for each mm
+            if (!best || v + 0.005 * -dL < best.swr + 0.005 * -best.dL) best = { dL, len, swr: v };
+          }
+        }
+        if (best && best.swr < Math.min(p.swr, run(s0, target).swr) - 0.1) out.push(make("trimpin", `File the driven element, and add a hairpin across the feed`,
+          "No new rods, as GCARC's Yagi is matched: the driven element filed a little short looks partly like a capacitor, and a hairpin across it cancels that and lifts its resistance to 50 ohm. Filing is for keeps; the hairpin can be bent shorter or longer on the VNA.",
+          { coil: 0, hairpin: pin(best.len) }, [pinAdd(best.len)], best.dL));
+      }
+      // both, where neither alone gets close: the hairpin for the resistance, the capacitor for what's left
+      if (p && c && Math.min(p.swr, c.swr) > 1.15) {
+        let best = null;
+        for (let len = 1; len <= HAIRPIN.most; len += 0.5) { const cc = bestCap({ hairpin: pin(len) }); if (!best || cc.swr < best.swr) best = { len, pF: cc.pF, swr: cc.swr }; }
+        if (best.swr < Math.min(p.swr, c.swr) - 0.1) out.push(make("both", "Add a hairpin and a capacitor at the feed", "No new rods: the hairpin across the feed lifts the resistance to 50 ohm and the capacitor takes off what's left." + undo,
+          { coil: 0, hairpin: pin(best.len), seriesC: best.pF }, [pinAdd(best.len), { kind: "cap", pF: best.pF }]));
+      }
+      return out;
+    };
+
     const options = [];
     const none = describe("now", "Leave it as it is", "What the fit says the antenna does now.", {});
     const directors = base.elements.map((_, i) => i).filter((i) => roles[i] === "directors");
@@ -525,13 +613,15 @@
     // 4. no cutting at all: bend the driven element and D1, which are close enough for it to work
     const bent = bendOption();
     if (bent) options.push(bent);
+    // 5. no new rods at all: something added at the feed
+    options.push(...matchOptions());
     // An option whose rounded steps match another's is the same work: keep the first. Then what's worth doing: gain within
     // 0.05 dB counts as equal, as the model can't tell them apart, then a good match, then the fewest rods to change.
-    const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "");
+    const work = (o) => o.steps.filter((t) => t.action !== "keep").map((t) => `${t.rod}:${t.to.toFixed(1)}`).join() + (o.bends ? JSON.stringify(o.bends) : "") + (o.adds ? JSON.stringify(o.adds) : "");
     // and only what does better than leaving it: a better match, or more gain the model can tell apart
     const kept = options.filter((o) => o && (o.swr < none.swr - 0.02 || o.gain > none.gain + 0.05));
     const distinct = kept.filter((o, i) => work(o) !== "" && kept.findIndex((q) => work(q) === work(o)) === i);
-    const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0);
+    const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0) + (o.adds ? o.adds.length : 0);
     const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
     distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));
     options.length = 0;

@@ -36,6 +36,9 @@ def read(name):
 def page(title="Yagi Studio", fonts=FONTS, shim=""):
     style = (SRC / "style.css").read_text(encoding="utf-8")
     body = (SRC / "body.html").read_text(encoding="utf-8").replace("Yagi Studio", title)
+    # the header's bee, drawn by bee.py (python bee.py icons)
+    assert "<!--bee.svg-->" in body, "body.html has lost the header's bee"
+    body = body.replace("<!--bee.svg-->", (SRC / "bee.svg").read_text(encoding="utf-8").strip())
     worker = "\n".join(read(n) for n in WORKER_SCRIPTS)
     scripts = "\n".join(read(n) for n in PAGE_SCRIPTS)
     # the 3D print tab's geometry library, as text until someone asks for parts

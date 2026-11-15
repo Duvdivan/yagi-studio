@@ -122,6 +122,7 @@ python tests/bor_reference.py   # the surface reference on its own
 python tests/gap_reference.py   # the driven element's gap on its own
 node tests/find_gain.js      # the search for a gain (a few minutes on one thread)
 node tests/print_parts.js    # the printable parts, against the DuvYagi's OpenCascade parts and on other designs
+node tests/tune_match.js     # the Tune tab offers a hairpin to a GCARC built without its coil (needs playwright-core)
 node tests/crooked.js        # what the gap and crooked rods do to the DuvYagi (a few minutes)
 node tests/web_app.js chrome # the installable web app; the file says how to serve it, and webkit is the other choice
 python serve.py              # optional: adds a "Check with nec2++" button at http://localhost:8910
@@ -136,5 +137,10 @@ python serve.py              # optional: adds a "Check with nec2++" button at ht
 - `app-*.js`, `body.html`, `style.css`: the interface.
 - `android-shim.js`: what a WebView lacks, in the Android app's page only. `../android/` is the app around it.
 - `web-shim.js`, `sw.js`, `icons/`: the installable web app, in `dist/web/` only.
+
+The icon is Yagi Studio's bee, a mascot bee whose sting is a Yagi. `bee.py` is its one drawing:
+`python bee.py icons` writes `src/icons/*.png`, the Android app's `ic_launcher_foreground.xml` and `src/bee.svg` (the
+page header's mark, which `build.py` puts in place of `<!--bee.svg-->` in `body.html`; `style.css` colours it for the light
+and dark themes), and `python bee.py logo out.png` draws the logo. It needs manifold3d, matplotlib and Pillow. The DuvYagi node pod's emboss is read from it too.
 
 Those solver files have no DOM, so they run in the page, in workers and in Node.

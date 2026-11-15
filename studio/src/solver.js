@@ -180,7 +180,7 @@
       for (let j = 0; j <= m; j++) z[j] *= stretch;
       const d = new Float64Array(m);
       for (let j = 0; j < m; j++) d[j] = z[j + 1] - z[j];
-      return { x: e.x, y: e.y || 0, L, h, a, sigma, m, z, d, off: 0, leadX: i === design.feed ? feedWireX(design, a) : 0 };
+      return { x: e.x, y: e.y || 0, L, h, a, sigma, m, z, d, off: 0, leadX: i === design.feed ? feedWireX(design, a) : 0, match: i === design.feed ? matchOf(design) : null };
     });
   }
 
@@ -194,6 +194,49 @@
     const gap = design.gap === undefined ? 3 : design.gap, wire = design.feedWire || 0;
     if (!(wire > 0) || !(gap > 0) || wire / 2 >= a) return 0;
     return 1.25664e-3 * gap * (Math.log(a / (wire / 2)) + LEAD_FIT);
+  }
+
+  /**
+   * What's added at the feed, from the design: a coil across it (coil, nH), or a hairpin across it (hairpin: { length,
+   * spacing, d }, mm, which takes the coil's place), and a capacitor in series between it and the coax (seriesC, pF).
+   * null when there's none, which is most designs: Yagi Studio's own set the spacing so the driven element matches alone.
+   */
+  function matchOf(design) {
+    const m = {};
+    if (design.hairpin && design.hairpin.length > 0) m.hairpin = design.hairpin;
+    else if (design.coil > 0) m.coil = design.coil;
+    if (design.seriesC > 0) m.cap = design.seriesC;
+    return m.hairpin || m.coil || m.cap ? m : null;
+  }
+
+  /**
+   * The reactance across the feed at f MHz, in ohm. A coil is an ideal inductance. A hairpin is a short length of two-wire
+   * line shorted at its far end, so it acts as Z0 tan(beta l), with Z0 = 120 acosh(spacing / d) in air: an inductance at these
+   * lengths, a little more than its low-frequency value as the line nears a quarter wave. Neither counts its own loss.
+   */
+  function shuntX(m, f) {
+    if (m.hairpin) {
+      const h = m.hairpin, z0 = 120 * Math.acosh(Math.max(h.spacing / h.d, 1.0001));
+      return z0 * Math.tan(2 * Math.PI * f * h.length / (C * 1000));
+    }
+    return m.coil ? 2 * Math.PI * f * m.coil * 1e-3 : 0;
+  }
+
+  /**
+   * The feed's impedance [r, x] at f MHz with what's added there: the coil or hairpin across it (a hairpin or beta match, as
+   * GCARC's 915 MHz Yagi has: a driven element cut a little short looks partly capacitive, and the coil both cancels that and
+   * lifts its resistance toward 50 ohm), then the series capacitor, which takes off reactance where the driven element is long.
+   */
+  function feedMatch(z, m, f) {
+    if (!m) return z;
+    let r = z;
+    const xs = shuntX(m, f);
+    if (xs > 0) {
+      const den = r[0] * r[0] + r[1] * r[1], yr = r[0] / den, yi = -r[1] / den - 1 / xs, d2 = yr * yr + yi * yi;
+      r = [yr / d2, -yi / d2];
+    }
+    if (m.cap) r = [r[0], r[1] - 1e6 / (2 * Math.PI * f * m.cap)];
+    return r;
   }
 
   function assignOffsets(wires) {
@@ -622,14 +665,14 @@
    */
   function metricsAt(wires, feed, gap, f, ws, z0, level) {
     const sol = solveAt(wires, feed, gap, f, ws);
-    const gf = gainFactor(sol), zi = sol.zi + (wires[feed].leadX || 0) * f;
+    const gf = gainFactor(sol), z = feedMatch([sol.zr, sol.zi + (wires[feed].leadX || 0) * f], wires[feed].match, f);
     const out = new Float64Array(2);
     fieldAt(wires, sol, 0, 1, 0, 1, out);
     const front = gf * (out[0] * out[0] + out[1] * out[1]);
     fieldAt(wires, sol, 0, -1, 0, 1, out);
     const back = gf * (out[0] * out[0] + out[1] * out[1]);
     const gDbi = 10 * Math.log10(Math.max(front, 1e-30));
-    const r = { f, z: [sol.zr, zi], swr: swrOf(sol.zr, zi, z0), gainDbi: gDbi, gainDbd: gDbi - 2.15,
+    const r = { f, z, swr: swrOf(z[0], z[1], z0), gainDbi: gDbi, gainDbd: gDbi - 2.15,
       fb: gDbi - 10 * Math.log10(Math.max(back, 1e-30)) };
     if (level >= 1) {
       const n = 360, angles = new Array(n), h = new Array(n), e = new Array(n);
@@ -700,6 +743,6 @@
     return { nth, nph, g };
   }
 
-  Object.assign(YS, { C, ETA, MATERIALS, QUALITY, END_CAP: 0.10, buildWires, assignOffsets, workspace, solveAt, metricsAt,
+  Object.assign(YS, { C, ETA, MATERIALS, QUALITY, END_CAP: 0.10, buildWires, assignOffsets, workspace, solveAt, metricsAt, matchOf, shuntX, feedMatch,
     sweep, pattern3d, gainDbi, gainFactor, directivityDbi, swrOf, currents, fieldAt, meshNodes, meshCount, cutFigures, isCrooked, feedWireX });
 })(typeof globalThis !== "undefined" ? globalThis : this);

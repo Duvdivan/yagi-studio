@@ -14,6 +14,9 @@
   --accent-ink: #ffffff;
   --accent-soft: #dce8f7;
   --marker: #c04a17;
+  --bee-ink: #1f3a5c;
+  --bee-wing: #a9c3e0;
+  --bee-bright: #5b9ff0;
   --s1: #1f6fd1;
   --s2: #e0602c;
   --s3: #16a06f;
@@ -33,6 +36,7 @@
   :root:not([data-theme="light"]) {
     --bg: #0d151f; --panel: #141f2c; --raised: #1a2838; --sunken: #101a25; --ink: #e7eef5; --ink2: #b9c7d4; --muted: #8fa1b2;
     --line: #26364a; --line2: #3a4d63; --accent: #5b9ff0; --accent-ink: #08131f; --accent-soft: #1b3350; --marker: #ff8a4f;
+    --bee-ink: #dce8f7; --bee-wing: #34577f; --bee-bright: #5b9ff0;
     --s1: #4d94ea; --s2: #e0693a; --s3: #22a87a; --pin: #8695a4; --good: #3fc06f; --warn: #e6ab3c; --bad: #ef6f6f;
     --grid: #1e2c3c; --axis: #3a4d63; --band: rgba(77, 148, 234, 0.11);
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
@@ -42,6 +46,7 @@
 :root[data-theme="dark"] {
   --bg: #0d151f; --panel: #141f2c; --raised: #1a2838; --sunken: #101a25; --ink: #e7eef5; --ink2: #b9c7d4; --muted: #8fa1b2;
   --line: #26364a; --line2: #3a4d63; --accent: #5b9ff0; --accent-ink: #08131f; --accent-soft: #1b3350; --marker: #ff8a4f;
+    --bee-ink: #dce8f7; --bee-wing: #34577f; --bee-bright: #5b9ff0;
   --s1: #4d94ea; --s2: #e0693a; --s3: #22a87a; --pin: #8695a4; --good: #3fc06f; --warn: #e6ab3c; --bad: #ef6f6f;
   --grid: #1e2c3c; --axis: #3a4d63; --band: rgba(77, 148, 234, 0.11);
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
@@ -69,7 +74,11 @@ h1, h2, h3, p { margin: 0; }
   padding-block: 10px;
 }
 .brand { display: flex; align-items: center; gap: 8px; }
-.brand svg { display: block; color: var(--accent); }
+.brand svg { display: block; }
+/* the bee (src/bee.svg): navy on light as in the app's icon; on dark, a pale body and dimmed wings, the driven element still blue */
+.brand .bee-ink { fill: var(--bee-ink); }
+.brand .bee-wing { fill: var(--bee-wing); }
+.brand .bee-bright { fill: var(--bee-bright); }
 .brand b { font: 600 21px/1 var(--display); letter-spacing: .01em; white-space: nowrap; }
 .design-name {
   min-width: 0; width: 240px; max-width: 100%; border: 1px solid transparent; background: transparent; border-radius: 4px;
@@ -291,6 +300,7 @@ input::placeholder { color: var(--muted); opacity: .75; }
 @media (max-width: 560px) {
   .hist-grid { grid-template-columns: minmax(0, 1fr); }
   .design-name { width: 100%; order: 3; }
+  .brand svg { width: auto; height: 26px; }          /* the header's bee a little smaller: the toolbar's rows cost height here */
   .kpi .v { font-size: 18px; }
   /* the tabs stay under the thumb on a long page */
   #app { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }

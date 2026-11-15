@@ -333,5 +333,36 @@ console.log("\n13. Bends and the feed wire in the app");
   truth("the build check can add bends", mc.length === 4 && new Set(mc.map((q) => q.swr.toFixed(4))).size === 4, mc.map((q) => q.swr.toFixed(2)).join(", "));
 }
 
+console.log("\n14. A coil, a hairpin or a capacitor at the feed, against circuit arithmetic and YagiCAD's GCARC figures, and offered by the Tune tab");
+{
+  const g = YS.PRESETS.gcarc(), on = YS.sweep(YS.toSolver(g), [915])[0];
+  g.coil = 0;
+  const off = YS.sweep(YS.toSolver(g), [915])[0];
+  const xl = 2 * Math.PI * 915 * 15e-3, den = off.z[0] ** 2 + off.z[1] ** 2, yr = off.z[0] / den, yi = -off.z[1] / den - 1 / xl;
+  check("with the coil, R", on.z[0], yr / (yr * yr + yi * yi), 0.01, "ohm");
+  check("and X", on.z[1], -yi / (yr * yr + yi * yi), 0.01, "ohm");
+  check("bare GCARC's R, against YagiCAD's 36.5", off.z[0], 36.5, 1.5, "ohm");
+  check("its X, against YagiCAD's -20.03", off.z[1], -20.03, 1.5, "ohm");
+  check("SWR with YagiCAD's 15 nH, against its 1.053", on.swr, 1.053, 0.03);
+  truth("gain and F/B don't change", Math.abs(on.gainDbd - off.gainDbd) < 1e-9 && Math.abs(on.fb - off.fb) < 1e-9);
+  const b = YS.PRESETS.gcarc();
+  b.elements[2].bend = { topF: 0.0001 };
+  check("the general solver, for bent rods, gives the same", YS.sweep(YS.toSolver(b), [915])[0].swr, on.swr, 0.005);
+  // a hairpin is a shorted two-wire line: Z0 = 120 acosh(s/d), X = Z0 tan(beta l)
+  const hp = { length: 13.3, spacing: 5, d: 0.644 }, x = 120 * Math.acosh(5 / 0.644) * Math.tan(2 * Math.PI * 13.3 * 915 / 299792.458);
+  check("a hairpin's reactance, 22 AWG legs 5 mm apart, 13.3 mm long", YS.shuntX({ hairpin: hp }, 915), x, 0.01, "ohm");
+  check("which is about GCARC's 15 nH coil", YS.shuntX({ hairpin: hp }, 915), YS.shuntX({ coil: 15 }, 915), 1, "ohm");
+  // a capacitor in series takes 1 / (w C) off the reactance
+  const gc = Object.assign(YS.PRESETS.gcarc(), { coil: 0, seriesC: 10 });
+  check("a 10 pF capacitor in series", YS.sweep(YS.toSolver(gc), [915])[0].z[1], off.z[1] - 1e6 / (2 * Math.PI * 915 * 10), 0.01, "ohm");
+  // a GCARC built without its coil: the Tune tab should offer a hairpin that does the coil's job
+  const bare = Object.assign(YS.PRESETS.gcarc(), { coil: 0 });
+  const plan = YS.dispatch("tunePlan", { design: bare, offsets: { directors: 0, driven: 0, reflector: 0 }, target: 915 });
+  const pin = plan.options.find((o) => o.id === "hairpin");
+  truth("built without its coil, the Tune tab offers a hairpin", !!pin && pin.newRods === 0, plan.options.map((o) => `${o.title}: ${o.swr.toFixed(2)}`).join("; "));
+  check("about as long as the coil's equivalent", pin.adds[0].length, 13.3, 1.5, "mm");
+  truth("and it brings the match back", pin.swr < 1.1 && plan.now.swr > 1.7, `SWR ${plan.now.swr.toFixed(2)} to ${pin.swr.toFixed(2)}`);
+}
+
 console.log(failed ? `\n${failed} FAILED` : "\nAll passed");
 process.exit(failed ? 1 : 0);

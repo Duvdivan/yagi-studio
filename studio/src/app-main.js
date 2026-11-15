@@ -194,7 +194,7 @@
         <div class="field"><label for="n-f">Frequency, MHz</label><input class="num" id="n-f" value="915" inputmode="decimal"></div>
         <div class="field"><label for="n-c">Rods</label><input class="num" id="n-c" value="6" inputmode="numeric"></div>
         <div class="field"><label for="n-d">Other rods' diameter, mm</label><input class="num" id="n-d" value="3" inputmode="decimal"></div>
-        <div class="field"><label for="n-m">Other rods' metal</label><select class="sel" id="n-m">${metals}</select></div>
+        <div class="field"><label for="n-m">Other rods' metal ${A.help("metal")}</label><select class="sel" id="n-m">${metals}</select></div>
         <div class="field"><label for="n-dd">Driven diameter, mm</label><input class="num" id="n-dd" value="3" inputmode="decimal"></div>
         <div class="field"><label for="n-dm">Driven metal</label><select class="sel" id="n-dm">${metals}</select></div>
       </div>

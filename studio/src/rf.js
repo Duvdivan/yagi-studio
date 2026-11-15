@@ -33,7 +33,7 @@
   function makeDesign(o) {
     return Object.assign({
       name: "Untitled", f0: 915, band: [902, 928], z0: 50, gap: 3, material: "aluminium",
-      polarization: "vertical", endCap: true, feedWire: 0, boomFace: 10,
+      polarization: "vertical", endCap: true, feedWire: 0, coil: 0, hairpin: null, seriesC: 0, boomFace: 10,   // added at the feed, off: coil nH across it, or a hairpin { length, spacing, d } mm; seriesC pF in series
       mast: { on: false, d: 42, behind: 100, length: 2000 },
       cable: { on: false, kind: "rg178", length: 150, vf: 0.695, lossAt1G: 1.6 },
       ground: { on: false, height: 6000, kind: "average" },
@@ -79,7 +79,7 @@
       if (crook) { out.crook = crook; out.bend = e.bend; }
       return out;
     });
-    const s = { f0: design.f0, feed: feed < 0 ? 0 : feed, gap: design.gap, z0: design.z0, material: design.material, elements, feedWire: design.feedWire || 0, boomFace: design.boomFace === undefined ? 10 : design.boomFace };
+    const s = { f0: design.f0, feed: feed < 0 ? 0 : feed, gap: design.gap, z0: design.z0, material: design.material, elements, feedWire: design.feedWire || 0, coil: design.coil || 0, hairpin: design.hairpin || null, seriesC: design.seriesC || 0, boomFace: design.boomFace === undefined ? 10 : design.boomFace };
     if (design.endCap === false) s.endCap = 0;
     if (design.mast && design.mast.on && design.polarization === "vertical") {
       const first = Math.min.apply(null, design.elements.map((e) => e.x));
@@ -188,7 +188,11 @@
     const o = opts || {};
     const s = toSolver(design);
     const segs = o.segments || 31;
-    const lines = ["CM " + design.name, "CM Written by Yagi Studio", "CE"];
+    const lines = ["CM " + design.name, "CM Written by Yagi Studio"];
+    if (design.hairpin && design.hairpin.length > 0) lines.push(`CM Not in this file: a hairpin across the feed, ${design.hairpin.length} mm long, legs ${design.hairpin.spacing} mm apart, which Yagi Studio counts`);
+    else if (design.coil > 0) lines.push(`CM Not in this file: a ${design.coil} nH coil across the feed, which Yagi Studio counts`);
+    if (design.seriesC > 0) lines.push(`CM Not in this file: a ${design.seriesC} pF capacitor in series at the feed, which Yagi Studio counts`);
+    lines.push("CE");
     s.elements.forEach((e, i) => {
       const x = (e.x / 1000).toFixed(6), h = (e.L / 2000).toFixed(6), r = (e.d / 2000).toFixed(6);
       lines.push(`GW ${i + 1} ${segs} ${x} 0 -${h} ${x} 0 ${h} ${r}`);
@@ -212,16 +216,23 @@
     return lines.join("\n") + "\n";
   }
 
-  /** A YagiCAD 6 file. The format was worked out from YagiCAD's example models. */
+  // YagiCAD's metals, by the code in each rod's fourth column, in the order of its own list: Lossless, Copper, Aluminium, Brass,
+  // Iron, Stainless steel, the 6063-T832 and 6061-T6 aluminium alloys, Steel (the owner's catch, 2026-11-12: every rod went out
+  // as 0, lossless). The alloys and iron come in as the nearest metal the solver has.
+  const YC_METALS = ["perfect", "copper", "aluminium", "brass", "steel", "steel", "aluminium", "aluminium", "steel"];
+  const YC_CODE = { perfect: 0, copper: 1, aluminium: 2, brass: 3, steel: 5 };
+
+  /** A YagiCAD 6 file. The format was worked out from YagiCAD's example models. Its summary's gain is in dBi. */
   function yc6(design, sim) {
     const s = toSolver(design);
-    const a = sim || { gainDbd: 0, fb: 0, z: [0, 0] };
+    const a = sim || { gainDbd: -2.15, fb: 0, z: [0, 0] };
     const pad = (v) => v + "      ";
     const today = new Date();
     const dd = String(today.getDate()).padStart(2, "0"), mm = String(today.getMonth() + 1).padStart(2, "0");
-    const rows = s.elements.map((e, i) => [(e.L / 1000).toFixed(6), (e.x / 1000).toFixed(6), (e.d / 1000).toFixed(6), "0", "0", "31", i === s.feed ? "1" : "0", "0"].map(pad).join("") + "0");
+    const metal = (e) => String(YC_CODE[e.material || design.material || "aluminium"] ?? 2);
+    const rows = s.elements.map((e, i) => [(e.L / 1000).toFixed(6), (e.x / 1000).toFixed(6), (e.d / 1000).toFixed(6), metal(e), "0", "31", i === s.feed ? "1" : "0", "0"].map(pad).join("") + "0");
     const lines = ["VK3DIP YAGICAD 6.0 FILE", design.name, `${dd}/${mm}/${today.getFullYear()}`, "Yagi Studio",
-      `${rows.length} element Yagi for ${design.f0} MHz`, a.gainDbd.toFixed(2), a.fb.toFixed(1), a.z[0].toFixed(1), a.z[1].toFixed(1), String(rows.length)]
+      `${rows.length} element Yagi for ${design.f0} MHz`, (a.gainDbd + 2.15).toFixed(2), a.fb.toFixed(1), a.z[0].toFixed(1), a.z[1].toFixed(1), String(rows.length)]
       .concat(rows)
       .concat([String(design.f0), "100", "DIRECT", "0", "0", "0", "0", "0", "0", "0", String(design.z0), (s.elements[0].d / 1000).toFixed(6), "0", "0", "", "*****EOF*****"]);
     return lines.join("\r\n") + "\r\n";
@@ -257,7 +268,7 @@
       const f0 = parseFloat(l[10 + n]);
       return makeDesign({
         name: l[1] || name, f0, band: [f0 * 0.992, f0 * 1.008],
-        elements: rows.map((r, i) => ({ type: typeFor(i, feed), L: micron(r[0] * 1000), x: micron(r[1] * 1000), d: micron(r[2] * 1000) })),
+        elements: rows.map((r, i) => ({ type: typeFor(i, feed), L: micron(r[0] * 1000), x: micron(r[1] * 1000), d: micron(r[2] * 1000), material: YC_METALS[r[3]] || "aluminium" })),
       });
     }
     if (/^\s*(CM|GW)\b/m.test(t)) {
@@ -345,6 +356,7 @@
         cable: { on: true, kind: "rg316", length: 250, vf: 0.695, lossAt1G: 1.0 },
       });
       d.boomText = "DuvYagi 8dBd";
+      d.feedWire = 0.3;                // the coax's centre wire across the gap, ticked in the owner's file
       d.screws = true;
       d.tune = { readings: [], measured: {}, range: [856, 965], target: 910.525, sample: false, free: { directors: true, driven: true, reflector: false } };
       return d;
@@ -359,8 +371,8 @@
       cable: { on: false, kind: "rg178", length: 120, vf: 0.695, lossAt1G: 1.6 },
     }),
     gcarc: () => makeDesign({
-      name: "GCARC 915 MHz (5 element)", f0: 915, band: [902, 928], material: "brass", gap: 1.5,
-      notes: "w2mmdskunkworks' 915 MHz window Yagi: 1/16 in brass. YagiCAD's NEC-2 gives 7.72 dBd, F/B 16.3 dB, 36.5 - j20 ohm.",
+      name: "GCARC 915 MHz (5 element)", f0: 915, band: [902, 928], material: "brass", gap: 1.5, coil: 15,
+      notes: "w2mmdskunkworks' 915 MHz window Yagi: 1/16 in brass. Its driven element is cut short and matched with a 15 nH coil across the feed: one turn of 22 AWG insulated wire, 1/4 in across, its ends soldered to the two driven halves just outboard of the coax. Without the coil it's 36.5 - j20 ohm (YagiCAD's NEC-2), SWR about 1.8; with it, about 47 ohm, SWR 1.05. 7.72 dBd, F/B 16.3 dB.",
       elements: [0, 2.59375, 3.5625, 5.875, 8.656248].map((x, i) => ({
         type: typeFor(i, 1), x: x * IN, L: [6.281252, 6.0625, 5.656252, 5.593748, 5.531252][i] * IN, d: 0.063 * IN,
       })),

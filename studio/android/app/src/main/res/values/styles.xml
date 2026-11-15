@@ -8,7 +8,5 @@
     </style>
     <color name="page">#E6ECF1</color>
     <color name="accent">#1A5BB5</color>
-    <color name="icon_back">#16324F</color>
-    <color name="icon_ink">#FFFFFF</color>
-    <color name="icon_accent">#5B9FF0</color>
+    <color name="icon_back">#FFFFFF</color>  <!-- the bee's icon: navy on white (studio/bee.py) -->
 </resources>

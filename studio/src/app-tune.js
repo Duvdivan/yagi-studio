@@ -563,6 +563,12 @@
     return `<b>${rod}:</b> cut a new rod at <b>${fmt(s.to, 1)} mm</b> (${fmt(dL, 1)} mm longer).`;
   }
 
+  /** What to add at the feed, in words a builder can follow. */
+  function addLine(a) {
+    if (a.kind === "hairpin") return `<b>Across the feed:</b> a hairpin of 22 AWG (0.64 mm) solid wire, legs <b>${fmt(a.spacing, 0)} mm</b> apart, <b>${fmt(a.length, 1)} mm</b> from where its ends are soldered to the two driven halves, beside the coax, to its bend. It's about ${fmt(a.nH, 0)} nH: a single loop of the same wire about ${fmt(a.loop, 0)} mm across, with short ends, does the same.`;
+    return `<b>In series at the feed:</b> a <b>${fmt(a.pF, a.pF < 10 ? 1 : 0)} pF</b> capacitor between the coax's centre wire and its driven half: a C0G (NP0) chip, 0603 or 0805, with the shortest leads you can.`;
+  }
+
   function renderPlan() {
     const host = $("#plan");
     if (!host) return;
@@ -595,7 +601,8 @@
     }
     html += opts.map((o, i) => {
       const lines = (o.bends || []).map((b) => `<li><b>${esc(b.rod)}:</b> bend both tips <b>${fmt(Math.abs(b.add), 0)} mm</b> ${b.add > 0 ? "forward, away from the reflector" : "back, toward the reflector"}, from where they leave the boom.</li>`).join("")
-        + o.steps.filter((s) => s.action !== "keep").map((s) => `<li>${stepLine(s, design)}</li>`).join("");
+        + o.steps.filter((s) => s.action !== "keep").map((s) => `<li>${stepLine(s, design)}</li>`).join("")
+        + (o.adds || []).map((a) => `<li>${addLine(a)}</li>`).join("");
       const [cls, word] = A.swrClass(o.swr);
       const needs = o.newRods ? `${o.newRods} new rod${o.newRods > 1 ? "s" : ""}` : "No new rods";
       const chosen = T.chosen === o.id;
@@ -604,7 +611,7 @@
         <p class="note" style="margin:3px 0 6px">${esc(o.why)}</p>
         <ul style="margin:0 0 6px;padding-left:18px">${lines || "<li>No rods need to change.</li>"}</ul>
         <p class="stat-line">${doubtful ? `<span class="note">If the model were right:</span>` : `<span class="pill ${cls}">${word}</span>`} SWR ${fmt(o.swr, 2)} at target · ${fmt(o.gain, 2)} dBd · F/B ${fmt(o.fb, 1)} dB · ${needs}</p>
-        <div class="row" style="margin-top:6px"><button class="btn small" data-apply="${o.id}">${o.bends ? "Put these bends in the design" : "Make these the design's lengths"}</button></div>
+        <div class="row" style="margin-top:6px"><button class="btn small" data-apply="${o.id}">${o.bends ? "Put these bends in the design" : o.adds ? "Put this in the design" : "Make these the design's lengths"}</button></div>
       </div>`;
     }).join("");
     html += `<div class="scroll-x"><table class="tbl wrap-first" style="margin-top:4px"><thead><tr><th>Predicted at target</th><th>SWR</th><th>dBd</th><th>F/B</th></tr></thead><tbody>${row("As it is now", now)}${opts.map((o) => row(esc(o.title.replace("Change ", "").replace(/^./, (c) => c.toUpperCase())), o)).join("")}</tbody></table></div>`;
@@ -623,12 +630,16 @@
           const e = byName.get(b.rod);
           if (e) e.bend = Object.assign({}, e.bend, { topF: ((e.bend && e.bend.topF) || 0) + b.add, botF: ((e.bend && e.bend.botF) || 0) + b.add });
         }
-        if (!o.bends) tune().measured = {};
+        for (const a of o.adds || []) {
+          if (a.kind === "hairpin") { S.design.hairpin = { length: a.length, spacing: a.spacing, d: a.d }; S.design.coil = 0; }
+          if (a.kind === "cap") S.design.seriesC = a.pF;
+        }
+        if (!o.bends && !o.adds) tune().measured = {};
         A.commit();
         A.designChanged(true);
         renderParts();
         scheduleFit();
-        A.toast(o.bends ? "The design now has these bends. Undo takes them out." : "The design now has these lengths. Undo brings the old ones back.");
+        A.toast(o.bends ? "The design now has these bends. Undo takes them out." : o.adds ? "The design now has it. Fit it, sweep again and enter the new readings. Undo takes it out." : "The design now has these lengths. Undo brings the old ones back.");
       };
     });
   }

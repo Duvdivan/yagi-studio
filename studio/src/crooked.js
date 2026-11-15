@@ -226,7 +226,7 @@
     const rods = wires.map((w, i) => (list[i].fold ? buildFolded(list[i], list[i].fold, lam, q) : buildRod(w, list[i].crook || {})));
     let N = 0;
     for (const r of rods) { r.off = N; N += r.closed ? r.M : r.M - 1; }
-    return { design, rods, N, gap: design.gap === undefined ? 3 : design.gap, z0: design.z0 || 50, feed: design.feed, leadX: wires[design.feed].leadX || 0, lastY: 0,
+    return { design, rods, N, gap: design.gap === undefined ? 3 : design.gap, z0: design.z0 || 50, feed: design.feed, leadX: wires[design.feed].leadX || 0, match: YS.matchOf(design), lastY: 0,
       re: new Float64Array(N * N), im: new Float64Array(N * N), xr: new Float64Array(N), xi: new Float64Array(N), v: new Float64Array(N) };
   }
 
@@ -475,7 +475,7 @@
     luSolve(sys);
     let yr = 0, yi = 0;
     for (let i = 0; i < sys.N; i++) { yr += sys.v[i] * sys.xr[i]; yi += sys.v[i] * sys.xi[i]; }
-    const den = yr * yr + yi * yi, z = [yr / den, -yi / den + sys.leadX * f];
+    const den = yr * yr + yi * yi, z = YS.feedMatch([yr / den, -yi / den + sys.leadX * f], sys.match, f);
     sys.lastY = yr;
     const front = gainAlong(sys, k, yr, 1, 0, 0), back = gainAlong(sys, k, yr, -1, 0, 0);
     const out = { f, z, swr: YS.swrOf(z[0], z[1], sys.z0), gainDbd: front - 2.15, fb: front - back };

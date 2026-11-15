@@ -339,11 +339,18 @@ const BED = { x: 256, y: 256, z: 256, corner: true };
     const tails = Object.keys(YS.PRESETS).map((k) => [k, YS.planParts(YS.PRESETS[k](), { bed: BED }).taper.Ht]);
     truth("the tail is 38.3 mm on every tapered standard boom", tails.every(([k, H]) => k === "two" || k === "seventy" || Math.abs(H - 38.3) < 1e-9), tails.map(([k, H]) => `${k} ${H.toFixed(1)}`).join(", "));
     const d = own(duv);
-    truth("the DuvYagi gets the owner's clamp, unchanged", d.owners && Math.abs(d.volume - 160454) < 5, `${d.volume.toFixed(0)} mm3, ${d.mesh.t.length} triangles`);
+    // the owner's outside, every fillet: as printed it's the size the owner's file is, and its volume changes only by the socket's few mm3
+    truth("the DuvYagi gets the owner's clamp, its outside unchanged", d.owners && Math.abs(d.volume - 160454) < 200 && [85.8, 80.0, 86.6].every((v, k) => Math.abs(d.size[k] - v) < 0.15), `${d.volume.toFixed(0)} mm3, ${d.size.map((v) => v.toFixed(1)).join(" x ")}`);
+    // its socket follows the tail: just outside the tail's top and bottom, at both ends, is solid, so the boom can't tip in it
+    for (const k of ["duvyagi", "gcarc"]) {
+      const r = YS.buildParts(wasm, YS.PRESETS[k](), { mount: "mast", bed: BED, coupon: false, inPlace: true }), m = by(r, "mast_mount"), T = r.plan.taper;
+      const snug = [REAR + 1, MOUTH - 1].every((x) => [[T.zb(x) - 0.45, true], [T.zb(x) - 0.1, false], [T.zb(x) + T.Ht + 0.1, false], [T.zb(x) + T.Ht + 0.45, true]].every(([z, solid]) => inside(m.mesh, x, 0, z) === solid));
+      truth(`${k}: the socket follows its tail, ${T.ang.toFixed(2)} degrees, 0.2 mm round it, so the boom sits level`, snug && m.tip === 0);
+    }
     const g = own(YS.PRESETS.gcarc());
-    truth("so do the 8 dBd DuvYagi, GCARC's and the EU 868 boom, tipped a little", g.owners && own(YS.PRESETS.duvyagi8()).owners && own(YS.PRESETS.eu868()).owners, `${g.tip.toFixed(2)} degrees nose-down`);
+    truth("so do the 8 dBd DuvYagi, GCARC's and the EU 868 boom, each its own socket", g.owners && own(YS.PRESETS.duvyagi8()).owners && own(YS.PRESETS.eu868()).owners, "");
     truth("but rods horizontal, or a bigger boom, get one made here", !own(Object.assign({}, duv, { polarization: "horizontal" })).owners && !own(YS.PRESETS.seventy()).owners);
-    truth("the notes say which", /the clamp that was printed and tested, unchanged/.test(YS.partsNotes(duv, YS.buildParts(wasm, duv, { mount: "mast", bed: BED, coupon: false }))) && /made here in the same shape/.test(YS.partsNotes(YS.PRESETS.seventy(), YS.buildParts(wasm, YS.PRESETS.seventy(), { mount: "mast", bed: BED, coupon: false }))));
+    truth("the notes say which", /the clamp that was printed and tested, every fillet, with its socket cut to this boom's tail/.test(YS.partsNotes(duv, YS.buildParts(wasm, duv, { mount: "mast", bed: BED, coupon: false }))) && /made here in the same shape/.test(YS.partsNotes(YS.PRESETS.seventy(), YS.buildParts(wasm, YS.PRESETS.seventy(), { mount: "mast", bed: BED, coupon: false }))));
     // the screws line up: each of the clamp's holes, found from its edges, carries on through the tail's own, on a steeper tail
     // too (a bed that won't take the boom corner to corner makes a shorter first piece and a steeper taper)
     const openMid = (mesh, along, fixed, from, to) => {      // the middle of the first gap along a line, from..to

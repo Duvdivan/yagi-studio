@@ -102,7 +102,7 @@ The main finding is that only bends along the boom near the feed matter much. Of
 
 ## What it leaves out
 
-It doesn't model extra bare leads at the feed, folded dipoles or gamma matches (`tests/crooked.js` can model a folded dipole, outside the app), a metal boom, the coax radiating, plastic around the rods, or nearby objects. The mast is a centred pipe. The pattern over ground assumes the antenna is at least a wavelength up. The NanoVNA link has been tested against a stand-in for its port that answers as the firmware's source says, but not yet on real hardware.
+It doesn't model extra bare leads at the feed, folded dipoles or gamma matches (`tests/crooked.js` can model a folded dipole, outside the app), a metal boom, the coax radiating, plastic around the rods, or nearby objects. The mast is a centred pipe. The pattern over ground assumes the antenna is at least a wavelength up. The NanoVNA link works on real hardware in the Android app: the owner's NanoVNA-H (hardware 3.7_ZK), plugged straight into their phone's USB-C port. In a browser on a PC, through Web Serial, it has only met a stand-in for its port that answers as the firmware's source says.
 
 ## Readings from a NanoVNA
 

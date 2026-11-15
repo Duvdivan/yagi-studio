@@ -372,7 +372,8 @@
    * The NanoVNA's USB port is a plain text console: "scan start stop points 3" answers with lines of
    * frequency, S11 real and S11 imaginary, then the "ch>" prompt. Older firmware has no scan, so it
    * falls back to "sweep", "frequencies" and "data 0". In the scan mask, 1 asks for frequency and 2
-   * for S11 (NanoVNA-D main.c). Tested against a stand-in for the port, not yet a real unit.
+   * for S11 (NanoVNA-D main.c). Works on a real unit through the Android app (the owner's NanoVNA-H, hardware 3.7_ZK); in a
+   * browser's Web Serial it has only met a stand-in for the port.
    */
   class NanoVNA {
     static supported() { return "serial" in navigator; }

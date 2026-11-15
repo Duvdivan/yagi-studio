@@ -18,7 +18,7 @@ A WebView can run the page but lacks a few things, so `MainActivity.kt`, `UsbSer
 |---|---|
 | Opening files | Android's file picker, for any file type, since phones don't know `.s1p` or `.nec` |
 | Saving files | Android's "save to" screen. Links to generated files do nothing in a WebView |
-| The NanoVNA | USB through an OTG adapter, with Android's USB host API. `engine.js` uses the same Web Serial calls as on a PC, and the shim answers them |
+| The NanoVNA | USB, with a USB-C cable straight into the phone or through an OTG adapter, with Android's USB host API. `engine.js` uses the same Web Serial calls as on a PC, and the shim answers them |
 | Printing the cut list | Android's print screen, which can also save a PDF |
 | Fonts | Inside the APK, under `assets/fonts/`, with their licences |
 | Screen edges | The page keeps clear of the status and navigation bars, whose colours follow its theme |
@@ -30,10 +30,9 @@ Plugging in a NanoVNA offers to open the app. Links to the web, such as NanoVNA-
 
 On an Android 15 emulator, in its real WebView (Chrome 124), `../tests/android_device.js` passes on: the page and its fonts loading with no network, the solver in 5 worker threads giving the PC's numbers, bent rods through the general solver, WebGL, the network picker, saving and opening files through Android's own screens, the cutting guide from calibration to a saved STL, printing, rotation, night mode, the Back button, and designs surviving a stop. The release APK was run too, for starting, saving and returning.
 
-**Not tested:**
+On a real phone, the owner's, the NanoVNA link works: a NanoVNA-H (hardware 3.7_ZK) plugged straight into the phone's USB-C port, read through Connect NanoVNA (the owner, 2026-11-15).
 
-- **The NanoVNA's USB link on real hardware.** An emulator has no USB. `UsbSerial.kt` has only been compiled and run with nothing plugged in, and the page's side of it has only met a stand-in for the firmware's answers.
-- **A real phone.** It's all been on an emulator, so touch feel, speed and real screens are still to try.
+**Not tested:** other phones, and other NanoVNA models and firmware.
 
 An edit reaches storage about a second after it's made. Force-stopping the app within that second loses that edit, and nothing before it.
 

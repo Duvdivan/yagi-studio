@@ -8228,7 +8228,8 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
    * The NanoVNA's USB port is a plain text console: "scan start stop points 3" answers with lines of
    * frequency, S11 real and S11 imaginary, then the "ch>" prompt. Older firmware has no scan, so it
    * falls back to "sweep", "frequencies" and "data 0". In the scan mask, 1 asks for frequency and 2
-   * for S11 (NanoVNA-D main.c). Tested against a stand-in for the port, not yet a real unit.
+   * for S11 (NanoVNA-D main.c). Works on a real unit through the Android app (the owner's NanoVNA-H, hardware 3.7_ZK); in a
+   * browser's Web Serial it has only met a stand-in for the port.
    */
   class NanoVNA {
     static supported() { return "serial" in navigator; }
@@ -9684,7 +9685,7 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
               <div class="stack" style="margin-top:6px">
                 <p class="note"><b>With a PC:</b> the free <a href="https://github.com/NanoVNA-Saver/nanovna-saver" target="_blank" rel="noopener">NanoVNA-Saver</a> reads the sweep over USB and saves it as a Touchstone file. Load or drop that .s1p here.</p>
                 <p class="note"><b>On the NanoVNA alone:</b> with a microSD slot and firmware showing an SD CARD menu, choose SD CARD, then SAVE S1P. Its numbered save slots only hold calibrations, not sweeps.</p>
-                <p class="note"><b>Directly:</b> ${root.ysNative ? "plug it into this phone through a USB OTG adapter and use Connect NanoVNA." : root.ysWeb && root.ysWeb.ios ? "iPhones and iPads can't reach a NanoVNA over USB. Save a .s1p another way, then load it here through the Files app." : "plug it into this PC and use Connect NanoVNA, in Edge or Chrome."}</p>
+                <p class="note"><b>Directly:</b> ${root.ysNative ? "plug it into this phone, with a USB-C cable or through a USB OTG adapter, and use Connect NanoVNA." : root.ysWeb && root.ysWeb.ios ? "iPhones and iPads can't reach a NanoVNA over USB. Save a .s1p another way, then load it here through the Files app." : "plug it into this PC and use Connect NanoVNA, in Edge or Chrome."}</p>
                 <p class="note"><b>Set it up like this, every time:</b></p>
                 <ol class="note" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
                   <li>Set the sweep first: START and STOP well past the valley on both sides, such as 850 and 950 MHz for 910 MHz, at 101 points.</li>
@@ -10309,7 +10310,9 @@ async function Module(moduleArg={}){var moduleRtn;var Module=moduleArg;var ENVIR
         vna = new YS.NanoVNA();
         await vna.connect();
         $("#vna-scan").disabled = false;
-        $("#vna-note").textContent = "Connected. Readings use the NanoVNA's current calibration. This link hasn't been tried on real hardware yet, so check the first sweep against its screen.";
+        // the Android app's link is proven on the owner's NanoVNA-H (hardware 3.7_ZK, 2026-11); a browser's Web Serial isn't yet
+        $("#vna-note").textContent = "Connected. Readings use the NanoVNA's current calibration." + (root.ysNative ? "" :
+          " In a browser this link hasn't been tried with a real NanoVNA yet (it has in the Android app), so check the first sweep against its screen.");
       } catch (e) {
         vna = null;
         $("#vna-note").textContent = "It didn't connect: " + e.message;

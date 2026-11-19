@@ -237,6 +237,50 @@ def rod_impedance(length_mm, dia_mm, f_mhz, caps, gap_mm=3.0, refine=1.0):
     return 1 / Y
 
 
+def stepped_impedance(up_mm, d_up_mm, low_mm, d_low_mm, f_mhz, cap_up=True, gap_mm=3.0, refine=1.0):
+    """A rod whose halves differ in size, as a sleeve dipole's: a solid rod of d_up above (its flat cap if cap_up), up_mm from
+    the middle of the gap to its tip; below, an open tube of d_low, low_mm from the middle of the gap to its open end, whose
+    top is an annular face at the gap's lower edge, z = -gap / 2. The gap's field is on the rod's side, as in rod_impedance.
+    Input impedance in ohms, lossless."""
+    lam = C0 / (f_mhz * 1e6)
+    a1, a2, g = d_up_mm / 2000, d_low_mm / 2000, gap_mm / 1000
+    h1, h2 = up_mm / 1000, low_mm / 1000
+    de, gr, dm = a1 / (5 * refine), 1 + 0.4 / refine ** 0.5, lam / (30 * refine)
+    pts = []
+    # the tube's side, from its open end up to its top face, fine at both
+    for z in graded(h2 - g / 2, a2 / (5 * refine), gr, dm):
+        pts.append((a2, -h2 + z))
+    # its top face, in from the tube's radius to the rod's
+    for r in graded(a2 - a1, de, gr, dm)[1:]:
+        pts.append((a2 - r, -g / 2))
+    # the rod's side, across the gap and up to its tip
+    up = side_nodes(h1 + g / 2, g, de, gr, dm, g / 2)
+    for z in up[1:]:
+        pts.append((a1, -g / 2 + z))
+    if cap_up:
+        for r in graded(a1, de, gr, dm, both=False)[1:]:
+            pts.append((a1 - r, h1))
+    pts = np.array(pts)
+    Z, _ = assemble(pts, f_mhz * 1e6, g)
+    # the gap's field: on the rod's side only, where it lies between -g/2 and g/2, as a triangle per node
+    N = len(pts) - 2
+    V = np.zeros(N)
+    gs = np.linspace(-g / 2, g / 2, 801)
+    for n in range(N):
+        for pa, pb, rising in ((pts[n], pts[n + 1], True), (pts[n + 1], pts[n + 2], False)):
+            if abs(pa[0] - a1) > 1e-12 or abs(pb[0] - a1) > 1e-12 or pb[1] == pa[1]:
+                continue
+            lo, hi = min(pa[1], pb[1]), max(pa[1], pb[1])
+            inside = (gs >= lo) & (gs <= hi)
+            if not inside.any():
+                continue
+            t = (gs - pa[1]) / (pb[1] - pa[1])
+            v = t if rising else 1 - t
+            V[n] += np.trapezoid(np.where(inside, v, 0), gs) / g
+    Y = V @ np.linalg.solve(Z, V)
+    return 1 / Y
+
+
 def end_correction(length_mm, dia_mm, f_mhz, refine=1.0):
     """How much longer per end an open tube must be to behave like the flat-ended rod, in radii."""
     target = rod_impedance(length_mm, dia_mm, f_mhz, True, refine=refine).imag
@@ -246,6 +290,14 @@ def end_correction(length_mm, dia_mm, f_mhz, refine=1.0):
 
 
 if __name__ == "__main__":
+    if "--step" in sys.argv:
+        # sleeve dipoles' rods: a 3.175 mm rod above, a tube below, at 910.525 MHz; and the same with equal halves
+        out = []
+        for up, du, low, dl, cap in ((76, 3.175, 76, 3.175, False), (76, 3.175, 76, 6.35, False), (76, 3.175, 76, 6.35, True), (79, 3.175, 72, 6.35, True), (76, 3.175, 70, 9.5, True)):
+            z = stepped_impedance(up, du, low, dl, 910.525, cap_up=cap, refine=float(sys.argv[sys.argv.index("--step") + 1]) if len(sys.argv) > sys.argv.index("--step") + 1 else 2.0)
+            out.append(dict(up=up, d_up=du, low=low, d_low=dl, cap=cap, z=[z.real, z.imag]))
+        print(json.dumps(out))
+        sys.exit(0)
     if "--json" in sys.argv:
         # the numbers tests/validate.js compares against, at the finest mesh used here
         t = rod_impedance(149, 3.175, 910.525, False, refine=3.0)

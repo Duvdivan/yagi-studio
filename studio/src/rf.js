@@ -77,9 +77,26 @@
       const out = { x: e.x, L, d: e.d, material: e.material || design.material };
       const crook = crookOf(e.bend, L, face, e.type === "driven");
       if (crook) { out.crook = crook; out.bend = e.bend; }
+      if (e.sleeve) {
+        // a sleeve dipole (src/dipole.js): e.L tip to tip, the lower e.sleeve.length a tube of e.sleeve.d, open at its end, its
+        // top face at the gap's lower edge; the rod above solid, its end flat. The halves go to the general solver uneven
+        // (crook.top) and stepped (crook.lowerA); an offset from the Tune tab lands on the rod above, which is what's trimmed
+        const cap = design.endCap === false ? 0 : 0.10, a = e.d / 2, low = e.sleeve.length, up = L - low;
+        out.L = up + low - cap * a;
+        out.crook = { top: (up + cap * a - low) / 2, lowerA: e.sleeve.d / 2, stepAt: -(design.gap === undefined ? 3 : design.gap) / 2 };
+        if (e.colin) {
+          // a collinear (src/dipole.js): the rod above in sections, each joint a stub. The general solver's own collinear rod
+          // takes it; the top section carries the flat end's extra length and any offset, as the rod above does
+          const secs = e.colin.sections.slice(), extra = (L - e.L) + cap * a;
+          secs[secs.length - 1] += extra;
+          delete out.crook;
+          out.L = L;
+          out.colin = { below: low, lowerA: e.sleeve.d / 2, sections: secs, joints: secs.slice(1).map(() => ({ gap: e.colin.joint, stub: e.colin.stub })) };
+        }
+      }
       return out;
     });
-    const s = { f0: design.f0, feed: feed < 0 ? 0 : feed, gap: design.gap, z0: design.z0, material: design.material, elements, feedWire: design.feedWire || 0, coil: design.coil || 0, hairpin: design.hairpin || null, seriesC: design.seriesC || 0, boomFace: design.boomFace === undefined ? 10 : design.boomFace };
+    const s = { f0: design.f0, feed: feed < 0 ? 0 : feed, gap: design.gap, z0: design.z0, material: design.material, elements, feedWire: design.feedWire || 0, coil: design.coil || 0, hairpin: design.hairpin || null, seriesC: design.seriesC || 0, seriesStub: design.seriesStub || null, boomFace: design.boomFace === undefined ? 10 : design.boomFace };
     if (design.endCap === false) s.endCap = 0;
     if (design.mast && design.mast.on && design.polarization === "vertical") {
       const first = Math.min.apply(null, design.elements.map((e) => e.x));

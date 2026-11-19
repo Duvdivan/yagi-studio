@@ -514,9 +514,11 @@
         : rms < 0.16 ? ["warn", "Fair fit", "The model follows the valley and the general shape, but not every detail. A radiating cable or something nearby could explain the rest."]
           : ["bad", "Rough fit", "Something in your setup isn't in the model. Try the checks on the left: a calibration off, a cable that's radiating, or something nearby. Measuring the rods helps most."];
       const fD = firmness(T.fit, "directors"), fE = firmness(T.fit, "driven");
-      html += `<p>To match your readings, the ${offsetSentence("directors", "act", o.directors)}, and the ${offsetSentence("driven element", "acts", o.driven)}.${t.free.reflector ? ` The ${offsetSentence("reflector", "acts", o.reflector)}.` : ""}</p>`;
+      const dip = YS.dipole.isDipole(S.design);   // one rod: no directors to speak of
+      html += dip ? `<p>To match your readings, the ${offsetSentence("dipole", "acts", o.driven)}. A hairpin set differently from the design shows up here as a change of length too.</p>`
+        : `<p>To match your readings, the ${offsetSentence("directors", "act", o.directors)}, and the ${offsetSentence("driven element", "acts", o.driven)}.${t.free.reflector ? ` The ${offsetSentence("reflector", "acts", o.reflector)}.` : ""}</p>`;
       const firmText = (name, f) => (f.firm ? `<b>${name}: firm.</b> It holds however the readings are weighted (${f.range}).` : `<b>${name}: unsure.</b> It runs from ${f.range} depending on which readings count most.`);
-      html += `<p class="note">${firmText("Directors", fD)} ${firmText("Driven element", fE)}${fE.firm || T.fit.ambiguous ? "" : " Measure it, enter its real length under Your parts, and trim it last, on the VNA."}</p>`;
+      html += `<p class="note">${dip ? "" : firmText("Directors", fD) + " "}${firmText(dip ? "Dipole" : "Driven element", fE)}${fE.firm || T.fit.ambiguous ? "" : " Measure it, enter its real length under Your parts, and trim it last, on the VNA."}</p>`;
       if (T.fit.ambiguous) html += `<p><span class="pill warn">Longer or shorter?</span> <span class="note">From SWR alone it can't tell: your readings fit about as well with the driven element acting <b>${fmt(Math.abs(T.fit.ambiguous.shorter), 1)} mm shorter</b> or <b>${fmt(T.fit.ambiguous.longer, 1)} mm longer</b> than you entered. SWR says how big the mismatch is, not which way. A sweep file's R and X tell: tick the cable box on the left and enter the cable between the VNA and the antenna. If filing the driven element has made it worse, it's now too short.</span></p>`;
       html += `<p><span class="pill ${cls}">${word}</span> <span class="note">${note}</span></p>`;
       if (t.readings.length < 5) html += `<p class="note">With only ${t.readings.length} readings this is a rough guide. More readings, especially on both sides of the valley, firm it up.</p>`;
@@ -532,7 +534,7 @@
             <button class="btn primary small" id="ask-use">Use R and X</button>
           </div></div>`;
       } else html += `<p class="note"><b>These readings are SWR only</b>, as drawn or typed ones are. SWR says how big the mismatch is, not which way, so it can't say whether the driven element is too long or too short. A sweep from the NanoVNA (Connect NanoVNA, Read a sweep, or a .s1p file) carries R and X, which can.</p>`;
-      html += `<label class="check"><input type="checkbox" id="free-reflector" ${t.free.reflector ? "checked" : ""}> Let the fit change the reflector too</label>`;
+      if (!dip) html += `<label class="check"><input type="checkbox" id="free-reflector" ${t.free.reflector ? "checked" : ""}> Let the fit change the reflector too</label>`;
     }
     host.innerHTML = html;
     const ask = $("#ask-use");
@@ -554,6 +556,18 @@
   function stepLine(s, design) {
     const dL = s.change;
     const rod = esc(s.rod);
+    if (s.role === "driven" && design.elements[0] && design.elements[0].colin) {
+      // a collinear: only the top rod is trimmed, at its tip; the rods below, the stubs and the tube stay as they are
+      const co = design.elements[0].colin, top = co.sections[co.sections.length - 1] + (s.to - design.elements[0].L) - co.joint / 2;
+      if (s.action === "file") return `<b>The top rod:</b> file <b>${fmt(-dL, 1)} mm</b> off its tip, to ${fmt(top, 1)} mm long. Leave the rods below, the stubs and the tube as they are.`;
+      return `<b>The top rod:</b> cut a new one <b>${fmt(dL, 1)} mm</b> longer, to ${fmt(top, 1)} mm, a little long, and trim on the VNA.`;
+    }
+    if (s.role === "driven" && design.elements[0] && design.elements[0].sleeve) {
+      // a sleeve dipole: only the rod above the feed is trimmed; the tube is the choke, at its own length
+      const up = s.to - design.elements[0].sleeve.length;
+      if (s.action === "file") return `<b>The rod above the feed:</b> file <b>${fmt(-dL, 1)} mm</b> off its tip, to ${fmt(up, 1)} mm from the gap's middle. Leave the tube as it is.`;
+      return `<b>The rod above the feed:</b> cut a new one <b>${fmt(dL, 1)} mm</b> longer, to ${fmt(up, 1)} mm from the gap's middle, a little long, and trim on the VNA.`;
+    }
     if (s.role === "driven") {
       const each = halves(design, s.to);
       if (s.action === "file") return `<b>${rod}:</b> file <b>${fmt(-dL / 2, 1)} mm</b> off each outer tip, to ${fmt(s.to, 1)} mm tip to tip (${fmt(each, 2)} mm each half).`;
@@ -565,6 +579,8 @@
 
   /** What to add at the feed, in words a builder can follow. */
   function addLine(a) {
+    if (a.kind === "stubtrim") return `<b>The coax stub:</b> trim it to <b>${fmt(a.length, 1)} mm</b> (${fmt(a.from - a.length, 1)} mm off its open end; it's ${fmt(a.from, 1)} mm now), and seal the end again.`;
+    if (a.kind === "pinmove") return `<b>The hairpin:</b> move its short to <b>${fmt(a.length, 1)} mm</b> from where its legs leave the rods (it's ${fmt(a.from, 1)} mm now).`;
     if (a.kind === "hairpin") return `<b>Across the feed:</b> a hairpin of 22 AWG (0.64 mm) solid wire, legs <b>${fmt(a.spacing, 0)} mm</b> apart, <b>${fmt(a.length, 1)} mm</b> from where its ends are soldered to the two driven halves, beside the coax, to its bend. It's about ${fmt(a.nH, 0)} nH: a single loop of the same wire about ${fmt(a.loop, 0)} mm across, with short ends, does the same.`;
     return `<b>In series at the feed:</b> a <b>${fmt(a.pF, a.pF < 10 ? 1 : 0)} pF</b> capacitor between the coax's centre wire and its driven half: a C0G (NP0) chip, 0603 or 0805, with the shortest leads you can.`;
   }
@@ -580,7 +596,8 @@
     const design = builtDesign();
     const opts = T.plan.options;
     const now = T.plan.now;
-    const row = (lab, o) => `<tr><td>${lab}</td><td>${fmt(o.swr, 2)}</td><td>${fmt(o.gain, 2)}</td><td>${fmt(o.fb, 1)}</td></tr>`;
+    const dip = YS.dipole.isDipole(S.design);   // all round: gain one way and F/B mean little, so only the match is shown
+    const row = (lab, o) => `<tr><td>${lab}</td><td>${fmt(o.swr, 2)}</td>${dip ? "" : `<td>${fmt(o.gain, 2)}</td><td>${fmt(o.fb, 1)}</td>`}</tr>`;
     let html = "";
     const mv = measuredValley(), atT = measuredAtTarget();
     // judged at the target itself: on a one-channel network that's all that counts. At SWR 1.5, 4% of the power comes back, 0.18 dB.
@@ -610,11 +627,11 @@
         <div class="row" style="justify-content:space-between"><b>${i === 0 && !doubtful && !good ? "Best: " : ""}${esc(o.title)}</b><button class="btn small" data-show="${o.id}" aria-pressed="${chosen}">${chosen ? "On the chart" : "Show"}</button></div>
         <p class="note" style="margin:3px 0 6px">${esc(o.why)}</p>
         <ul style="margin:0 0 6px;padding-left:18px">${lines || "<li>No rods need to change.</li>"}</ul>
-        <p class="stat-line">${doubtful ? `<span class="note">If the model were right:</span>` : `<span class="pill ${cls}">${word}</span>`} SWR ${fmt(o.swr, 2)} at target · ${fmt(o.gain, 2)} dBd · F/B ${fmt(o.fb, 1)} dB · ${needs}</p>
+        <p class="stat-line">${doubtful ? `<span class="note">If the model were right:</span>` : `<span class="pill ${cls}">${word}</span>`} SWR ${fmt(o.swr, 2)} at target · ${dip ? "" : `${fmt(o.gain, 2)} dBd · F/B ${fmt(o.fb, 1)} dB · `}${needs}</p>
         <div class="row" style="margin-top:6px"><button class="btn small" data-apply="${o.id}">${o.bends ? "Put these bends in the design" : o.adds ? "Put this in the design" : "Make these the design's lengths"}</button></div>
       </div>`;
     }).join("");
-    html += `<div class="scroll-x"><table class="tbl wrap-first" style="margin-top:4px"><thead><tr><th>Predicted at target</th><th>SWR</th><th>dBd</th><th>F/B</th></tr></thead><tbody>${row("As it is now", now)}${opts.map((o) => row(esc(o.title.replace("Change ", "").replace(/^./, (c) => c.toUpperCase())), o)).join("")}</tbody></table></div>`;
+    html += `<div class="scroll-x"><table class="tbl wrap-first" style="margin-top:4px"><thead><tr><th>Predicted at target</th><th>SWR</th>${dip ? "" : "<th>dBd</th><th>F/B</th>"}</tr></thead><tbody>${row("As it is now", now)}${opts.map((o) => row(esc(o.title.replace("Change ", "").replace(/^./, (c) => c.toUpperCase())), o)).join("")}</tbody></table></div>`;
     html += `<p class="note">These are predictions from a model fitted to your readings. Make the first change, sweep again, and enter the new curve here: each round should land closer. Keep the old rods until you've checked.</p>`;
     host.innerHTML = html;
     $$("[data-show]", host).forEach((b) => { b.onclick = () => { T.chosen = b.dataset.show; renderPlan(); drawChart(); }; });
@@ -633,6 +650,8 @@
         for (const a of o.adds || []) {
           if (a.kind === "hairpin") { S.design.hairpin = { length: a.length, spacing: a.spacing, d: a.d }; S.design.coil = 0; }
           if (a.kind === "cap") S.design.seriesC = a.pF;
+          if (a.kind === "stubtrim" && S.design.seriesStub) S.design.seriesStub = Object.assign({}, S.design.seriesStub, { length: a.length });
+          if (a.kind === "pinmove" && S.design.hairpin) S.design.hairpin = Object.assign({}, S.design.hairpin, { length: a.length });
         }
         if (!o.bends && !o.adds) tune().measured = {};
         A.commit();

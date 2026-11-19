@@ -85,6 +85,22 @@ h1, h2, h3, p { margin: 0; }
   padding: 4px 6px; font-weight: 500;
 }
 .design-name:hover { border-color: var(--line2); }
+/* the open design's kind, beside its name; and each kind's path through the tabs: what's marked for another kind is hidden */
+.kind-badge { font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+#app[data-kind="yagi"] [data-for="dipole"], #app[data-kind="dipole"] [data-for="yagi"] { display: none !important; }
+.kind-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 10px; }
+.btn.kind-card { min-width: 0; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; white-space: normal; height: auto; padding: 12px; }
+.btn.kind-card b { font-size: 15px; }
+.btn.kind-card span { font-size: 13px; color: var(--muted); line-height: 1.4; }
+@media (max-width: 560px) { .kind-pick { grid-template-columns: 1fr; } }
+/* the experimental zone: antenna kinds and parts designed on the computer but not built (the owner's wish, 2026-11-19) */
+.exp-badge { display: inline-block; font-size: 12px; font-weight: 600; color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.exp-badge[hidden] { display: none; }
+.exp-zone { margin-top: 14px; padding: 10px 12px; border: 1px dashed var(--warn); border-radius: 6px; }
+.exp-zone h3 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.exp-zone p { margin: 0 0 8px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.btn.kind-card span.pill.good { color: var(--good); }
+.btn.kind-card:disabled { opacity: .45; cursor: not-allowed; }
 .design-name:focus { background: var(--raised); border-color: var(--accent); }
 .tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--sunken); border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
 .tabs button {

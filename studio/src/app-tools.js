@@ -20,6 +20,21 @@
     deep: { gens: 1500, patience: 200, polish: 900, label: "Deep" },
   };
   const FORGIVING = { builds: 48, rod: 0.3, pos: 0.3 };     // the short build check on each polished design: builds, and errors (1 sigma, mm)
+  // a vertical dipole's answers (src/dipole.js): which kind the screen shows, and what's asked for a dipole. for: the design
+  // they were read from, so opening another design brings its own
+  const DIP = { kind: "yagi", for: null, mount: "side", tube: "k14", coax: "rg316", mast: "metal", mastD: 42, arm: 250, cap: "auto", d: 3.175, metal: "brass", sections: 1 };
+  function dipAnswers() {
+    const d = S.design;
+    if (DIP.for === d.name) return DIP;
+    DIP.for = d.name;
+    DIP.kind = YS.dipole.isDipole(d) ? "dipole" : "yagi";
+    if (DIP.kind === "dipole") {
+      const r = d.elements[0];
+      const sl = r.sleeve;
+      Object.assign(DIP, { mount: d.mount || "side", tube: sl ? sl.tube : DIP.tube, coax: sl ? sl.coax : DIP.coax, mast: d.mast.on || d.mount !== "side" ? "metal" : "none", mastD: d.mast.d, arm: d.mast.behind, cap: d.seriesStub && d.seriesStub.length > 0 ? "stub:" + d.seriesStub.cable : d.seriesC > 0 ? String(d.seriesC) : d.hairpin || d.unsized ? "auto" : "0", d: r.d, metal: r.material || d.material, sections: r.colin ? r.colin.sections.length : 1 });
+    }
+    return DIP;
+  }
 
   function goals() {
     const d = S.design;
@@ -82,9 +97,10 @@
     <div class="view-plan" id="plan-goals">
       <div class="plan-wrap">
         <section class="card plan-main" aria-label="What you want">
-          <div class="head"><h2>What do you want from your antenna?</h2></div>
+          <div class="head"><h2 data-for="yagi">What do you want from your Yagi?</h2><h2 data-for="dipole">What do you want from your vertical dipole?</h2></div>
           <div class="body stack">
-            <p class="note">Say what matters and what limits you. Yagi Studio finds designs that meet it and polishes each one, then you pick one.</p>
+            <p class="note" data-for="yagi">Say what matters and what limits you. Yagi Studio finds designs that meet it and polishes each one, then you pick one. For an all-round antenna instead, start a vertical dipole with New design.</p>
+            <p class="note" data-for="dipole">Say where it works, how it's mounted and how it's matched, and Yagi Studio sizes the rod and the match. For a beam instead, start a Yagi with New design.</p>
             <h3 class="plan-h">1. Where it works</h3>
             <div class="field-grid three">
               <div class="field"><label for="w-f0">Target, MHz</label><input class="num" id="w-f0" inputmode="decimal"></div>
@@ -92,6 +108,7 @@
               <div class="field"><label for="w-hi">to, MHz</label><input class="num" id="w-hi" inputmode="decimal"></div>
             </div>
             <div class="row"><button class="btn small" id="w-network">Choose a network…</button><span class="note">Sets the target and band for a mesh network or ham band.</span></div>
+            <div class="stack" id="w-yagi" data-for="yagi">
             <h3 class="plan-h">2. What matters most</h3>
             <div class="field-grid three">
               <div class="field"><label for="w-gain">Gain at least, dBd ${A.help("gain")}</label><input class="num" id="w-gain" inputmode="decimal"></div>
@@ -113,9 +130,35 @@
               <div class="field"><label for="w-dmetal">Its metal</label>${plainSelect("w-dmetal", METAL_OPTIONS)}</div>
             </div>
             <label class="check"><input type="checkbox" id="w-wire"> Fed with coax soldered to the driven element's two halves (counts its leads in the gap) ${A.help("wire")}</label>
+            </div>
+            <div class="stack" id="w-dip" data-for="dipole">
+            <h3 class="plan-h">2. How it's mounted</h3>
+            <div class="field-grid three">
+              <div class="field"><label for="w-mount">Mount ${A.help("sleeve")}</label>${plainSelect("w-mount", [["side", "On an arm out from the mast"], ["top", "On top of a mast, as a sleeve dipole"], ["pod", "On the node pod's top, as a sleeve dipole"]])}</div>
+              <div class="field" id="w-mast-wrap"><label for="w-mast">The mast ${A.help("dipmast")}</label>${plainSelect("w-mast", [["metal", "Metal"], ["none", "Wood, fiberglass or plastic"]])}</div>
+              <div class="field" id="w-mastd-wrap"><label for="w-mastd">Its diameter, mm</label><input class="num" id="w-mastd" inputmode="decimal"></div>
+              <div class="field" id="w-tube-wrap"><label for="w-tube">The sleeve</label>${plainSelect("w-tube", [["k14", "1/4 in brass tube (K&S)"]])}</div>
+              <div class="field" id="w-coax-wrap"><label for="w-coax">The coax up inside it</label>${plainSelect("w-coax", [["rg316", "RG316"], ["rg178", "RG178"]])}</div>
+              <div class="field" id="w-sec-wrap"><label for="w-sec">Sections ${A.help("collinear")}</label>${plainSelect("w-sec", [["1", "One: a sleeve dipole, about 2.2 dBi"], ["2", "Two: a collinear, about 0.41 m tall, 4.7 dBi"], ["3", "Three: a collinear, about 0.66 m tall, 5.7 dBi"]])}</div>
+            </div>
+            <div class="field-grid three">
+              <div class="field" id="w-arm-wrap"><label for="w-arm">From the mast's middle to the dipole, mm</label><input class="num" id="w-arm" inputmode="decimal"></div>
+            </div>
+            <p class="note" id="w-arm-note"></p>
+            <h3 class="plan-h">3. The match</h3>
+            <div class="field-grid three">
+              <div class="field"><label for="w-cap">Capacitor in series ${A.help("dipcap")}</label>${plainSelect("w-cap", [["auto", "Whichever standard value suits best"], ["3.3", "3.3 pF"], ["3.9", "3.9 pF"], ["4.7", "4.7 pF"], ["5.6", "5.6 pF"], ["stub:rg178", "An open stub of RG178 coax"], ["stub:rg316", "An open stub of RG316 coax"], ["stub:rg174", "An open stub of RG174 coax"], ["0", "None: SWR about 1.45"]])}</div>
+            </div>
+            <p class="note">A dipole is about 73 ohm. A hairpin across its feed and a small capacitor in series with the coax bring it to 50: SWR about 1.15 across the band. The hairpin's short can be moved to tune it once it's built. An open-ended stub of coax can stand in for the capacitor: no part to buy, and it can be trimmed on the VNA.</p>
+            <h3 class="plan-h">4. What you'll build it from</h3>
+            <div class="field-grid plan-four">
+              <div class="field"><label for="w-drod">Rod, mm across</label><input class="num" id="w-drod" inputmode="decimal"></div>
+              <div class="field"><label for="w-drmetal">Its metal ${A.help("metal")}</label>${plainSelect("w-drmetal", METAL_OPTIONS)}</div>
+            </div>
+            </div>
             <div class="row plan-go">
-              <div class="field"><label for="w-effort">How hard to look</label>${plainSelect("w-effort", [["quick", "Quick"], ["normal", "Normal"], ["thorough", "Thorough"]])}</div>
-              <button class="btn primary" id="w-run">Design my antenna</button>
+              <div class="field" id="w-effort-wrap" data-for="yagi"><label for="w-effort">How hard to look</label>${plainSelect("w-effort", [["quick", "Quick"], ["normal", "Normal"], ["thorough", "Thorough"]])}</div>
+              <button class="btn primary" id="w-run"><span data-for="yagi">Design my antenna</span><span data-for="dipole">Design my dipole</span></button>
               <button class="btn" id="w-back">Back to the design I have open</button>
             </div>
             <p class="note" id="w-status" role="status"></p>
@@ -124,13 +167,9 @@
         <aside class="plan-side">
           <section class="card" aria-label="What happens next">
             <div class="head"><h2>What happens when you press it</h2></div>
-            <div class="body"><ol class="plan-steps">
-              <li><b>It finds.</b> A quick search for each number of rods: the design that reaches your gain within your limits, as you asked.</li>
-              <li><b>It polishes.</b> Each one found is then tuned carefully, so what you open is finished, not rough. You can watch the rods move as it works.</li>
-              <li><b>You choose.</b> Open the one you like. You can still change any rod by hand, and polish it again.</li>
-            </ol></div>
+            <div class="body"><ol class="plan-steps" id="w-steps"></ol></div>
           </section>
-          <section class="card" aria-label="Your goals stay">
+          <section class="card" aria-label="Your goals stay" data-for="yagi">
             <div class="head"><h2>Your answers stay with the design</h2></div>
             <div class="body"><p class="note">They're what it's polished against later, on the Design tab.</p></div>
           </section>
@@ -211,7 +250,17 @@
     $("#w-dmetal").onchange = (e) => { FIND.drivenMetal = e.target.value; FIND.drivenFor = S.design.name; };
     $("#w-wire").onchange = (e) => { S.design.feedWire = e.target.checked ? (S.lastWire || 0.3) : 0; A.commit(); A.designChanged(false); };
     $("#w-effort").onchange = (e) => { g().effort = e.target.value; };
-    $("#w-run").onclick = designIt;
+    $("#w-run").onclick = () => (A.kind() === "dipole" ? designDipole() : designIt());
+    $("#w-mast").onchange = (e) => { DIP.mast = e.target.value; syncGoals(); };
+    $("#w-mount").onchange = (e) => { DIP.mount = e.target.value; syncGoals(); };
+    $("#w-tube").onchange = (e) => { DIP.tube = e.target.value; };
+    $("#w-coax").onchange = (e) => { DIP.coax = e.target.value; syncGoals(); };
+    $("#w-sec").onchange = (e) => { DIP.sections = +e.target.value; syncGoals(); };
+    A.bindNum($("#w-mastd"), { get: () => DIP.mastD, min: 5, max: 500, decimals: 1, set: (v) => { DIP.mastD = v; } });
+    A.bindNum($("#w-arm"), { get: () => DIP.arm, min: YS.ARM.min, max: 3000, decimals: 0, set: (v) => { DIP.arm = v; } });
+    $("#w-cap").onchange = (e) => { DIP.cap = e.target.value; };
+    A.bindNum($("#w-drod"), { get: () => DIP.d, min: 0.5, max: 30, decimals: 3, set: (v) => { DIP.d = v; } });
+    $("#w-drmetal").onchange = (e) => { DIP.metal = e.target.value; };
     $("#w-back").onclick = () => setStage("antenna");
     $("#r-change").onclick = () => setStage("goals");
     $("#r-explore").onclick = openExplorer;
@@ -230,7 +279,24 @@
   };
 
   function syncGoals() {
-    const g = goals();
+    const g = goals(), D = dipAnswers(), dip = A.kind() === "dipole";
+    const side = D.mount === "side";
+    $("#w-mount").value = D.mount; $("#w-tube").value = D.tube; $("#w-coax").value = D.coax;
+    $("#w-mast-wrap").hidden = !side; $("#w-arm-wrap").hidden = !side; $("#w-tube-wrap").hidden = side; $("#w-coax-wrap").hidden = side;
+    $("#w-sec-wrap").hidden = side; $("#w-sec").value = String(D.sections || 1);
+    const colin = !side && D.sections > 1;
+    $("#w-mast").value = D.mast; $("#w-mastd-wrap").hidden = D.mount === "pod" || (side && D.mast !== "metal"); $("#w-cap").value = String(D.cap); $("#w-drmetal").value = D.metal;
+    ["#w-mastd", "#w-arm", "#w-drod"].forEach((q) => { const i = $(q); if (i && document.activeElement !== i) i._refresh(); });
+    const ch = !side ? YS.dipole.choke(D.tube, D.coax, S.design.f0) : null;
+    $("#w-arm-note").textContent = !side ? `The lower half is the tube, with the coax up its middle to the feed: ${fmt(ch.length, 1)} mm long, a quarter wave of the line inside it (the tube round the coax's braid: ${fmt(ch.z0, 0)} ohm, velocity factor ${fmt(ch.vf, 3)}), so it chokes off current that would run on down the coax. ${D.mount === "pod" ? "It stands on an insert in the pod's top hole, the coax going on down into the pod." : "It stands on a cap over the mast's top, the coax going on down the mast."} The model takes the choke as perfect, and leaves out what's below it.${colin ? ` Above the feed the rod goes on in ${D.sections} sections, joined end to end in printed joints, each joint bridged by a short loop of 1 mm copper wire folded down beside the rod below: it sets each section's current in step with the one below, so they add toward the horizon. The beam is flatter than a dipole's, so it reaches further level, less above and below.` : ""}`
+      : D.mast === "metal"
+      ? `A metal mast beside it reflects: about 80 to 100 mm out, the dipole beams away from the mast, about 9 dB stronger away than toward it; from 250 mm it's rounder (about 6 dB from strongest to weakest), and rounder still further out. The mast clamp holds it ${YS.ARM.min} mm out at least.`
+      : `A wooden or fiberglass pole doesn't change the pattern. The mast clamp holds the dipole ${YS.ARM.min} mm out at least, which keeps the coax at right angles to it for a while, as it should be.`;
+    $("#w-steps").innerHTML = dip && colin
+      ? `<li><b>It sizes the collinear.</b> Each section's length, the stubs' and the match together, for the most gain toward the horizon, matched tight at your target (SWR 1.1 or better) and looser across the band (1.5). It takes a little longer: half a minute or so.</li><li><b>You open it.</b> See its pattern, its cut list and its printed joints.</li>`
+      : dip
+      ? `<li><b>It sizes the dipole.</b> The rod's length, and the hairpin and capacitor that match it, for the best SWR across your band, with the mast in the model.</li><li><b>You open it.</b> See its pattern round the mast, change anything by hand, and print its arm on the 3D print tab.</li>`
+      : `<li><b>It finds.</b> A quick search for each number of rods: the design that reaches your gain within your limits, as you asked.</li><li><b>It polishes.</b> Each one found is then tuned carefully, so what you open is finished, not rough. You can watch the rods move as it works.</li><li><b>You choose.</b> Open the one you like. You can still change any rod by hand, and polish it again.</li>`;
     ["#w-f0", "#w-lo", "#w-hi", "#w-gain", "#w-to", "#w-swr", "#w-fb", "#w-top", "#w-gap", "#w-rod", "#w-driven"].forEach((q) => { const i = $(q); if (i && document.activeElement !== i) i._refresh(); });
     $("#w-favor").value = g.favor;
     $("#w-top-wrap").hidden = g.favor === "gain";
@@ -255,6 +321,30 @@
     for (let i = 0; i < chunks; i++) jobs.push(A.pool.run("monteCarlo", { solver, tol: { rod: FORGIVING.rod, pos: FORGIVING.pos, bend: 0, trim: true, count: each, seed: 500 + i * 31, f0: design.f0 } }));
     const res = (await Promise.all(jobs)).flat(), good = res.filter((r) => r.swr <= goals().swrMax).length, share = good / res.length;
     return { good, n: res.length, word: share >= 0.9 ? "Yes" : share >= 0.6 ? "Mostly" : "Fussy" };
+  }
+
+  /** A vertical dipole from the answers: its rod and match sized on the workers, then opened. */
+  async function designDipole() {
+    if (OPT.running) return;
+    const D = dipAnswers(), d = S.design, g = goals(), status = $("#w-status");
+    const cap = D.cap === "auto" || String(D.cap).indexOf("stub:") === 0 ? D.cap : +D.cap;
+    const colin = D.mount !== "side" && D.sections > 1;
+    const base = YS.dipole.blank({ f0: d.f0, band: g.band, d: D.d, material: D.metal, gap: d.gap, radio: d.radio, cap, mount: D.mount, tube: D.tube, coax: D.coax, sections: D.mount === "side" ? 1 : D.sections,
+      mast: { on: D.mast === "metal", d: D.mastD, behind: Math.max(YS.ARM.min, D.arm), length: 2000 } });
+    OPT.running = true; $("#w-run").disabled = true;
+    status.textContent = colin ? "Sizing the collinear's sections, its stubs and its match…" : "Sizing the dipole and its match across your band…";
+    try {
+      const r = await YS.dipole.sizeOn(A.pool, base, cap);
+      A.loadDesign(YS.makeDesign(r.design), true);
+      DIP.for = null;
+      setStage("antenna");
+      if (colin) A.toast(`${fmt(r.gain, 1)} dBi toward the horizon; SWR ${fmt(r.atF0, 2)} at ${fmt(r.design.f0, 3)} MHz, ${fmt(r.worst, 2)} or better across the band` + (r.stub ? `, with a ${fmt(r.stub.length, 1)} mm ${YS.CABLES[r.stub.cable].name} stub` : r.cap ? `, with a ${r.cap} pF capacitor` : ", with no match"));
+      else A.toast(`SWR ${fmt(r.worst, 2)} or better across ${fmt(g.band[0], 1)} to ${fmt(g.band[1], 1)} MHz` + (r.stub ? `, with a ${fmt(r.stub.length, 1)} mm ${YS.CABLES[r.stub.cable].name} stub and a ${fmt(r.design.hairpin.length, 1)} mm hairpin` : r.cap ? `, with a ${r.cap} pF capacitor and a ${fmt(r.design.hairpin.length, 1)} mm hairpin` : ", with no match"));
+    } catch (e) {
+      status.textContent = "That didn't work: " + e.message;
+    } finally {
+      OPT.running = false; $("#w-run").disabled = false;
+    }
   }
 
   async function designIt() {
@@ -394,7 +484,7 @@
         <p class="note" id="gc-text"></p>
         <p id="gc-status"></p>
         <div class="row"><button class="btn primary" id="gc-design">Design an antenna for me</button><button class="btn small" id="gc-back" hidden></button></div>
-        <div class="row"><button class="btn small" id="gc-explore">Simulate different numbers of rods</button></div>
+        <div class="row" id="gc-explore-row" data-for="yagi"><button class="btn small" id="gc-explore">Simulate different numbers of rods</button></div>
       </div>
     </section>`;
 
@@ -409,7 +499,7 @@
         <div style="position:relative;height:90px" id="pc-chart-box" hidden><canvas id="pc-chart" style="position:absolute;inset:0;width:100%;height:100%" aria-label="Worst gain across the band as the polish goes on"></canvas></div>
         <p class="note" id="pc-status" role="status"></p>
         <div id="pc-result" class="stack"></div>
-        <details><summary>How it may change the design</summary>
+        <details id="pc-how" data-for="yagi"><summary>How it may change the design</summary>
           <div class="stack" style="margin-top:8px">
             <div class="field-grid">
               <div class="field"><label for="pc-range">Search</label>${plainSelect("pc-range", [["near", "Close to this design"], ["wide", "Anywhere sensible"]])}</div>
@@ -430,7 +520,7 @@
     $("#gc-design").onclick = () => setStage("goals");
     $("#gc-back").onclick = () => setStage("run");
     $("#gc-explore").onclick = openExplorer;
-    $("#pc-run").onclick = () => polishAgain();
+    $("#pc-run").onclick = () => (YS.dipole.isDipole(S.design) ? matchAgain() : polishAgain());
     $("#pc-stop").onclick = () => { OPT.cancel = true; };
     $("#pc-range").onchange = (e) => { goals().range = e.target.value; };
     $("#pc-effort").onchange = (e) => { goals().effort = e.target.value; };
@@ -442,6 +532,9 @@
   /** The goals card and the polish card, as the design open now stands. */
   A.renderPlanCards = () => {
     if (!$("#gc-text")) return;
+    const dip = YS.dipole.isDipole(S.design);
+    $("#pc-run").textContent = dip ? "Match it again" : "Polish it";
+    if (dip) return dipoleCards();
     const g = goals(), c = currentParts(), short = shortfalls(c);
     $("#gc-text").textContent = goalsLine();
     $("#gc-status").innerHTML = !c ? "" : short.length ? `<span class="pill warn">Not yet</span> <span class="note">${esc(short.join("; "))}.</span>` : `<span class="pill good">Meets them all</span>`;
@@ -469,6 +562,58 @@
       };
     });
   };
+
+  /** The two cards for a vertical dipole: what it is and how well it matches, and sizing its match again after a change. */
+  function dipoleCards() {
+    const d = S.design, pin = d.hairpin && d.hairpin.length > 0 ? d.hairpin : null, cap = d.seriesC > 0 ? d.seriesC : 0, st = d.seriesStub && d.seriesStub.length > 0 ? d.seriesStub : null;
+    const band = (S.rows || []).filter((r) => r.f >= d.band[0] && r.f <= d.band[1]), worst = band.length ? Math.max.apply(null, band.map((r) => r.swr)) : NaN;
+    const sv = YS.dipole.isSleeve(d) ? YS.dipole.halves(d) : null, co = YS.dipole.isCollinear(d) ? d.elements[0].colin : null;
+    const match = pin && st ? `matched by a ${fmt(st.length, 1)} mm open stub of ${YS.CABLES[st.cable].name} and a ${fmt(pin.length, 1)} mm hairpin` : pin && cap ? `matched by a ${cap} pF capacitor and a ${fmt(pin.length, 1)} mm hairpin` : "with no match";
+    if (co) {
+      const f0row = (S.rows || []).reduce((b, r) => (!b || Math.abs(r.f - d.f0) < Math.abs(b.f - d.f0) ? r : b), null);
+      $("#gc-text").textContent = `A collinear of ${co.sections.length} sections for ${fmt(d.f0, 3)} MHz, on ${d.mount === "pod" ? "the node pod's top" : "top of a mast"}: its ${fmt(sv.low, 1)} mm sleeve below the feed, then ${co.sections.map((v) => fmt(v, 1)).join(", ")} mm sections above (joint to joint), each joint bridged by a ${fmt(co.stub.length, 1)} mm stub; ${fmt(d.elements[0].L, 0)} mm tip to tip, ${match}.`;
+      const [c2, w2] = A.swrClass(f0row ? f0row.swr : NaN);
+      $("#gc-status").innerHTML = f0row ? `<span class="pill ${c2}">${w2}</span> <span class="note">SWR ${fmt(f0row.swr, 2)} at ${fmt(d.f0, 3)} MHz, ${fmt(worst, 2)} or better across the band.</span>` : "";
+      $("#gc-back").hidden = true;
+      $("#gc-design").disabled = OPT.running;
+      $("#pc-title").textContent = "Size it again";
+      $("#pc-why").textContent = "After a change by hand (the gap, the rod, the capacitor), this sizes the sections, the stubs and the match again: the most gain toward the horizon, SWR 1.1 or better at the target and 1.5 across the band.";
+      $("#pc-live").hidden = true; $("#pc-chart-box").hidden = true;
+      $("#pc-run").disabled = OPT.running;
+      $("#pc-stop").disabled = true;
+      return;
+    }
+    $("#gc-text").textContent = `A ${sv ? "sleeve" : "vertical"} dipole for ${fmt(d.band[0], 3)} to ${fmt(d.band[1], 3)} MHz, ${sv ? `on ${d.mount === "pod" ? "the node pod's top" : "top of a mast"}, its rod ${fmt(sv.up, 1)} mm above the feed and its ${fmt(sv.low, 1)} mm sleeve below` : d.mast.on ? `on an arm ${Math.round(d.mast.behind)} mm from a ${fmt(d.mast.d, 0)} mm metal mast` : "on a pole that isn't metal"}, ${pin && st ? `matched by a ${fmt(st.length, 1)} mm open stub of ${YS.CABLES[st.cable].name} and a ${fmt(pin.length, 1)} mm hairpin` : pin && cap ? `matched by a ${cap} pF capacitor and a ${fmt(pin.length, 1)} mm hairpin` : "with no match"}.`;
+    const [cls, word] = A.swrClass(worst);
+    $("#gc-status").innerHTML = isFinite(worst) ? `<span class="pill ${cls}">${word}</span> <span class="note">SWR ${fmt(worst, 2)} or better across the band.</span>` : "";
+    $("#gc-back").hidden = true;
+    $("#gc-design").disabled = OPT.running;
+    $("#pc-title").textContent = "Match it again";
+    $("#pc-why").textContent = `After a change by hand (the mast's distance, the rod, the gap, the ${st ? "stub's coax" : "capacitor"}), this sizes the rod's length and the hairpin again for the best SWR across the band, ${st ? "and the stub's length" : "keeping the capacitor"}.`;
+    $("#pc-live").hidden = true; $("#pc-chart-box").hidden = true;
+    $("#pc-run").disabled = OPT.running;
+    $("#pc-stop").disabled = true;
+  }
+
+  /** A vertical dipole's rod and hairpin, sized again for the design as it stands now. */
+  async function matchAgain() {
+    if (OPT.running) return;
+    const d = S.design, cap = d.seriesStub && d.seriesStub.length > 0 ? "stub:" + d.seriesStub.cable : d.seriesC > 0 ? d.seriesC : d.hairpin ? "auto" : 0;
+    OPT.running = true; A.renderPlanCards();
+    $("#pc-status").textContent = "Sizing its match across the band…";
+    try {
+      const r = await YS.dipole.sizeOn(A.pool, d, cap);
+      A.commit();
+      S.design.elements[0].L = r.design.elements[0].L; S.design.hairpin = r.design.hairpin; S.design.seriesC = r.design.seriesC; S.design.seriesStub = r.design.seriesStub || null;
+      if (r.design.elements[0].colin) S.design.elements[0].colin = r.design.elements[0].colin;
+      A.commit(); A.designChanged(true);
+      $("#pc-status").textContent = r.design.elements[0].colin ? `Done: ${fmt(r.gain, 1)} dBi toward the horizon, SWR ${fmt(r.atF0, 2)} at the target and ${fmt(r.worst, 2)} or better across the band. Undo brings the old one back.` : `Done: SWR ${fmt(r.worst, 2)} or better across the band. Undo brings the old one back.`;
+    } catch (e) {
+      $("#pc-status").textContent = "That didn't work: " + e.message;
+    } finally {
+      OPT.running = false; A.renderPlanCards();
+    }
+  }
 
   /** Polishes the design open now, from where it is, and shows the rods move in the drawing as it works. Nothing changes until it's accepted. */
   async function polishAgain() {
@@ -661,7 +806,7 @@
   A.plan = { setStage, retheme() { drawWatch(); drawExplorer(); if (runLayout) runLayout.draw(); }, refresh() { if (OPT.stage === "goals") syncGoals(); if (OPT.stage === "run") renderRun(); A.renderPlanCards(); } };
 
   /* ==================== Build check ==================== */
-  const CHK = { tol: { rod: 0.3, pos: 0.3, bend: 0, count: 400, trim: true }, res: null, sens: null, metric: "valley", running: false };
+  const CHK = { tol: { rod: 0.3, pos: 0.3, bend: 0, count: 400, trim: true, pin: 0.5, cap: 0.25, stub: 0.3 }, res: null, sens: null, metric: "valley", running: false, trimFor: null };
 
   function chkTemplate() {
     return `
@@ -673,9 +818,14 @@
             <p class="note">Simulates many builds with random errors, to show what you can expect from real parts.</p>
             <div class="field-grid">
               <div class="field"><label for="t-rod">Rod cutting ± mm ${A.help("sigma")}</label><input class="num" id="t-rod" inputmode="decimal"></div>
-              <div class="field"><label for="t-pos">Hole position ± mm</label><input class="num" id="t-pos" inputmode="decimal"></div>
-              <div class="field"><label for="t-bend">Rod bends ± degrees ${A.help("bends")}</label><input class="num" id="t-bend" inputmode="decimal"></div>
+              <div class="field" data-for="yagi"><label for="t-pos">Hole position ± mm</label><input class="num" id="t-pos" inputmode="decimal"></div>
+              <div class="field" data-for="yagi"><label for="t-bend">Rod bends ± degrees ${A.help("bends")}</label><input class="num" id="t-bend" inputmode="decimal"></div>
               <div class="field"><label for="t-n">Builds</label><input class="num" id="t-n" inputmode="numeric"></div>
+            </div>
+            <div class="field-grid" id="t-match" hidden>
+              <div class="field"><label for="t-pin">Hairpin ± mm</label><input class="num" id="t-pin" inputmode="decimal"></div>
+              <div class="field" id="t-cap-f"><label for="t-cap">Capacitor ± pF</label><input class="num" id="t-cap" inputmode="decimal"></div>
+              <div class="field" id="t-stub-f"><label for="t-stub">Coax stub ± mm</label><input class="num" id="t-stub" inputmode="decimal"></div>
             </div>
             <label class="check"><input type="checkbox" id="t-trim"> Trim the driven element on a VNA ${A.help("trim")}</label>
             <button class="btn primary" id="t-run">Simulate the builds</button>
@@ -690,11 +840,11 @@
       <div class="col">
         <div class="hist-grid" style="flex:1 1 auto">
           ${[["swr", "SWR at target"], ["gain", "Gain at target, dBd"], ["fb", "Front-to-back at target, dB"], ["valley", "Where the valley lands, MHz"]].map(([k, t]) => `
-          <section class="card" aria-label="${t}"><div class="head"><h2>${t}</h2></div><div class="stat-line" id="h-${k}-s" style="padding:2px 12px 0">&nbsp;</div><div class="canvas-box" style="margin:4px;min-height:130px"><canvas id="h-${k}"></canvas></div></section>`).join("")}
+          <section class="card" aria-label="${t}"${k === "gain" || k === "fb" ? ' data-for="yagi"' : ""}><div class="head"><h2>${t}</h2></div><div class="stat-line" id="h-${k}-s" style="padding:2px 12px 0">&nbsp;</div><div class="canvas-box" style="margin:4px;min-height:130px"><canvas id="h-${k}"></canvas></div></section>`).join("")}
         </div>
       </div>
       <div class="col">
-        <section class="card" aria-label="What each rod does">
+        <section class="card" aria-label="What each rod does" data-for="yagi">
           <div class="head"><h2>Which rods matter?</h2>
             <select class="sel" id="s-metric" aria-label="Measure" style="width:auto;min-height:24px;font-size:12px">
               <option value="valley">Valley, MHz per mm</option><option value="swr">SWR per mm</option><option value="gain">Gain, dB per mm</option><option value="fb">F/B, dB per mm</option>
@@ -732,7 +882,7 @@
     const drv = R.map((r) => r.driven).sort((a, b) => a - b);
     const sim = S.design.elements.find((e) => e.type === "driven");
     $("#t-summary").innerHTML = `
-      <p><span class="pill ${cls}">${word}</span> 19 of 20 builds get SWR ${fmt(s.worst, 2)} or better at the target, and gain of at least ${fmt(g.worst, 2)} dBd.</p>
+      <p><span class="pill ${cls}">${word}</span> 19 of 20 builds get SWR ${fmt(s.worst, 2)} or better at the target${A.kind() === "dipole" ? "." : `, and gain of at least ${fmt(g.worst, 2)} dBd.`}</p>
       ${CHK.tol.trim ? `<p class="note" style="margin-top:6px">The driven element ends up between ${fmt(pct(drv, 5), 1)} and ${fmt(pct(drv, 95), 1)} mm tip to tip (designed: ${fmt(sim.L, 1)}). So cut it at least ${fmt(Math.max(pct(drv, 95) - sim.L, 0) + 1, 1)} mm long and trim down.${fails ? ` In ${fails} of ${R.length} builds, the driven element alone couldn't cancel the reactance, so the parasitic rods need closer tolerances.` : ""}</p>` : ""}`;
   }
 
@@ -766,7 +916,7 @@
       const solver = YS.toSolver(S.design);
       const chunks = Math.max(1, A.pool.batchCount), each = Math.ceil(CHK.tol.count / chunks), jobs = [];
       for (let i = 0; i < chunks; i++) {
-        jobs.push(A.pool.run("monteCarlo", { solver, tol: { rod: CHK.tol.rod, pos: CHK.tol.pos, bend: CHK.tol.bend, trim: CHK.tol.trim, count: each, seed: 1000 + i * 77, f0: S.design.f0 } }));
+        jobs.push(A.pool.run("monteCarlo", { solver, tol: { rod: CHK.tol.rod, pos: CHK.tol.pos, bend: CHK.tol.bend, trim: CHK.tol.trim, pin: CHK.tol.pin, cap: CHK.tol.cap, stub: CHK.tol.stub, count: each, seed: 1000 + i * 77, f0: S.design.f0 } }));
       }
       CHK.res = (await Promise.all(jobs)).flat();
       $("#t-status").textContent = `${CHK.res.length.toLocaleString()} builds in ${fmt((performance.now() - started) / 1000, 1)} s.`;
@@ -786,16 +936,28 @@
       A.bindNum($("#t-n"), { get: () => CHK.tol.count, set: (v) => { CHK.tol.count = Math.round(v); }, min: 10, max: 20000, decimals: 0, stepScale: 500 });
       $("#t-trim").checked = CHK.tol.trim;
       $("#t-trim").onchange = (e) => { CHK.tol.trim = e.target.checked; };
+      A.bindNum($("#t-pin"), { get: () => CHK.tol.pin, set: (v) => { CHK.tol.pin = v; }, min: 0, max: 10, decimals: 2 });
+      A.bindNum($("#t-cap"), { get: () => CHK.tol.cap, set: (v) => { CHK.tol.cap = v; }, min: 0, max: 5, decimals: 2 });
+      A.bindNum($("#t-stub"), { get: () => CHK.tol.stub, set: (v) => { CHK.tol.stub = v; }, min: 0, max: 10, decimals: 2 });
       $("#t-run").onclick = runCheck;
       $("#s-metric").onchange = (e) => { CHK.metric = e.target.value; drawSens(); };
       const ro = new ResizeObserver(() => { drawHists(); drawSens(); });
       $$("#view-check canvas").forEach((c) => ro.observe(c));
     },
-    show() { runSens(); if (CHK.res) drawHists(); else runCheck(); },
-    refreshDesign() { CHK.res = null; runSens(); },
+    show() { matchTols(); runSens(); if (CHK.res) drawHists(); else runCheck(); },
+    refreshDesign() { CHK.res = null; matchTols(); runSens(); },
     refreshResults() {},
     retheme() { drawHists(); drawSens(); },
   };
+
+  /** The match's tolerances show for a design with a hairpin or a capacitor; a vertical dipole starts untrimmed, as its
+      hairpin, not a trim, tunes it, and a perfect trim on every build would hide what the parts' errors do. */
+  const d0 = () => S.design;
+  function matchTols() {
+    const st = d0().seriesStub && d0().seriesStub.length > 0, d = S.design, has = (d.hairpin && d.hairpin.length > 0) || d.seriesC > 0 || st;
+    $("#t-match").hidden = !has; $("#t-stub-f").hidden = !st; $("#t-cap-f").hidden = st;
+    if (YS.dipole.isDipole(d) && CHK.trimFor !== d.name) { CHK.trimFor = d.name; CHK.tol.trim = false; $("#t-trim").checked = false; }
+  }
 
   /* ==================== Cut list ==================== */
   const CUT = { boomThick: 20, allowance: 4, inches: false };
@@ -808,8 +970,8 @@
           <div class="head"><h2>Settings</h2></div>
           <div class="body stack">
             <div class="field-grid">
-              <div class="field"><label for="c-boom">Boom thickness, mm</label><input class="num" id="c-boom" inputmode="decimal"></div>
-              <div class="field"><label for="c-allow">Driven: cut long by, mm</label><input class="num" id="c-allow" inputmode="decimal"></div>
+              <div class="field" data-for="yagi"><label for="c-boom">Boom thickness, mm</label><input class="num" id="c-boom" inputmode="decimal"></div>
+              <div class="field"><label for="c-allow"><span data-for="yagi">Driven: cut long by, mm</span><span data-for="dipole">Dipole: cut long by, mm</span></label><input class="num" id="c-allow" inputmode="decimal"></div>
             </div>
             <label class="check"><input type="checkbox" id="c-in"> Show inches too</label>
             <button class="btn" id="c-print" hidden>Print this sheet</button>
@@ -837,6 +999,7 @@
     const driven = sorted.find((e) => e.type === "driven");
     const half = (driven.L + CUT.allowance - d.gap) / 2, doneHalf = (driven.L - d.gap) / 2;
     const metalNames = { aluminium: "Aluminum", brass: "Brass", copper: "Copper", steel: "Stainless", perfect: "—" };
+    if (YS.dipole.isDipole(d)) return renderDipoleSheet(d, driven, half, doneHalf, m, inch, metalNames);
     $("#c-sheet").innerHTML = `
       <h1>${esc(d.name)}</h1>
       <p class="note">${fmt(d.f0, 3)} MHz · ${sorted.length} rods · boom ${fmt(YS.boomLength(d), 1)} mm between the end rods${m ? ` · ${fmt(m.gainDbd, 2)} dBd · F/B ${fmt(m.fb, 1)} dB · SWR ${fmt(m.swr, 2)} predicted at ${fmt(m.f, 3)} MHz` : ""}</p>
@@ -853,6 +1016,110 @@
         <p><b>Driven element.</b> Cut two rods at ${fmt(half, 1)} mm each. Set them ${fmt(d.gap, 1)} mm apart, which makes ${fmt(2 * half + d.gap, 1)} mm tip to tip, deliberately ${fmt(CUT.allowance, 1)} mm too long. Then file both outer tips equally on the VNA. The model expects about ${fmt(driven.L, 1)} mm tip to tip when it's right (about ${fmt(doneHalf, 2)} mm each), and the coax's leads in the gap usually make it finish a mm or more shorter, so go by the VNA. Set the gap before you trim.</p>
         ${A.radio.sheetLine()}
         <p><b>Accuracy.</b> Cut the other rods to ±0.3 mm and file the ends square. Measure each one with calipers, and keep a note of what you got: the Tune tab can use it.</p>
+        <p><b>Before you mount it.</b> A roof or mast job needs care. Stay well clear of power lines, ground the mast and fit lightning protection as your local code asks, and check any permit rules first.</p>
+      </div>`;
+  }
+
+  /** A vertical dipole's cut list: its two halves, the hairpin and the capacitor, and how they go together. */
+  function renderDipoleSheet(d, driven, half, doneHalf, m, inch, metalNames) {
+    const pin = d.hairpin && d.hairpin.length > 0 ? d.hairpin : null, cap = d.seriesC > 0 ? d.seriesC : 0, st = d.seriesStub && d.seriesStub.length > 0 ? d.seriesStub : null;
+    const cable = st ? YS.CABLES[st.cable].name : "";
+    const R = m && S.detail.metrics.cuts ? YS.dipole.roundness(S.detail.metrics) : null;
+    if (YS.dipole.isCollinear(d)) return renderColinSheet(d, driven, m, R, inch, metalNames, pin, cap, st, cable);
+    if (YS.dipole.isSleeve(d)) return renderSleeveSheet(d, driven, m, R, inch, metalNames, pin, cap, st, cable);
+    $("#c-sheet").innerHTML = `
+      <h1>${esc(d.name)}</h1>
+      <p class="note">${fmt(d.f0, 3)} MHz · vertical dipole${m ? ` · ${fmt(R ? R.max : m.gainDbi, 2)} dBi at its strongest · SWR ${fmt(m.swr, 2)} predicted at ${fmt(m.f, 3)} MHz` : ""} · ${d.mast.on ? `${Math.round(d.mast.behind)} mm from a ${fmt(d.mast.d, 0)} mm metal mast` : "on a pole that isn't metal"}</p>
+      <p class="note"><b>Experimental: not built or tested yet.</b> This kind of antenna is designed and checked on the computer only. Sweep it before you trust it.</p>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>Part</th><th>Size, mm</th><th>Made of</th></tr></thead><tbody>
+        <tr><td>Dipole</td><td>2 × ${fmt(half, 1)}${inch(half)}, ${fmt(d.gap, 1)} apart</td><td style="font-family:var(--sans)">${fmt(driven.d, 2)} mm ${(metalNames[driven.material || d.material] || "").toLowerCase()} rod</td></tr>
+        ${pin ? `<tr><td>Hairpin</td><td>${fmt(pin.length, 1)} long, legs ${fmt(pin.spacing, 1)} apart</td><td style="font-family:var(--sans)">${fmt(pin.d, 1)} mm bare copper wire</td></tr>` : ""}
+        ${cap ? `<tr><td>Capacitor</td><td>${cap} pF</td><td style="font-family:var(--sans)">C0G (NP0) chip, 0805 or 0603, 50 V or more</td></tr>` : ""}
+        ${st ? `<tr><td>Coax stub</td><td>cut ${fmt(st.length + 2, 1)}, trim to ${fmt(st.length, 1)}</td><td style="font-family:var(--sans)">${cable}, open at its far end</td></tr>` : ""}
+      </tbody></table></div>
+      <div class="stack" style="max-width:68ch">
+        <p><b>The dipole.</b> Cut two rods at ${fmt(half, 1)} mm each. Set them ${fmt(d.gap, 1)} mm apart, upright, which makes ${fmt(2 * half + d.gap, 1)} mm tip to tip, deliberately ${fmt(CUT.allowance, 1)} mm too long. The model expects about ${fmt(driven.L, 1)} mm tip to tip when it's right (about ${fmt(doneHalf, 2)} mm each). Trim both outer tips equally, by the VNA.</p>
+        ${pin || cap || st ? `<p><b>The match.</b> ${pin ? `A U of wire across the feed, its legs soldered to the two halves ${fmt((pin.spacing - d.gap) / 2, 1)} mm out from their inner ends and running back along the arm, away from the dipole, shorted ${fmt(pin.length, 1)} mm along. ` : ""}${cap ? `The capacitor in series with the coax's centre conductor, to the upper half; the shield to the lower half. ` : ""}${st ? `In place of a capacitor, the open stub of ${cable} in series: the feed's centre conductor to the stub's braid, the stub's centre conductor to the upper half; the feed's shield to the lower half. Its braid isn't grounded, so lay it back beside the hairpin. Seal its open end, and trim it half a millimetre at a time on the VNA: the longer, the bigger a capacitor it is. ` : ""}A dipole is about 73 ohm; these bring it to 50. The hairpin's short can be moved to tune it: the Tune tab says which way.</p>` : `<p><b>No match.</b> A dipole is about 73 ohm, so on 50 ohm coax its SWR bottoms out near 1.45.</p>`}
+        <p><b>The coax.</b> It leaves the dipole's middle at right angles, along the arm to the mast: keep it so, with a ferrite choke where it leaves the arm.</p>
+        ${R ? `<p><b>Its pattern.</b> ${d.mast.on ? `With the mast ${Math.round(d.mast.behind)} mm away, it's ${fmt(R.max, 1)} dBi at its strongest and ${fmt(R.min, 1)} dBi at its weakest round it: ${fmt(R.ripple, 1)} dB from one to the other.` : `All round, within ${fmt(R.ripple, 1)} dB.`}</p>` : ""}
+        ${A.radio.sheetLine()}
+        <p><b>Before you mount it.</b> A roof or mast job needs care. Stay well clear of power lines, ground the mast and fit lightning protection as your local code asks, and check any permit rules first.</p>
+      </div>`;
+  }
+
+  /**
+   * A collinear's rod pieces, from the feed up: each its cut length, mm. The first runs from the gap's top edge to the first
+   * joint, each joint leaves its gap between two pieces' ends, and the top one runs from the last joint to the tip.
+   */
+  function colinPieces(d) {
+    const co = d.elements[0].colin, n = co.sections.length, j = co.joint;
+    return co.sections.map((v, i) => v - (i === 0 ? d.gap / 2 : j / 2) - (i === n - 1 ? 0 : j / 2));
+  }
+
+  /**
+   * How long to cut the radome's pipe: from the mast cap's socket floor (at its wall) up past the top tip, 20 mm to spare
+   * under the end cap. The tube's lower end sits CAP.socket down the post, whose end is level with the socket's rim.
+   */
+  function radomeLength(d) {
+    const e = d.elements[0], h = YS.dipole.halves(d), C = YS.SLEEVE.CAP, R = YS.SLEEVE.RADOME;
+    const tubeLow = -(h.low), postTop = tubeLow + C.socket, floor = postTop - Math.max((YS.SLEEVE.PIPES.pvc125.od / 2 + R.play / 2 - (e.sleeve.d / 2 + 3.5)) + 10, R.grip);
+    return (e.L - h.low) - floor + 20;
+  }
+
+  /** A collinear's cut list: the sleeve below, the rod pieces above, the stubs and the match. */
+  function renderColinSheet(d, driven, m, R, inch, metalNames, pin, cap, st, cable) {
+    const e = driven, sl = e.sleeve, co = e.colin, h = YS.dipole.halves(d), tube = YS.dipole.TUBES[sl.tube] || YS.dipole.TUBES.k14, coax = YS.dipole.COAX[sl.coax] || YS.dipole.COAX.rg316;
+    const ch = YS.dipole.choke(sl.tube, sl.coax, d.f0), where = d.mount === "pod" ? "the node pod's top" : "top of a mast", pcs = colinPieces(d), n = pcs.length, metal = (metalNames[e.material || d.material] || "").toLowerCase();
+    const wire = 2 * (co.stub.length + co.stub.out) + 2 * co.stub.spacing + 10;      // both legs and their runs in to the rods, the short, and 5 mm each end to solder
+    const name = (i) => (i === 0 ? "First rod, above the feed" : i === n - 1 ? "Top rod" : `Rod ${i + 1}`);
+    $("#c-sheet").innerHTML = `
+      <h1>${esc(d.name)}</h1>
+      <p class="note">${fmt(d.f0, 3)} MHz · collinear of ${n} sections on ${where}${m ? ` · ${fmt(m.gainDbi, 2)} dBi toward the horizon · SWR ${fmt(m.swr, 2)} predicted at ${fmt(m.f, 3)} MHz` : ""} · ${fmt(e.L, 0)} mm tip to tip</p>
+      <p class="note"><b>Experimental: not built or tested yet.</b> This kind of antenna is designed and checked on the computer only. Sweep it before you trust it.</p>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>Part</th><th>Size, mm</th><th>Made of</th></tr></thead><tbody>
+        <tr><td>Sleeve, below the feed</td><td>${fmt(h.low - d.gap / 2, 1)}${inch(h.low - d.gap / 2)}, as cut</td><td style="font-family:var(--sans)">${esc(tube.name)}</td></tr>
+        ${pcs.map((v, i) => `<tr><td>${name(i)}</td><td>${i === n - 1 ? `cut ${fmt(v + CUT.allowance, 1)}, trim to ${fmt(v, 1)}` : fmt(v, 1)}${inch(v)}</td><td style="font-family:var(--sans)">${fmt(e.d, 2)} mm ${metal} rod</td></tr>`).join("")}
+        <tr><td>Stubs, ${n - 1}</td><td>${fmt(co.stub.length, 1)} down beside the rod, legs ${fmt(co.stub.spacing, 1)} apart, ${fmt(co.stub.out, 1)} out (each from ${fmt(wire, 0)} of wire)</td><td style="font-family:var(--sans)">${fmt(co.stub.d, 1)} mm bare copper wire</td></tr>
+        <tr><td>Coax up the sleeve</td><td>through it, and on down</td><td style="font-family:var(--sans)">${esc(coax.name)}</td></tr>
+        ${pin ? `<tr><td>Hairpin</td><td>${fmt(pin.length, 1)} long, legs ${fmt(pin.spacing, 1)} apart</td><td style="font-family:var(--sans)">${fmt(pin.d, 1)} mm bare copper wire</td></tr>` : ""}
+        ${cap ? `<tr><td>Capacitor</td><td>${cap} pF</td><td style="font-family:var(--sans)">C0G (NP0) chip, 0805 or 0603, 50 V or more</td></tr>` : ""}
+        ${st ? `<tr><td>Coax stub</td><td>cut ${fmt(st.length + 2, 1)}, trim to ${fmt(st.length, 1)}</td><td style="font-family:var(--sans)">${cable}, open at its far end</td></tr>` : ""}
+      </tbody></table></div>
+      <div class="stack" style="max-width:68ch">
+        <p><b>The sleeve.</b> Cut the tube to ${fmt(h.low - d.gap / 2, 1)} mm, square, and leave it at that: it's the choke, a quarter wave of the line it makes round the coax's braid inside (${fmt(ch.z0, 0)} ohm, velocity factor ${fmt(ch.vf, 3)}). Its top is at the gap's lower edge, ${fmt(d.gap, 1)} mm under the first rod.</p>
+        <p><b>The rods.</b> ${n} pieces stand end to end above the feed: ${pcs.map((v) => fmt(v, 1)).join(", ")} mm from the bottom up, ${fmt(co.joint, 1)} mm apart at each joint. Cut them square; only the top one is cut long, ${fmt(CUT.allowance, 1)} mm, and trimmed at its tip on the VNA, as the Tune tab says. The sections it was sized as are ${co.sections.map((v) => fmt(v, 1)).join(", ")} mm, the feed's middle to the first joint's middle, joint to joint, and the last joint to the tip.</p>
+        <p><b>The stubs.</b> At each joint, a U of ${fmt(co.stub.d, 1)} mm bare copper wire folded down beside the rod below, its two legs side by side, ${fmt(co.stub.spacing, 1)} mm apart and ${fmt(co.stub.out, 1)} mm out from the rod's middle, in the air beside the joint's sleeve. One leg goes straight in to the lower rod's top end, the other to the upper rod's bottom end, in the joint's window; the short, ${fmt(co.stub.length, 1)} mm below the lower rod's end, lies in the groove of the shelf at the joint's foot. Use the wire size given and keep the legs straight and parallel: the stub's wire and spacing set how far the section above lags, nearly as much as its length.</p>
+        <p><b>The coax.</b> Feed the ${esc(coax.name)} up through the tube from its open end. At the top, solder its braid all round the tube's top edge, and its centre conductor ${pin || cap || st ? "to the match" : "to the first rod"}. Below the tube it carries on down ${d.mount === "pod" ? "into the pod" : "the mast"}; clip a ferrite choke on it there too.</p>
+        ${pin || cap || st ? `<p><b>The match.</b> ${pin ? `A U of wire across the feed, one leg to the first rod's lower end and one to the tube's top, ${fmt(pin.spacing, 1)} mm apart and ${fmt(pin.length, 1)} mm long, out to the side, shorted at its far end. ` : ""}${cap ? "The capacitor in series between the coax's centre conductor and the first rod. " : ""}${st ? `In place of a capacitor, the open stub of ${cable} in series: the feed's centre conductor to the stub's braid, the stub's centre conductor to the first rod. Seal its open end. ` : ""}The hairpin's short can be moved to tune it.</p>` : `<p><b>No match.</b> The feed isn't 50 ohm: expect a high SWR.</p>`}
+        ${R ? `<p><b>Its pattern.</b> All round, within ${fmt(R.ripple, 1)} dB. Its beam is ${m && m.bwE ? `${fmt(m.bwE, 0)} degrees` : "flat"} from top to bottom: it reaches further level and less above and below than a dipole. What's under it, the ${d.mount === "pod" ? "pod" : "mast"} and the coax, isn't in the model, nor the stubs' own field.</p>` : ""}
+        ${A.radio.sheetLine()}
+        <p><b>Before you mount it.</b> At ${fmt(e.L / 1000, 2)} m it's tall and catches the wind: brace the mast. A roof or mast job needs care. Stay well clear of power lines, ground the mast and fit lightning protection as your local code asks, and check any permit rules first.</p>
+      </div>`;
+  }
+
+  /** A sleeve dipole's cut list: the rod above, the tube below (the choke), the match, and the coax up the tube. */
+  function renderSleeveSheet(d, driven, m, R, inch, metalNames, pin, cap, st, cable) {
+    const sl = driven.sleeve, h = YS.dipole.halves(d), tube = YS.dipole.TUBES[sl.tube] || YS.dipole.TUBES.k14, coax = YS.dipole.COAX[sl.coax] || YS.dipole.COAX.rg316;
+    const ch = YS.dipole.choke(sl.tube, sl.coax, d.f0), where = d.mount === "pod" ? "the node pod's top" : "top of a mast";
+    $("#c-sheet").innerHTML = `
+      <h1>${esc(d.name)}</h1>
+      <p class="note">${fmt(d.f0, 3)} MHz · sleeve dipole on ${where}${m ? ` · ${fmt(R ? R.max : m.gainDbi, 2)} dBi all round · SWR ${fmt(m.swr, 2)} predicted at ${fmt(m.f, 3)} MHz` : ""}</p>
+      <p class="note"><b>Experimental: not built or tested yet.</b> This kind of antenna is designed and checked on the computer only. Sweep it before you trust it.</p>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>Part</th><th>Size, mm</th><th>Made of</th></tr></thead><tbody>
+        <tr><td>Rod above the feed</td><td>cut ${fmt(h.up - d.gap / 2 + CUT.allowance, 1)}, trim to ${fmt(h.up - d.gap / 2, 1)}${inch(h.up - d.gap / 2)}</td><td style="font-family:var(--sans)">${fmt(driven.d, 2)} mm ${(metalNames[driven.material || d.material] || "").toLowerCase()} rod</td></tr>
+        <tr><td>Sleeve, below the feed</td><td>${fmt(h.low - d.gap / 2, 1)}${inch(h.low - d.gap / 2)}, as cut</td><td style="font-family:var(--sans)">${esc(tube.name)}</td></tr>
+        <tr><td>Coax up the sleeve</td><td>through it, and on down</td><td style="font-family:var(--sans)">${esc(coax.name)}</td></tr>
+        ${pin ? `<tr><td>Hairpin</td><td>${fmt(pin.length, 1)} long, legs ${fmt(pin.spacing, 1)} apart</td><td style="font-family:var(--sans)">${fmt(pin.d, 1)} mm bare copper wire</td></tr>` : ""}
+        ${cap ? `<tr><td>Capacitor</td><td>${cap} pF</td><td style="font-family:var(--sans)">C0G (NP0) chip, 0805 or 0603, 50 V or more</td></tr>` : ""}
+        ${st ? `<tr><td>Coax stub</td><td>cut ${fmt(st.length + 2, 1)}, trim to ${fmt(st.length, 1)}</td><td style="font-family:var(--sans)">${cable}, open at its far end</td></tr>` : ""}
+      </tbody></table></div>
+      <div class="stack" style="max-width:68ch">
+        <p><b>The sleeve.</b> Cut the tube to ${fmt(h.low - d.gap / 2, 1)} mm, square, and leave it at that: it's the choke, a quarter wave of the line it makes round the coax's braid inside (${fmt(ch.z0, 0)} ohm, velocity factor ${fmt(ch.vf, 3)}), which keeps current from running on down the outside of the coax. Its top is at the gap's lower edge, ${fmt(d.gap, 1)} mm under the rod.</p>
+        <p><b>The coax.</b> Feed the ${esc(coax.name)} up through the tube from its open end. At the top, solder its braid all round the tube's top edge, and its centre conductor ${pin || cap || st ? "to the match" : "to the rod above"}. Below the tube it carries on down ${d.mount === "pod" ? "into the pod" : "the mast"}; clip a ferrite choke on it there too.</p>
+        <p><b>The rod above.</b> Cut it ${fmt(CUT.allowance, 1)} mm long and trim its tip on the VNA, as the Tune tab says. Only the rod is trimmed, never the tube.</p>
+        ${pin || cap || st ? `<p><b>The match.</b> ${pin ? `A U of wire across the feed, one leg to the rod's lower end and one to the tube's top, ${fmt(pin.spacing, 1)} mm apart and ${fmt(pin.length, 1)} mm long, out to the side, shorted at its far end. ` : ""}${cap ? "The capacitor in series between the coax's centre conductor and the rod. " : ""}${st ? `In place of a capacitor, the open stub of ${cable} in series: the feed's centre conductor to the stub's braid, the stub's centre conductor to the rod. Seal its open end. ` : ""}A dipole is about 73 ohm; these bring it to 50. The hairpin's short can be moved to tune it.</p>` : `<p><b>No match.</b> A dipole is about 73 ohm, so on 50 ohm coax its SWR bottoms out near 1.45.</p>`}
+        ${R ? `<p><b>Its pattern.</b> All round, within ${fmt(R.ripple, 1)} dB, as nothing stands beside it. What's under it, the ${d.mount === "pod" ? "pod" : "mast"} and the coax, isn't in the model.</p>` : ""}
+        ${A.radio.sheetLine()}
         <p><b>Before you mount it.</b> A roof or mast job needs care. Stay well clear of power lines, ground the mast and fit lightning protection as your local code asks, and check any permit rules first.</p>
       </div>`;
   }
@@ -923,7 +1190,7 @@
     const files = [
       ["Design (JSON)", () => JSON.stringify(d, null, 1), base + ".json", "application/json"],
       ["NEC deck, for nec2++ or 4nec2", () => YS.necDeck(d, { freqs: S.rows ? [S.rows[0].f, S.rows[1].f].concat([]).slice(0, 1) : [d.f0] }), base + ".nec"],
-      ["YagiCAD file (.YC6)", () => YS.yc6(d, S.detail && S.detail.metrics), base + ".YC6"],
+      ...(A.kind() === "yagi" ? [["YagiCAD file (.YC6)", () => YS.yc6(d, S.detail && S.detail.metrics), base + ".YC6"]] : []),
       ["Sweep (CSV)", () => "MHz,SWR,gain_dBd,gain_dBi,FB_dB,R_ohm,X_ohm\n" + (S.rows || []).map((r) => [r.f.toFixed(3), r.swr.toFixed(3), r.gainDbd.toFixed(3), r.gainDbi.toFixed(3), r.fb.toFixed(2), r.z[0].toFixed(2), r.z[1].toFixed(2)].join(",")).join("\n") + "\n", base + "_sweep.csv", "text/csv"],
       ["Simulated S11 (.s1p), for NanoVNA Saver", () => YS.toTouchstone(S.rows || [], d.z0, d.name + " simulated by Yagi Studio"), base + ".s1p"],
     ];
@@ -935,7 +1202,7 @@
   }
 
   /* ==================== 3D print: the boom, a mount and a coupon, from the design on screen ==================== */
-  const PRINT = { mount: "mast", nut: "standard", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, lengths: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6 };
+  const PRINT = { mount: "mast", nut: "standard", fit: YS.PARTS.FIT, gauge: true, notches: true, label: true, brand: true, lengths: true, pilot: YS.PARTS.SCREW.pilot, useBar: false, result: null, key: "", shown: 0, busy: false, status: "", yaw: -0.7, pitch: 0.6, pod: Object.assign({}, YS.POD.OPTIONS), radome: "none" };
 
   /* The printer's size, kept with the guide's settings. One stored number, from before there were three, means that much each way. */
   function bedNow() {
@@ -964,7 +1231,8 @@
   function printOptions() {
     const st = A.storage.read().guide || {}, cal = YS.guideScale(st.measured);
     const scale = PRINT.useBar && cal && !cal.suspicious ? cal.scale : 1;
-    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, nut: PRINT.nut, screws: !!S.design.screws, pilot: PRINT.pilot };
+    return { bed: bedNow(), scale, fit: PRINT.fit, allowance: CUT.allowance, gauge: PRINT.gauge, notches: PRINT.notches, label: PRINT.label, brand: PRINT.brand, lengths: PRINT.lengths, customText: S.design.boomText || "", mount: PRINT.mount, nut: PRINT.nut, screws: !!S.design.screws, pilot: PRINT.pilot, pod: Object.assign({}, PRINT.pod),
+      radome: YS.dipole.isSleeve(S.design) && PRINT.mount === "mast" ? PRINT.radome : "none" };
   }
   /* What the files on show were made from: when this changes, they're out of date. */
   const printKey = () => JSON.stringify([S.design.elements, S.design.polarization, S.design.gap, printOptions()]);
@@ -976,25 +1244,33 @@
         <section class="card" aria-label="What to make">
           <div class="head"><h2>Parts for this design</h2></div>
           <div class="body stack">
-            <p class="note"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill good">Mast clamp printed and tested</span> So is the boom's tail that goes in it, with its nut slots and coax tunnel. <span class="pill warn">Other mounts not yet</span> The painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
+            <p class="note" id="p-tested-sleeve" hidden><span class="exp-badge">Experimental</span> <b>A sleeve dipole: not built yet.</b> Its hub, its cap or the pod's insert for it haven't been printed or built. Its model is checked against a full-surface model of its stepped rod, but the choke is taken as perfect and what's under it isn't in the model. Sweep it before you trust it.</p>
+            <p class="note" id="p-tested-colin" hidden><span class="exp-badge">Experimental</span> <b>A collinear: not built yet.</b> Its hub, its joints and its cap or insert haven't been printed or built. Its model, the rods and stubs as one wire, is checked against nec2++ where nec2++ holds, but the choke is taken as perfect and what's under it isn't in the model. Sweep it before you trust it.</p>
+            <p class="note" id="p-tested-dipole" hidden><span class="exp-badge">Experimental</span> <b>A dipole's arm: not built yet.</b> Its tail, coax tunnel and solder window are the tested boom's, and the mast clamp is the tested one, but the arm itself, its longer window and the hairpin and capacitor match haven't been printed or built. Sweep it before you trust it.</p>
+            <p class="note" id="p-tested"><span class="pill good">Boom printed and tested</span> A boom from this tab has been printed in ASA, built into a working antenna and tuned: the tapered boom, the fork-and-tongue joint, the gauge, the check notches and the screw holes. <span class="pill good">Mast clamp printed and tested</span> So is the boom's tail that goes in it, with its nut slots and coax tunnel. <span class="pill warn">Other mounts not yet</span> The painter pole arm, hand grip and tripod mount haven't been printed, nor have the rod lengths on the boom's side. Test-fit those before you rely on them.</p>
             <p class="note">Makes printable files from the design on the Design tab, here on your device.</p>
             <div>${bedFields("p")}</div>
             <p id="p-pieces" role="status" style="font-weight:600"></p>
             <div class="field-grid">
+              <div class="field" id="p-radome-f" hidden><label for="p-radome">In a pipe ${A.help("radome")}</label><select class="sel" id="p-radome"><option value="none">No: in the open</option><option value="pvc125">1 1/4 in Schedule 40 PVC</option></select></div>
+              <p class="note" id="p-radome-exp" hidden><span class="exp-badge">Experimental</span> <b>The pipe isn't tried yet.</b> Its collars and socket haven't been printed, and what the plastic does to the tuning isn't modelled or measured: sweep the antenna bare and again in the pipe, and trim it in the pipe.</p>
               <div class="field"><label for="p-mount">Mount</label><select class="sel" id="p-mount">${Object.keys(YS.PARTS.MOUNTS).map((k) => `<option value="${k}">${esc(YS.PARTS.MOUNTS[k].name)}</option>`).join("")}</select></div>
-              <div class="field"><label for="p-nut">Nuts in the boom's tail</label><select class="sel" id="p-nut">${Object.keys(YS.PARTS.NUTS).map((k) => `<option value="${k}">${esc(YS.PARTS.NUTS[k].name)}</option>`).join("")}</select></div>
-              <div class="field"><label for="p-fit">Rod holes over the rod, mm ${A.help("printfit")}</label><input class="num" id="p-fit" inputmode="decimal"></div>
+              <div class="field" id="p-nut-f"><label for="p-nut">Nuts in the boom's tail</label><select class="sel" id="p-nut">${Object.keys(YS.PARTS.NUTS).map((k) => `<option value="${k}">${esc(YS.PARTS.NUTS[k].name)}</option>`).join("")}</select></div>
+              <div class="field" id="p-fit-f"><label for="p-fit">Rod holes over the rod, mm ${A.help("printfit")}</label><input class="num" id="p-fit" inputmode="decimal"></div>
               <div class="field"><label for="p-shrink">Shrinkage</label><select class="sel" id="p-shrink"><option value="slicer">My slicer handles it</option><option value="bar">Scale from a test bar</option></select></div>
               <div class="field" id="p-bar-wrap"><label for="p-bar">Test bar measures, mm</label><input class="num" id="p-bar" inputmode="decimal"></div>
             </div>
-            <label class="check"><input type="checkbox" id="p-gauge"> Rod-cutting gauge on top of the boom ${A.help("printgauge")}</label>
-            <label class="check"><input type="checkbox" id="p-notches"> Check notches on top of the boom, 100 mm apart ${A.help("printcheck")}</label>
-            <label class="check"><input type="checkbox" id="p-label"> Up arrows on both sides of the boom, and TOP on its top</label>
-            <label class="check"><input type="checkbox" id="p-lengths"> Each rod's length on the boom's side, beside its hole</label>
-            <label class="check"><input type="checkbox" id="p-brand"> Yagi Studio on the boom's side</label>
-            <div class="field"><label for="p-text">Your own text on the boom's side ${A.help("boomtext")}</label><input class="txt-in" id="p-text" maxlength="60" placeholder="Name, call sign, phone number, club…" autocomplete="off"></div>
+            ${podFields()}
+            <div class="stack" id="p-boom-opts">
+            <label class="check"><input type="checkbox" id="p-gauge"> <span><span data-for="yagi">Rod-cutting gauge on top of the boom</span><span data-for="dipole">Rod-cutting gauge on top of the arm</span> ${A.help("printgauge")}</span></label>
+            <label class="check"><input type="checkbox" id="p-notches"> <span>Check notches on top of the <span data-for="yagi">boom</span><span data-for="dipole">arm</span>, 100 mm apart ${A.help("printcheck")}</span></label>
+            <label class="check"><input type="checkbox" id="p-label"> <span>Up arrows on both sides of the <span data-for="yagi">boom</span><span data-for="dipole">arm</span>, and TOP on its top</span></label>
+            <label class="check"><input type="checkbox" id="p-lengths"> <span><span data-for="yagi">Each rod's length on the boom's side, beside its hole</span><span data-for="dipole">The dipole's length on the arm's side, beside its hole</span></span></label>
+            <label class="check"><input type="checkbox" id="p-brand"> <span>Yagi Studio on the <span data-for="yagi">boom's</span><span data-for="dipole">arm's</span> side</span></label>
+            <div class="field"><label for="p-text">Your own text on the <span data-for="yagi">boom's</span><span data-for="dipole">arm's</span> side ${A.help("boomtext")}</label><input class="txt-in" id="p-text" maxlength="60" placeholder="Name, call sign, phone number, club…" autocomplete="off"></div>
             <label class="check"><input type="checkbox" id="p-screws"> Holes for M3 screws to hold the rods ${A.help("printscrews")}</label>
             <div class="field-grid" id="p-pilot-wrap"><div class="field"><label for="p-pilot">Screw holes, mm</label><select class="sel" id="p-pilot">${YS.PARTS.SCREW.pilots.map((v) => `<option value="${v}">${v.toFixed(1)}</option>`).join("")}</select></div></div>
+            </div>
             <div class="row"><button class="btn primary" id="p-run">Make the files</button></div>
             <p class="note" id="p-status" role="status"></p>
             <div class="stack" id="p-plan"></div>
@@ -1011,9 +1287,66 @@
     </div>`;
   }
 
+  /* The node pod's own choices, shown when it's the mount (pod.js; node_pod.py is the reference). */
+  function podFields() {
+    const sel = (key, label) => `<div class="field" id="p-pod-${key}-f"><label for="p-pod-${key}">${label}</label><select class="sel" id="p-pod-${key}">${YS.POD.CHOICES[key].map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select></div>`;
+    const box = (key, label) => `<label class="check" id="p-pod-${key}-f"><input type="checkbox" id="p-pod-${key}"> ${label}</label>`;
+    return `
+            <div class="stack" id="p-pod" hidden>
+              <p class="note"><span class="exp-badge">Experimental</span> <b>Not all printed yet.</b> The node pod: a sealed, upright housing for a Heltec V4 node and its battery, with this boom's socket on its front, so the antenna and the node go up the mast as one. An earlier version of its body, ring and finial has been printed and fits together. This version and its other parts haven't been printed. Its body prints on a brim.</p>
+              <div class="field-grid">
+                ${sel("battery", "Battery")}${sel("top", "Its top")}${sel("mount", "Its back")}${sel("back", "Port away from the antenna")}${sel("front", "Port toward the antenna")}
+                <div class="field"><label for="p-pod-label">Label on its nose</label><input class="txt-in" id="p-pod-label" maxlength="10" placeholder="For example DUVYAGI" autocomplete="off"></div>
+              </div>
+              ${box("socket", "The boom's socket on its front (it also takes the side solar arm)")}
+              ${box("sma", "An SMA bulkhead in its base, for the boom's coax")}
+              ${box("lace", "A hex lace over its outside, which stiffens it against knocks")}
+              ${box("marks", "Yagi Studio's bee, the label and the Yagi signs")}
+            </div>`;
+  }
+  function bindPod(changed) {
+    ["battery", "top", "mount", "back", "front"].forEach((k) => { const e = $(`#p-pod-${k}`); e.value = PRINT.pod[k]; e.onchange = () => { PRINT.pod[k] = e.value; changed(); }; });
+    ["socket", "sma", "lace", "marks"].forEach((k) => {
+      const e = $(`#p-pod-${k}`), on = k === "socket" ? "boom" : "yes", off = k === "socket" ? "none" : "no";
+      e.checked = PRINT.pod[k] === on; e.onchange = () => { PRINT.pod[k] = e.checked ? on : off; changed(); };
+    });
+    const t = $("#p-pod-label"); t.value = PRINT.pod.label; t.onchange = () => { PRINT.pod.label = t.value.trim(); changed(); };
+  }
+  /* What the pod comes to, in words, for the plan. */
+  function podPlan(plan) {
+    const o = plan.sleeve ? Object.assign({}, PRINT.pod, { top: "sleeve", socket: "none", sma: "no" }) : PRINT.pod, T = plan.taper, L = YS.POD.layout(o, { Ht: T.Ht, w: plan.sizes.w, m: T.m || 0, zb: T.zb }), out = [];
+    out.push(`The pod stands ${fmt(L.Z_TOP, 0)} mm tall and ${fmt(2 * 29.9, 0)} mm across, not counting its socket, back and top piece. Its body prints upright on a brim, about 5 to 6 hours.`);
+    if (S.design.polarization === "horizontal" && o.socket === "boom") out.push("Its socket takes the boom with the rods vertical, so with this design's horizontal rods it's made without one.");
+    if (o.top === "solar") out.push("Its top takes the finial now, or the solar roof later: a blind hole, so neither needs a seal.");
+    if (o.top === "sma") out.push("Its top takes an SMA antenna on a screw-in insert: fit the connector, its lock washer and nut to the insert first, then screw the insert in over an 18 x 2.5 mm O-ring. The insert's head is 2 mm, so the SMA's thread must reach through 2 mm, a lock washer and its nut, and leave enough for the antenna.");
+    if (o.top === "n") out.push("Its top takes an N antenna on a screw-in insert, over a 34 x 2.5 mm O-ring. The top stands high enough for the connector and its cable to hang 32 mm inside.");
+    if (o.mount === "pad") out.push("Its back is a pad for bolt-on mounts: a block (a camera tripod's screw, or Yagi Studio's painter pole socket under it), a wall plate with keyholes, and a magnet plate for three 43 mm rubber-coated magnets.");
+    out.push("The magnet base, a ring on a round skirt standing on three 43 mm rubber-coated magnets, replaces the ring for a flat steel top, such as an HVAC unit's.");
+    out.push("Use a protected (1S, with its own protection board) cell: the Heltec V4 has none of its own, and nothing in the pod stops it charging below freezing. Keep the mast and the antenna well clear of power lines, ground the mast, and check your local rules.");
+    return out;
+  }
+
   function renderPrintPlan() {
+    { // a dipole's mounts: the arm's clamp, or for a sleeve dipole its cap over a mast, or the pod it stands on
+      const dip = A.kind() === "dipole", sel = $("#p-mount"), sd = S.design;
+      const allowed = !dip ? null : sd.mount === "pod" ? ["pod", "none"] : ["mast", "none"];
+      [...sel.options].forEach((o) => {
+        o.hidden = o.disabled = !!allowed && !allowed.includes(o.value);
+        o.textContent = dip && YS.dipole.isSleeve(sd) && o.value === "mast" ? "A cap over the mast's top" : YS.PARTS.MOUNTS[o.value].name;
+      });
+      if (allowed && !allowed.includes(PRINT.mount)) { PRINT.mount = allowed[0]; sel.value = allowed[0]; } }
+    { const dip = YS.dipole.isDipole(S.design), sv = YS.dipole.isSleeve(S.design); $("#p-tested").hidden = dip; $("#p-tested-dipole").hidden = !dip || sv; $("#p-tested-sleeve").hidden = !sv || YS.dipole.isCollinear(S.design); $("#p-tested-colin").hidden = !YS.dipole.isCollinear(S.design); }
     const d = S.design, host = $("#p-plan"), run = $("#p-run");
+    { // a sleeve dipole has no arm: no gauge, marks, text, screws or tail nuts; on the pod its insert is the top, the coax
+      // comes in through it, and there's no boom to take a socket
+      const sv = YS.dipole.isSleeve(d);
+      ["#p-boom-opts", "#p-nut-f", "#p-fit-f", "#p-pod-top-f", "#p-pod-socket-f", "#p-pod-sma-f"].forEach((q) => { const e = $(q); if (e) e.hidden = sv; });
+    }
+    $("#p-radome-f").hidden = !(YS.dipole.isSleeve(d) && PRINT.mount === "mast");
+    $("#p-radome").value = PRINT.radome;
+    $("#p-radome-exp").hidden = $("#p-radome-f").hidden || PRINT.radome === "none";
     $("#p-bar-wrap").hidden = !PRINT.useBar;
+    $("#p-pod").hidden = PRINT.mount !== "pod";
     $("#p-screws").checked = !!d.screws;
     if (document.activeElement !== $("#p-text")) $("#p-text").value = d.boomText || "";
     $("#p-pilot-wrap").hidden = !d.screws;
@@ -1027,6 +1360,22 @@
       return;
     }
     run.disabled = PRINT.busy;
+    if (plan.sleeve) {
+      // a sleeve dipole: no boom, a hub and its foot
+      const ch = YS.dipole.choke(d.elements[0].sleeve.tube, d.elements[0].sleeve.coax, d.f0), h = YS.dipole.halves(d);
+      $("#p-pieces").textContent = `A hub at the feed, and ${PRINT.mount === "pod" ? "the pod with an insert for its top" : PRINT.mount === "mast" ? "a cap over the mast's top" : "no foot"}.`;
+      const ls = [`The hub holds the ${fmt(d.elements[0].d, 2)} mm rod above the feed and the ${fmt(d.elements[0].sleeve.d, 2)} mm tube below it, ${fmt(d.gap, 1)} mm apart, with a window for the coax and the match. The tube is ${fmt(h.low - d.gap / 2, 1)} mm long, the choke's quarter wave (velocity factor ${fmt(ch.vf, 3)}).`];
+      const co = d.elements[0].colin;
+      if (co) ls.push(`Above it, ${co.sections.length - 1} joint${co.sections.length > 2 ? "s" : ""}, one between each two rods: a slim sleeve holding the rods' ends ${fmt(co.joint, 1)} mm apart, with a window where each rod's end goes out to a leg of the stub, and a shelf ${fmt(co.stub.length, 1)} mm below whose groove holds the stub's short, so its legs hang in the air beside the rod below.`);
+      if (PRINT.mount === "mast") ls.push(`The cap fits a ${fmt(d.mast.d, 0)} mm mast, squeezed on by a hose clamp round its slit skirt. Set the mast's diameter on the Design tab's first screen.`);
+      const pipe = PRINT.mount === "mast" && PRINT.radome !== "none" ? YS.SLEEVE.PIPES[PRINT.radome] : null;
+      if (pipe) ls.push(`In ${pipe.name} (${fmt(pipe.od, 1)} mm outside, ${fmt(pipe.id, 1)} mm inside: measure yours): the cap has a socket ${fmt(YS.SLEEVE.RADOME.grip, 0)} mm deep for the pipe's end, with a drain at its low edge, and the hub${co ? " and each joint have" : " has"} a collar that centres the rod in the bore. Cut the pipe about ${fmt(radomeLength(d), 0)} mm long and close its top with a standard PVC end cap. The plastic round the antenna lowers its frequency a little, and the model leaves it out: sweep it in the pipe, and trim the top rod as the Tune tab says.`);
+      if (PRINT.mount === "pod") ls.push(...podPlan(plan).map(esc), "Its top has the SMA top's through hole, and the sleeve's insert screws into it in place of the SMA insert. The pod's battery and board sit under the sleeve, which the model doesn't include: sweep it there.");
+      ls.push("Print it in plain PETG or ASA. Not carbon fiber filled: its fibers conduct.");
+      host.innerHTML = ls.map((l) => `<p class="note">${l}</p>`).join("");
+      renderPrintFiles();
+      return;
+    }
     const b = plan.bed, count = plan.sections.length;
     $("#p-pieces").textContent = `On your ${b.x} x ${b.y} x ${b.z} mm printer, this ${fmt(plan.boom, 0)} mm boom prints in ${count === 1 ? "one piece" : count + " pieces"}.`;
     const lines = [];
@@ -1036,13 +1385,18 @@
     if (count > 1) lines.push(`In one straight piece it needs a printer about ${fmt(Math.ceil(plan.onePiece), 0)} mm long, with room for a brim.`);
     if (plan.gauge) lines.push(`Gauge marks, from these lengths: ${plan.gauge.marks.map((m) => `${esc(m.rod)} ${fmt(m.length, 1)}`).join(", ")} mm. If tuning changes a rod, make the boom again.`);
     if (PRINT.useBar && printOptions().scale === 1) lines.push("Enter what the test bar measures, or these files won't be scaled. The bar is on the Cut list tab.");
-    if (PRINT.mount === "mast") {
+    if (PRINT.mount === "mast" && YS.dipole.isDipole(d)) {
+      // a dipole's arm is cut to its distance from the mast, so the clamp and the Design tab agree by construction
+      const arm = YS.ARM.of(d), at = YS.mastBehind(d.mast.d) + arm;
+      lines.push(`The arm holds the dipole ${fmt(at, 0)} mm from the middle of a ${fmt(d.mast.d, 0)} mm mast in the clamp${Math.abs(at - d.mast.behind) > 1 ? `: the closest the clamp allows, where the Design tab has ${fmt(d.mast.behind, 0)} mm. Set the Design tab to ${fmt(at, 0)} to see what that does` : ", as the Design tab has it"}. ${d.mast.on ? "" : "The design takes the pole to be wood, fiberglass or plastic: a metal one changes the pattern."}`.trim());
+    } else if (PRINT.mount === "mast") {
       const m = d.mast && d.mast.on ? d.mast : null;
       if (!m) lines.push(`The clamp holds a 42 mm mast about ${fmt(YS.mastBehind(42), 0)} mm behind the reflector. Turn the mast on in the Design tab to see what that does.`);
       else if (Math.abs(YS.mastBehind(m.d) - m.behind) > 10) lines.push(`The clamp puts your ${fmt(m.d, 0)} mm mast about ${fmt(YS.mastBehind(m.d), 0)} mm behind the reflector, and the Design tab has it at ${fmt(m.behind, 0)} mm. Set them the same to see what it does.`);
     }
     if (PRINT.mount === "pole") lines.push(`The pole's thread is from a socket proven on one real painter pole, in the USA. Check it fits yours. The pole sits ${fmt(YS.PARTS.POLE_BEHIND, 0)} mm behind the reflector, and a metal one can change the tuning, so sweep it on the pole. Look up first: a pole can reach overhead power lines. Don't raise it in wind or near storms.`);
     if (PRINT.mount === "grip") lines.push("A hand near the rods detunes them. Sweep the antenna the way you'll hold it.");
+    if (PRINT.mount === "pod") lines.push(...podPlan(plan).map(esc));
     lines.push("Print it in plain PETG or ASA. Not carbon fiber filled: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.");
     host.innerHTML = lines.map((l) => `<p class="note">${l}</p>`).join("") + plan.warnings.map((w) => `<p class="note"><span class="pill warn">Note</span> ${esc(w)}</p>`).join("");
     renderPrintFiles();
@@ -1059,7 +1413,7 @@
         ${R.parts.map((p, i) => `<tr><td style="text-align:left;white-space:normal"><button class="linkish" data-show="${i}" aria-label="Show ${esc(p.name)}">${esc(p.name)}</button><div class="note">${p.size.map((v) => fmt(v, 0)).join(" x ")} mm${p.placing ? `. ${p.place.fits ? "" : '<span class="pill warn">Check that</span> '}${esc(p.placing)}` : ""}</div></td><td style="text-align:right"><button class="btn small" data-get="${i}" aria-label="Download ${esc(p.name)}">Download</button></td></tr>`).join("")}
       </tbody></table>
       <div class="row"><button class="btn" id="p-notes">Download the build notes</button><button class="btn" id="p-all">Download everything</button></div>
-      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. The boom and the mast clamp have been printed, built and tested; the other mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it.</p>`;
+      <p class="note">These are print-ready STL files, in the right orientation, and their build notes list the settings and hardware. ${YS.dipole.isCollinear(S.design) ? "None of a collinear's parts has been printed or built yet: test-fit the rods in the hub and the joints, the hub on its foot, and the stub's legs in the joints' windows and grooves, before you solder." : YS.dipole.isSleeve(S.design) ? "None of a sleeve dipole's parts has been printed or built yet: test-fit the rod and the tube in the hub, and the hub on its foot, before you solder." : YS.dipole.isDipole(S.design) ? "The boom's tail, its coax tunnel and the mast clamp have been printed and tested on Yagis; a dipole's arm, its longer window and its match haven't been built yet." : "The boom and the mast clamp have been printed, built and tested; the other mounts have only been checked as models. Measure the check notches on every print, and test-fit a mount before you rely on it."}</p>`;
     const name = S.design.name.replace(/[^\w-]+/g, "_");
     const notes = () => A.download(`${name}_build_notes.txt`, YS.partsNotes(S.design, R), "text/plain");
     const one = (p) => A.download(p.file, YS.meshToStl(p.mesh, p.id), "model/stl");
@@ -1130,8 +1484,10 @@
       const changed = () => { renderPrintPlan(); drawPart(); };
       $("#p-mount").value = PRINT.mount;
       $("#p-mount").onchange = (e) => { PRINT.mount = e.target.value; changed(); };
+      $("#p-radome").onchange = (e) => { PRINT.radome = e.target.value; changed(); };
       $("#p-nut").value = PRINT.nut;
       $("#p-nut").onchange = (e) => { PRINT.nut = e.target.value; changed(); };
+      bindPod(changed);
       bindBed("p", changed);
       A.bindNum($("#p-fit"), { get: () => PRINT.fit, min: -0.3, max: 1, decimals: 2, set: (v) => { PRINT.fit = v; changed(); } });
       A.bindNum($("#p-bar"), { get: () => (A.storage.read().guide || {}).measured || NaN, min: 0, max: 200, decimals: 2, parse: (s) => (s.trim() === "" ? 0 : A.parseLen(s)), set: (v) => { saveGuide({ measured: v > 0 ? v : null }); changed(); } });

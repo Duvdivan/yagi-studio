@@ -17,9 +17,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
-PAGE_SCRIPTS = ["solver.js", "crooked.js", "rf.js", "radio.js", "guide.js", "pole-socket.js", "mast-clamp.js", "parts.js", "tasks.js", "charts.js", "view3d.js", "layout2d.js", "engine.js",
+PAGE_SCRIPTS = ["solver.js", "crooked.js", "rf.js", "dipole.js", "radio.js", "guide.js", "pole-socket.js", "mast-clamp.js", "parts.js", "pod-bee.js", "pod.js", "sleeve-parts.js", "tasks.js", "charts.js", "view3d.js", "layout2d.js", "engine.js",
                 "app-core.js", "app-radio.js", "app-design.js", "app-tune.js", "app-tools.js", "app-main.js"]
-WORKER_SCRIPTS = ["solver.js", "crooked.js", "rf.js", "tasks.js", "worker.js"]
+WORKER_SCRIPTS = ["solver.js", "crooked.js", "rf.js", "dipole.js", "tasks.js", "worker.js"]
 FONTS = ('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
          '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600'
          '&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">')

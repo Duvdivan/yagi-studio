@@ -31,12 +31,12 @@
           <div class="body">
             <div class="scroll-x"><table class="rods fixed" id="rods"></table></div>
             <div class="row" style="margin-top:8px">
-              <button class="btn small" id="add-dir">Add director</button>
+              <button class="btn small" id="add-dir" data-for="yagi">Add director</button>
               <span class="note" id="boom-note"></span>
             </div>
           </div>
         </section>
-        <section class="card" aria-label="Bent or off-center rods">
+        <section class="card" aria-label="Bent or off-center rods" data-for="yagi">
           <div class="head"><h2>Bent or off-center rods ${A.help("bends")}</h2></div>
           <div class="body stack">
             <details id="bend-more"><summary>Enter how far each tip is from straight, in mm</summary>
@@ -56,20 +56,20 @@
             <div class="field-grid">
               <div class="field"><label for="quality">Accuracy ${A.help("quality")}</label>
                 <select class="sel" id="quality"><option value="draft">Draft</option><option value="normal">Normal</option><option value="fine">Fine</option><option value="reference">Reference</option></select></div>
-              <div class="field"><label for="pol">Rods run</label>
+              <div class="field" data-for="yagi"><label for="pol">Rods run</label>
                 <select class="sel" id="pol"><option value="vertical">Vertically</option><option value="horizontal">Horizontally</option></select></div>
               <div class="field"><label for="gap">Feed gap, mm ${A.help("gap")}</label><input class="num" id="gap" inputmode="decimal"></div>
               <div class="field"><label for="z0">Cable impedance</label><input class="num" id="z0" inputmode="decimal"></div>
             </div>
-            <label class="check"><input type="checkbox" id="gap-rods" checked> Changing the gap moves the rods, which keep their length ${A.help("gapRods")}</label>
+            <label class="check" data-for="yagi"><input type="checkbox" id="gap-rods" checked> Changing the gap moves the rods, which keep their length ${A.help("gapRods")}</label>
             <label class="check"><input type="checkbox" id="wire-on"> Count the coax's leads in the driven element's gap ${A.help("wire")}</label>
             <div class="field-grid" id="wire-fields">
               <div class="field"><label for="wire-d">Coax centre wire, mm</label><input class="num" id="wire-d" inputmode="decimal"></div>
               <div class="field"><label>Adds at the target</label><div class="note" id="wire-note" style="padding-top:6px"></div></div>
             </div>
-            <label class="check"><input type="checkbox" id="coil-on"> A coil or a hairpin across the feed ${A.help("coil")}</label>
+            <label class="check"><input type="checkbox" id="coil-on"> <span data-for="yagi">A coil or a hairpin across the feed ${A.help("coil")}</span><span data-for="dipole">A hairpin across the feed ${A.help("dipcap")}</span></label>
             <div class="field-grid" id="coil-fields">
-              <div class="field"><label for="coil-kind">Made as</label><select class="sel" id="coil-kind"><option value="coil">A coil</option><option value="hairpin">A hairpin</option></select></div>
+              <div class="field" data-for="yagi"><label for="coil-kind">Made as</label><select class="sel" id="coil-kind"><option value="coil">A coil</option><option value="hairpin">A hairpin</option></select></div>
               <div class="field" id="coil-nh-f"><label for="coil-nh">Coil, nH</label><input class="num" id="coil-nh" inputmode="decimal"></div>
               <div class="field" id="hp-len-f"><label for="hp-len">Hairpin, mm long</label><input class="num" id="hp-len" inputmode="decimal"></div>
               <div class="field" id="hp-sp-f"><label for="hp-sp">Its legs, mm apart</label><input class="num" id="hp-sp" inputmode="decimal"></div>
@@ -81,12 +81,18 @@
               <div class="field"><label for="cap-pf">Capacitor, pF</label><input class="num" id="cap-pf" inputmode="decimal"></div>
               <div class="field"><label>At the target</label><div class="note" id="cap-note" style="padding-top:6px"></div></div>
             </div>
-            <p class="note">Folded dipoles aren't offered. ${A.help("folded")}</p>
+            <label class="check" data-for="dipole"><input type="checkbox" id="stub-on"> Or an open coax stub in its place ${A.help("stub")}</label>
+            <div class="field-grid" id="stub-fields" data-for="dipole">
+              <div class="field"><label for="stub-len">Stub, mm long</label><input class="num" id="stub-len" inputmode="decimal"></div>
+              <div class="field"><label for="stub-cable">Its coax</label><select class="sel" id="stub-cable"><option value="rg178">RG178</option><option value="rg316">RG316</option><option value="rg174">RG174</option></select></div>
+              <div class="field"><label>At the target</label><div class="note" id="stub-note" style="padding-top:6px"></div></div>
+            </div>
+            <p class="note" data-for="yagi">Folded dipoles aren't offered. ${A.help("folded")}</p>
             <label class="check"><input type="checkbox" id="endcap"> Solid rods with flat ends ${A.help("endcap")}</label>
-            <label class="check"><input type="checkbox" id="mast-on"> Metal mast behind the antenna ${A.help("mast")}</label>
+            <label class="check"><input type="checkbox" id="mast-on"> <span data-for="yagi">Metal mast behind the antenna ${A.help("mast")}</span><span data-for="dipole">Metal mast beside it ${A.help("dipmast")}</span></label>
             <div class="field-grid three" id="mast-fields">
               <div class="field"><label for="mast-d">Diameter</label><input class="num" id="mast-d" inputmode="decimal"></div>
-              <div class="field"><label for="mast-b">Behind</label><input class="num" id="mast-b" inputmode="decimal"></div>
+              <div class="field"><label for="mast-b"><span data-for="yagi">Behind</span><span data-for="dipole">From the dipole</span></label><input class="num" id="mast-b" inputmode="decimal"></div>
               <div class="field"><label for="mast-l">Length</label><input class="num" id="mast-l" inputmode="decimal"></div>
             </div>
             <label class="check"><input type="checkbox" id="ground-on"> Show the pattern over ground ${A.help("ground")}</label>
@@ -204,7 +210,18 @@
     pinNum("#hp-len", "length", 1, 80, 1);
     pinNum("#hp-sp", "spacing", 1, 30, 1);
     pinNum("#hp-d", "d", 0.2, 3, 2);
-    $("#cap-on").onchange = (e) => { d().seriesC = e.target.checked ? (S.lastCap || 10) : 0; A.commit(); syncWire(); change(false); };
+    $("#cap-on").onchange = (e) => { d().seriesC = e.target.checked ? (S.lastCap || 10) : 0; if (e.target.checked) d().seriesStub = null; A.commit(); syncWire(); change(false); };
+    // an open coax stub in the capacitor's place (src/dipole.js): its length and its coax, whose velocity factor sets it
+    const stubOf = (len, cable) => ({ length: len, cable, vf: YS.CABLES[cable].vf, z0: 50 });
+    $("#stub-on").onchange = (e) => {
+      const was = S.lastStub || YS.dipole.stubFor(d().seriesC || S.lastCap || 4.7, "rg178", d().f0);
+      d().seriesStub = e.target.checked ? stubOf(was.length, was.cable) : null;
+      if (e.target.checked) d().seriesC = 0;
+      A.commit(); syncWire(); change(false);
+    };
+    A.bindNum($("#stub-len"), { get: () => (d().seriesStub || S.lastStub || { length: 30 }).length, min: 1, max: 200, decimals: 1,
+      set: (v, c) => { const st = stubOf(v, (d().seriesStub || S.lastStub || { cable: "rg178" }).cable); S.lastStub = st; if (d().seriesStub) d().seriesStub = st; syncWire(); change(c); } });
+    $("#stub-cable").onchange = (e) => { const st = stubOf((d().seriesStub || S.lastStub || { length: 30 }).length, e.target.value); S.lastStub = st; if (d().seriesStub) d().seriesStub = st; A.commit(); syncWire(); change(false); };
     A.bindNum($("#cap-pf"), { get: () => d().seriesC || S.lastCap || 10, min: 0.5, max: 1000, decimals: 1, set: (v, c) => { S.lastCap = v; if (d().seriesC) d().seriesC = v; syncWire(); change(c); } });
     $("#wire-on").onchange = (e) => { d().feedWire = e.target.checked ? (S.lastWire || 0.3) : 0; A.commit(); syncWire(); change(false); };
     A.bindNum($("#wire-d"), { get: () => d().feedWire || S.lastWire || 0.3, min: 0.05, max: 10, decimals: 2, set: (v, c) => { S.lastWire = v; if (d().feedWire) d().feedWire = v; syncWire(); change(c); } });
@@ -292,6 +309,7 @@
 
   /* ---------- the rod table ---------- */
   function renderRods() {
+    const addDir = $("#add-dir"); if (addDir) addDir.hidden = YS.dipole.isDipole(S.design);   // a dipole is one rod
     const d = S.design, t = $("#rods");
     const sorted = d.elements.slice().sort((a, b) => a.x - b.x);
     t.innerHTML = `<colgroup><col style="width:58px"><col style="width:56px"><col style="width:56px"><col style="width:44px"><col style="width:60px"><col style="width:16px"></colgroup><thead><tr><th>Rod</th><th>From R</th><th>Length</th><th>Dia.</th><th>Metal ${A.help("metal")}</th><th></th></tr></thead><tbody>` + sorted.map((e, i) => `
@@ -319,7 +337,13 @@
   }
   function boomNote() {
     const b = YS.boomLength(S.design), n = $("#boom-note"), lam = 299792.458 / S.design.f0;
-    if (n) n.textContent = `Boom ${b.toFixed(1)} mm · ${(b / lam).toFixed(2)} wavelengths`;
+    const d = S.design;
+    const sl = YS.dipole.isSleeve(d) ? YS.dipole.halves(d) : null;
+    const co = YS.dipole.isCollinear(d) ? d.elements[0].colin : null;
+    if (n && co) n.textContent = `${co.sections.length} sections above the feed (${co.sections.map((v) => v.toFixed(1)).join(", ")} mm), stubs ${co.stub.length.toFixed(1)} mm, sleeve ${sl.low.toFixed(1)} mm below · ${(d.elements[0].L / 1000).toFixed(3)} m tip to tip`;
+    else if (n && sl) n.textContent = `Rod ${sl.up.toFixed(1)} mm above the feed, sleeve ${sl.low.toFixed(1)} mm below it (${(d.elements[0].sleeve.d).toFixed(2)} mm tube) · ${(d.elements[0].L / lam).toFixed(3)} wavelengths tip to tip`;
+    else if (n && YS.dipole.isDipole(d)) n.textContent = `${d.elements[0].L.toFixed(1)} mm tip to tip · ${(d.elements[0].L / lam).toFixed(3)} wavelengths${d.mast.on ? ` · ${Math.round(d.mast.behind)} mm from the mast (${(d.mast.behind / lam).toFixed(2)} wavelengths)` : ""}`;
+    else if (n) n.textContent = `Boom ${b.toFixed(1)} mm · ${(b / lam).toFixed(2)} wavelengths`;
   }
 
   /** What the coax's leads in the gap add at the target. */
@@ -335,12 +359,19 @@
     $("#coil-kind").value = pin ? "hairpin" : "coil";
     $("#coil-nh-f").hidden = pin;
     ["#hp-len-f", "#hp-sp-f", "#hp-d-f"].forEach((id) => { $(id).hidden = !pin; });
+    // the numbers too: a design opened or sized elsewhere (a dipole's match) brings its own
+    ["#hp-len", "#hp-sp", "#hp-d", "#coil-nh", "#cap-pf"].forEach((id) => { const i = $(id); if (i && i._refresh && document.activeElement !== i) i._refresh(); });
     const xs = coil ? YS.shuntX(YS.matchOf(d) || {}, d.f0) : 0;
     $("#coil-note").textContent = coil ? `${xs.toFixed(0)} ohm across the feed${pin ? `, like ${(xs / (2 * Math.PI * d.f0 * 1e-3)).toFixed(1)} nH` : ""}` : "";
     const cap = d.seriesC > 0;
     $("#cap-on").checked = cap;
     $("#cap-fields").hidden = !cap;
     $("#cap-note").textContent = cap ? `${(1e6 / (2 * Math.PI * d.f0 * d.seriesC)).toFixed(0)} ohm in series` : "";
+    const st = d.seriesStub && d.seriesStub.length > 0 ? d.seriesStub : null;
+    $("#stub-on").checked = !!st;
+    $("#stub-fields").hidden = !st;
+    if (st) { $("#stub-cable").value = st.cable; const x = -YS.stubX(st, d.f0); $("#stub-note").textContent = `${x.toFixed(0)} ohm in series, like ${(1e6 / (2 * Math.PI * d.f0 * x)).toFixed(2)} pF`; }
+    if (document.activeElement !== $("#stub-len")) $("#stub-len")._refresh();
   }
 
   /** A row for each rod: off center, then each tip, along the boom and across it. */
@@ -383,6 +414,7 @@
     $("#pol").value = d.polarization;
     $("#endcap").checked = d.endCap !== false;
     $("#mast-on").checked = d.mast.on;
+    $("#mast-on").closest("label").hidden = YS.dipole.isSleeve(d);      // a sleeve dipole stands on top: nothing beside it
     $("#mast-fields").hidden = !d.mast.on;
     $("#ground-on").checked = d.ground.on;
     $("#ground-fields").hidden = !d.ground.on;
@@ -417,7 +449,7 @@
       rows: [
         { key: "swr", title: "SWR", yr: [1, maxSwr], ticks: maxSwr > 3.5 ? [1, 2, 3, 4, 5] : [1, 1.5, 2, 2.5, 3], note: `valley ${v.f.toFixed(1)} MHz at ${v.swr.toFixed(2)}`, series: [...pinned("swr"), ...nec("swr"), series("swr", T.s1, rows, d.name)] },
         { key: "gain", title: "Gain, dBd", series: [...pinned("gainDbd"), ...nec("gainDbd"), series("gainDbd", T.s1, rows, d.name)], minPad: 0.2 },
-        { key: "fb", title: "Front-to-back, dB", floor: 0, series: [...pinned("fb"), ...nec("fb"), series("fb", T.s1, rows, d.name)], minPad: 1 },
+        { key: "fb", title: YS.dipole.isDipole(d) ? "Away from the mast over toward it, dB" : "Front-to-back, dB", floor: 0, series: [...pinned("fb"), ...nec("fb"), series("fb", T.s1, rows, d.name)], minPad: 1 },
       ],
     });
     const items = [`<span><i style="background:${T.s1}"></i>${esc(d.name)}</span>`];
@@ -445,6 +477,19 @@
     const rl = -20 * Math.log10(Math.abs((m.swr - 1) / (m.swr + 1)) || 1e-6);
     const lossMis = -10 * Math.log10(1 - Math.pow((m.swr - 1) / (m.swr + 1), 2));
     const lossOhm = -10 * Math.log10(Math.max(m.efficiency, 1e-6));
+    const R = YS.dipole.isDipole(S.design) ? YS.dipole.roundness(m) : null;
+    if (R) {
+      // a vertical dipole: all round, so its figures are round it, and up and down
+      const mast = S.design.mast.on;
+      $("#kpis").innerHTML =
+        kpi("swr", "SWR", fmt(m.swr, 2), "", `<span class="pill ${cls}">${word}</span> · ${fmt(lossMis, 2)} dB lost`, "swr") +
+        kpi("gain", "Strongest", fmt(R.max, 2), "dBi", `Weakest ${fmt(R.min, 2)} dBi`, "gain") +
+        kpi("fb", "Round it", fmt(R.ripple, 1), "dB", mast ? `Away from the mast ${fmt(R.away, 1)}, toward it ${fmt(R.toward, 1)} dBi` : "Strongest to weakest", "round") +
+        kpi("z", "Feed impedance", `${fmt(m.z[0], 1)} ${signX} j${fmt(Math.abs(m.z[1]), 1)}`, "Ω", `Return loss ${fmt(rl, 1)} dB`, "z") +
+        kpi("bw", "Up and down", `${fmt(m.bwE, 0)}°`, "", "Half-power beamwidth, along the rod", "bw") +
+        kpi("eff", "Efficiency", fmt(m.efficiency * 100, 1), "%", `${fmt(lossOhm, 2)} dB lost in the metal`, "eff");
+      return;
+    }
     $("#kpis").innerHTML =
       kpi("swr", "SWR", fmt(m.swr, 2), "", `<span class="pill ${cls}">${word}</span> · ${fmt(lossMis, 2)} dB lost`, "swr") +
       kpi("gain", "Gain", fmt(m.gainDbd, 2), "dBd", `${fmt(m.gainDbi, 2)} dBi`, "gain") +
@@ -462,13 +507,15 @@
     const worstG = bandRows.length ? Math.min.apply(null, bandRows.map((r) => r.gainDbd)) : NaN;
     const onTarget = Math.abs(off) < 0.003 * d.f0;
     let tip;
-    if (onTarget) tip = v.swr > 1.25 ? "The valley is on target but shallow. The driven element sets its depth." : "The valley sits on your target.";
+    const dip = YS.dipole.isDipole(d);
+    if (dip) tip = onTarget ? "The valley sits on your target." : `A ${off > 0 ? "longer" : "shorter"} dipole moves the valley ${off > 0 ? "down" : "up"}, about 5 MHz per mm; a ${off > 0 ? "shorter" : "longer"} hairpin moves it the same way, about 2 MHz per mm.`;
+    else if (onTarget) tip = v.swr > 1.25 ? "The valley is on target but shallow. The driven element sets its depth." : "The valley sits on your target.";
     else tip = `${off > 0 ? "Longer" : "Shorter"} directors move the valley ${off > 0 ? "down" : "up"}. The driven element barely moves it. ${A.help("valley")}`;
     $("#insight").innerHTML =
       `<span><b>${fmt(at, 2)}</b> SWR at ${fmt(d.f0, 3)} MHz <span class="pill ${cls}">${word}</span></span>` +
       `<span>Valley at <b>${fmt(v.f, 1)} MHz</b>${onTarget ? "" : `, ${fmt(Math.abs(off), 1)} MHz ${off > 0 ? "above" : "below"} target`}</span>` +
       (win ? `<span>SWR under 1.5 from ${fmt(win[0], 0)} to ${fmt(win[1], 0)} MHz</span>` : `<span>SWR never under 1.5 in this sweep</span>`) +
-      (isFinite(worstG) ? `<span>${fmt(worstG, 2)} dBd or better across the band</span>` : "") +
+      (isFinite(worstG) && !dip ? `<span>${fmt(worstG, 2)} dBd or better across the band</span>` : "") +
       `<span class="tip">${tip}</span>`;
   }
 

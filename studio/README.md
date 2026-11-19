@@ -14,6 +14,8 @@ A Yagi antenna simulator and tuning assistant that runs in a browser. Design a b
 | **Cut list** | Cut lengths and drilling positions, plus files: JSON, NEC deck, YagiCAD `.YC6`, CSV, `.s1p`. And a 3D-printed cutting guide for the rods, scaled to your printer. |
 | **Tune my antenna** | Enter what you measured on your parts and what your VNA says: draw the curve, type a few numbers, load a `.s1p` or read a NanoVNA. It fits the model to those readings, says which conclusions are firm, and ranks real fixes with exact lengths. |
 
+**A vertical dipole, too** (November 2026; designed and checked on the computer, not built yet). **New design** asks what you're building, a Yagi or a vertical dipole, and each kind then has its own path: the same tabs, but each showing only what's about that kind (a dipole never sees directors, boom length or F/B; a Yagi never sees a mast offset or a coax stub). The header says which kind is open. It stands on an arm out from the mast, made by the 3D print tab from the boom's own parts: its tail, coax tunnel and solder window, in the same mast clamp, with the coax running back along the arm at right angles, as it should. A dipole is about 73 ohm, so it's matched to 50 by a hairpin across the feed and a standard capacitor in series with the coax (`src/dipole.js`): SWR about 1.15 across 902 to 928 MHz, against about 1.45 unmatched. In place of the capacitor, an open-ended stub of RG178, RG316 or RG174 does the same (about 30 mm), with no part to buy, and it can be trimmed on the VNA. A metal mast beside it is in the model: about a quarter wave away it makes the dipole beam away from the mast, and further out the pattern rounds out but keeps a ripple, which the Design tab shows. The Cut list gives the rod, the hairpin and the capacitor; the Build check adds the hairpin's and the capacitor's errors; the Tune tab offers moving the hairpin's short before any filing. On top of a mast or of the node pod it's a **sleeve dipole**: the lower half is 1/4 in brass tube with the coax up its middle, cut to a quarter wave of the line inside (about 76.7 mm round RG316), so it chokes off current on the coax, and a printed hub at the feed holds the rod, the tube and the match. Its foot is a cap over the mast's top, or an insert in the pod's top hole, with the pod. The general solver takes its halves' different sizes; the model takes the choke as perfect and leaves out what's under it.
+
 ## What the antenna is for
 
 It asks once, and the Frequency card can change it later. Bandwidth, spreading factor and coding rate don't change an antenna, which only sees the frequency. They decide the link, so the card shows what they're worth, with this antenna's gain. All of it is in `src/radio.js`:
@@ -78,6 +80,10 @@ A centre-fed Yagi has only even currents, which halves the unknowns. One frequen
 | `tests/crooked.js` on 15 bent, leaning and off-centre arrays of 0.2 mm rods, against nec2++ | R, X within 0.06 ohm; gain within 0.01 dB; F/B within 0.05 dB, up to a 60 degree bend |
 | `tests/gap_reference.py`, the driven element's gap with a thin lead, against theory and its own mesh | Within 2 ohm of theory at 3 mm; within 0.04 ohm on a finer mesh |
 | `tests/crooked.js` on closed loops, 0.2 mm rods, against nec2++: a folded dipole alone and as a Yagi's driven element | R within 0.5%; X within 2 ohm; gain within 0.01 dB; F/B within 0.05 dB |
+| `tests/dipole.js`: a lone thin dipole, and one 250 mm from a 2 m rod, against nec2++ | R, X within 0.01 ohm; gain within 0.01 dB |
+| The same file: an open RG178 stub against the 4.7 pF capacitor it stands in for, at 910.525 MHz | Reactance within 0.04 ohm |
+| The same file: a sleeve dipole's stepped rod (3.175 mm above, 6.35 or 9.5 mm below), against `tests/bor_reference.py --step`, the full-surface model of it | R within 0.7 ohm, X within 0.6 ohm; the step adds under 0.15 ohm to the equal halves' difference |
+| The same file: a 3.175 mm dipole at resonance, against the textbook | 72.9 ohm, 2.13 dBi, 78.5 degrees (73, 2.15, 78) |
 | `src/crooked.js` in the app: all its figures against this solver on straight rods, and with a mast | Beamwidths within 0.2 degrees; front-to-rear within 0.1 dB; 3D pattern within 0.1 dB; with a mast, R, X within 0.3 ohm |
 | The fit with bends entered, on readings made from a bent antenna | Directors within 0.3 mm |
 | `src/guide.js`, the cutting guide's mesh, here and in trimesh, an unrelated library | Every edge used exactly twice, faces the right way out, sizes exact |
@@ -123,6 +129,8 @@ python tests/bor_reference.py   # the surface reference on its own
 python tests/gap_reference.py   # the driven element's gap on its own
 node tests/find_gain.js      # the search for a gain (a few minutes on one thread)
 node tests/print_parts.js    # the printable parts, against the DuvYagi's OpenCascade parts and on other designs
+node tests/pod.js            # the node pod, against cad/node_pod.py: every option valid, the volumes, the boom in its socket
+node tests/pod_tab.js chrome # the node pod's toggles, files and preview in the 3D print tab (needs playwright-core)
 node tests/tune_match.js     # the Tune tab offers a hairpin to a GCARC built without its coil (needs playwright-core)
 node tests/crooked.js        # what the gap and crooked rods do to the DuvYagi (a few minutes)
 node tests/web_app.js chrome # the installable web app; the file says how to serve it, and webkit is the other choice
@@ -134,6 +142,9 @@ python serve.py              # optional: adds a "Check with nec2++" button at ht
 - `solver.js`: the moment method. `crooked.js`: the general one, for rods that aren't straight. `rf.js`: cables, Touchstone, imports and exports, presets. `radio.js`: the networks' presets and the LoRa math. `guide.js`: the cutting guide's mesh. `tasks.js`: optimizer cost, build study, sensitivity, the fit and the tuning plan.
 - `engine.js`: worker pool, the optimizer's search (jDE), the NanoVNA link.
 - `parts.js`: the printable parts, with Manifold (`vendor/`, Apache 2.0) for the solids, carried in the page so that it works offline. `pole-socket.js` and `mast-clamp.js` are the owner's own painter-pole thread and mast clamp (v5), unchanged, made by `tests/make_pole_socket.js` and `tests/make_mast_clamp.js` from their files.
+- `pod.js`: the node pod (Mount: Node pod), a sealed housing for a Heltec V4 node and its battery with the boom's socket, made step by
+  step as `../cad/node_pod.py` makes it, with its toggles; that script is the reference. `pod-bee.js` is the bee raised on its nose,
+  written by `python bee.py icons`.
 - `charts.js`, `view3d.js`, `layout2d.js`: drawing, with no libraries.
 - `app-*.js`, `body.html`, `style.css`: the interface.
 - `android-shim.js`: what a WebView lacks, in the Android app's page only. `../android/` is the app around it.

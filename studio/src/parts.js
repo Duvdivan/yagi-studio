@@ -47,6 +47,9 @@
   const COAX = { depth: 2.5, floor: -1.5, inner: 1.6 };   // the coax's groove along the boom's +y face, mm: how deep, its flat floor's z, and its inside wall's height, under a 45 degree roof
   const WINDOW = [12, 15];         // the solder window at the driven element (x, z): long enough along the rods for a heat-sink clip beside the joint
   const WINDOW_SHORT = 10;         // its length along the rods where the boom can't widen there
+  const ARM_MIN = 25;              // mm: a vertical dipole's plainest arm, from where a reflector would be to the dipole: room for the coax's tunnel to bend out of the window
+  const STUB_ROOM = 4;             // mm: and past a coax stub in place of its capacitor, which lies beside the hairpin and only gets shorter
+  const PIN_ROOM = 6;              // mm: the window runs this far past a dipole's hairpin, so its short can be moved back to tune it
   const TAPER_MAX = 5;             // degrees: the steepest the boom's faces slope toward the driven element, so its holes stay near vertical as it prints
   const SCREW = { pilots: [2.4, 2.6, 2.8], pilot: 2.6, lead: 3.1, leadLen: 1.5, wall: 2, head: 6 };   // M3 screws holding the rods: holes under M3 so a screw cuts its own thread, a lead-in to start it, the least plastic either side of one, and its head's size, which a label keeps clear of
   const SCREW_RELIEF = 0.15;       // mm per side a rod's hole is widened where a screw's hole meets it. There the two open to the boom's face, so the slicer doesn't count the rod's as a hole and leaves out its hole compensation, and the owner's rods stuck there (ASA booms, 2026-11-07)
@@ -193,10 +196,22 @@
 
   /* ---------- planning: everything that can be said before any solid is made ---------- */
 
-  /** Rods from the rear, measured from the reflector, as the boom needs them. */
+  /**
+   * Rods from the rear, measured from the reflector, as the boom needs them. A vertical dipole (src/dipole.js) has no
+   * reflector: it stands at the end of a plain arm (armOf), so the boom's tail sits where a Yagi's would, behind an empty
+   * reflector's place. Its driven element's window runs back far enough for its hairpin (winBack).
+   */
   function rodsOf(design, fit) {
-    const sorted = design.elements.slice().sort((a, b) => a.x - b.x), x0 = sorted[0].x;
-    return sorted.map((e) => ({ x: e.x - x0, d: e.d, L: e.L, name: e.name, driven: e.type === "driven", hole: e.d + fit, material: e.material || design.material }));
+    const sorted = design.elements.slice().sort((a, b) => a.x - b.x), x0 = sorted[0].x - armOf(design);
+    const pin = design.hairpin && design.hairpin.length > 0 ? design.hairpin.length : 0;
+    const stub = design.seriesStub && design.seriesStub.length > 0 ? design.seriesStub.length : 0;
+    return sorted.map((e) => ({ x: e.x - x0, d: e.d, L: e.L, name: e.name, driven: e.type === "driven", hole: e.d + fit, material: e.material || design.material,
+      winBack: e.type === "driven" ? Math.max(WINDOW[0] / 2, pin ? pin + PIN_ROOM : 0, stub ? stub + STUB_ROOM : 0) : 0 }));
+  }
+  /** A vertical dipole's arm: from a reflector's place to the dipole, so that it stands mast.behind from the mast's middle in the clamp. */
+  function armOf(design) {
+    if (!YS.dipole || !YS.dipole.isDipole(design)) return 0;
+    return Math.max(ARM_MIN, design.mast.behind - mastBehind(design.mast.d));
   }
 
   /* The joint's widths for a boom this wide. */
@@ -231,7 +246,7 @@
   function jointAt(t, rods, J, cleanOnly) {
     const root = t - JOINT.flare[0], out = t + JOINT.down[1];
     const driven = rods.find((r) => r.driven);
-    if (driven && driven.x > root - WINDOW[0] / 2 - 4 && driven.x < out + WINDOW[0] / 2 + 4) return null;        // its window would cut the joint away
+    if (driven && driven.x > root - WINDOW[0] / 2 - 4 && driven.x < out + driven.winBack + 4) return null;        // its window would cut the joint away
     const through = rods.filter((r) => r.x + r.hole / 2 + 2 > root && r.x - r.hole / 2 - JOINT.tipClear < t + JOINT.crotch);
     if (cleanOnly && through.length) return null;
     // the rods that would stay: through the tongue, short of its tip, or past the fork's crotch
@@ -409,7 +424,7 @@
     // gripping its halves, and a notch would cut into it (the owner's catch, 2026-11-06). Rods are placed in the gauge's level
     // layout, as the notches are.
     const flat = (x) => gauge.end - (gauge.end - x) / Math.cos((gauge.ang || 0) * Math.PI / 180);
-    const keep = rods.map((r) => { const c = flat(r.x), half = r.driven ? WINDOW[0] / 2 + NOTCH_CLEAR_DRIVEN : r.hole / 2 + NOTCH_CLEAR; return [c - half, c + half]; });
+    const keep = rods.map((r) => { const c = flat(r.x), half = r.driven ? WINDOW[0] / 2 + NOTCH_CLEAR_DRIVEN : r.hole / 2 + NOTCH_CLEAR; return [c - (r.driven ? r.winBack + NOTCH_CLEAR_DRIVEN : half), c + half]; });
     const hit = (a, b) => keep.some(([c0, c1]) => a < c1 && b > c0);      // the gauge's names are on the side, out of their way
     // from and to are the inner walls, CAL_SPAN apart; each notch lies outside them
     const lo = gauge.stop + w, hi = gauge.end - CAL_SPAN - w - 2;
@@ -444,8 +459,8 @@
    */
   function planTaper(rods, sections, sizes) {
     const h2 = sizes.h / 2, s0 = sections[0], end = s0.next ? s0.next.t : s0.x1, driven = rods.find((r) => r.driven);
-    let m = 0, win = WINDOW_SHORT, capped = false;
-    if (driven && driven.x < end - 1) {
+    let m = 0, win = sizes.dipole ? WINDOW[1] : WINDOW_SHORT, capped = false;
+    if (driven && driven.x < end - 1 && !sizes.dipole) {
       const want = (WINDOW[1] + sizes.h) / 2;               // the window, with a plain rod's grip either side
       m = (want - h2) / (end - driven.x);
       const most = Math.tan(TAPER_MAX * Math.PI / 180);
@@ -454,7 +469,7 @@
     }
     const hz = (x) => h2 + m * Math.max(0, end - x), zb = (x) => -hz(x);
     const Ht = m ? Math.max(TAIL_H, 2 * hz(driven.x)) : 2 * h2, top = zb(MOUTH) + Ht;      // the tail's height, and its top at the mouth
-    const t = { m, end, ang: Math.atan(m) * 180 / Math.PI, hz, zb, Ht, top, win, capped, half: Math.max(hz(REAR), top), peak: Math.max(sizes.h, Ht, 2 * hz(MOUTH)) };
+    const t = { m, end, ang: Math.atan(m) * 180 / Math.PI, hz, zb, Ht, top, win, capped, dipole: !!sizes.dipole, half: Math.max(hz(REAR), top), peak: Math.max(sizes.h, Ht, 2 * hz(MOUTH)) };
     if (driven && driven.x < end) {
       // the driven element's screws go halfway along the plastic each half passes through
       const hzD = hz(driven.x), zs = (win / 2 + hzD) / 2, big = SCREW.pilots[SCREW.pilots.length - 1] / 2;
@@ -583,7 +598,7 @@
     });
     sectionRods(rods, sec).forEach((r) => cuts.push(K.cyl(r.x, 0, -zz, r.hole, 2 * zz)));
     const driven = rods.find((r) => r.driven);
-    if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) cuts.push(K.box(driven.x - WINDOW[0] / 2, driven.x + WINDOW[0] / 2, -2, y + 1, -T.win / 2, T.win / 2));
+    if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) cuts.push(K.box(driven.x - driven.winBack, driven.x + WINDOW[0] / 2, -2, y + 1, -T.win / 2, T.win / 2));
     // the coax runs from the driven element back to the rear end, on any section it reaches
     // but not through a joint, where there are bolts and a prong's wall in its way: there it runs outside
     // a tunnel when the driven element is on the first piece; past a joint, the old open groove
@@ -683,7 +698,7 @@
       if (through.includes(r)) return;
       (r.driven ? (T.drivenScrews ? [-T.zs, T.zs] : []) : [0]).forEach((zc) => blocks["-1"].push([r.x - c, r.x + c, zc - c, zc + c]));
     });
-    if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) ["-1", 1].forEach((k) => blocks[k].push([driven.x - WINDOW[0] / 2 - 2, driven.x + WINDOW[0] / 2 + 2, -all, all]));
+    if (driven && driven.x >= sec.x0 && driven.x <= sec.x1) ["-1", 1].forEach((k) => blocks[k].push([driven.x - driven.winBack - 2, driven.x + WINDOW[0] / 2 + 2, -all, all]));
     if (driven && sec.x0 < driven.x) blocks[1].push([sec.x0 - 1, driven.x, COAX.floor - 1, COAX.floor + COAX.inner + COAX.depth + 1]);
     const onBoom = (L, xf) => L.end - (L.end - xf) * Math.cos((L.ang || 0) * Math.PI / 180);
     if (sec.i === 0 && gauge) {
@@ -909,7 +924,7 @@
      (the owner, 2026-11-12). Returns null where it doesn't fit. */
   function clampFit(sizes, roll, want) {
     const C = YS.MAST_CLAMP, T = sizes.taper;
-    if (!C || want === false || roll || sizes.w !== BOOM_W || !T.m || Math.abs(T.Ht - TAIL_H) > 0.01) return null;
+    if (!C || want === false || roll || sizes.w !== BOOM_W || (!T.m && !T.dipole) || Math.abs(T.Ht - TAIL_H) > 0.06) return null;
     // the owner's part, moved without turning: its mouth on the boom's, its box centred on the tail halfway down the socket
     const mid = (REAR + MOUTH) / 2, at = [MOUTH - C.mouth, 0, T.zb(mid) + T.Ht / 2 - (C.floor + C.height / 2)];
     // where its two screws cross, on the boom: the tail's own holes and nuts move to meet them, but don't turn, as both are square
@@ -1055,6 +1070,7 @@
     pole: { name: "Painter pole", hardware: ["4 M3 x 40 bolts with nuts, joining the socket's plate to the arm", "1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket"], print: "Two pieces, each printed its best way. The arm stands on its block, socket up, and the pole socket lies tilted as the file has it, thread end up, the angle of the socket that's proven on a pole. Give it tree supports from the bed, and clear any from the thread." },
     grip: { name: "Hand grip", hardware: ["1 M3 x 40 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "Optional: a lanyard through the hole at the bottom"], print: "Stand it as the file has it, with the grip lying on the bed and the socket pointing up, and no supports." },
     tripod: { name: "Camera tripod", hardware: ["1 M3 x 30 bolt and nut, to pin the boom. The nut sits in the recess in the bulge under the socket", "1 1/4-20 UNC nut, 7/16 in (11.1 mm) across flats, dropped into the top"], print: "Stand it on the block, socket up, as the file has it, with no supports." },
+    pod: { name: "Node pod (a sealed housing for the node)", print: "Each part as its file has it; see the node pod's notes." },
   };
 
   /**
@@ -1062,9 +1078,16 @@
    * opts: { bed, fit, scale, allowance, gauge, notches, label, brand, lengths, customText, mount, screws, pilot }
    */
   function planParts(design, opts) {
+    if (YS.dipole && YS.dipole.isSleeve(design)) {
+      const o = Object.assign({ bed: 256, scale: 1, mount: design.mount === "pod" ? "pod" : "mast" }, opts);
+      return { o, sleeve: true, rods: [], sizes: { w: BOOM_W, h: TAIL_H }, sections: [], taper: { Ht: TAIL_H, m: 0, zb: () => -TAIL_H / 2 }, warnings: [], boom: 0, bed: YS.bedOf(o.bed), cornerPieces: null, onePiece: 0 };
+    }
     const o = Object.assign({ bed: 256, fit: FIT, scale: 1, allowance: 0, gauge: true, notches: true, label: true, brand: true, lengths: true, customText: "", mount: "mast", screws: false, pilot: SCREW.pilot, nut: "standard" }, opts);
     const rods = rodsOf(design, o.fit), sizes = boomSizes(rods), warnings = [];
-    if (rods.length < 2) throw new Error("A boom needs at least two rods.");
+    // a vertical dipole's arm has no rods ahead of its one to taper over, so it's a level bar as tall as every tail (TAIL_H):
+    // each half of the rod passes through more plastic than a Yagi's driven element, and the owner's tested clamp takes it
+    if (YS.dipole && YS.dipole.isDipole(design)) { sizes.h = Math.max(sizes.h, Math.ceil(TAIL_H * 10) / 10); sizes.dipole = true; }
+    if (rods.length < 2 && !(YS.dipole && YS.dipole.isDipole(design))) throw new Error("A boom needs at least two rods.");
     rods.forEach((r, i) => {
       if (i && r.x - rods[i - 1].x < r.hole / 2 + rods[i - 1].hole / 2 + 4) throw new Error(`${r.name} is too close to ${rods[i - 1].name} for the boom to hold them both.`);
     });
@@ -1144,6 +1167,7 @@
   function buildParts(wasm, design, opts) {
     const plan = planParts(design, opts), { o, rods, sizes, sections } = plan;
     const K = kit(wasm), out = [];
+    if (plan.sleeve) return sleeveParts(wasm, design, plan, K, out);
     const safe = design.name.replace(/[^\w-]+/g, "_");
     const add = (id, name, solid, turn, print) => {
       // inPlace, for tests: left where it sits on the antenna, unturned and unscaled, so that parts can be fitted together
@@ -1180,6 +1204,18 @@
       }
       if (o.mount === "grip") add("hand_grip", MOUNTS.grip.name, handGrip(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.grip.print);
       if (o.mount === "tripod") add("tripod_mount", MOUNTS.tripod.name, tripodMount(K, rods, sizes, roll, soft), [0, -90, 0], MOUNTS.tripod.print);
+      if (o.mount === "pod") {
+        // the node pod (pod.js), its socket cut to this boom's tail; it takes the rods vertical, so with them horizontal it's
+        // made without the socket. inPlace (tests) puts it where it sits on the antenna, its parts unturned
+        const T = plan.taper, podOpts = podOptions(o, design);
+        const P = YS.POD.build(wasm, podOpts, { Ht: T.Ht, w: sizes.w, m: T.m || 0, zb: T.zb });
+        try {
+          P.parts.forEach((q) => add(q.id, q.name, o.inPlace ? K.at(q.inPod ? q.inPod() : q.solid, P.toAntenna) : q.solid, null, q.print));
+          if (podOpts.mount === "pad") add("pod_pole_socket", "Pod: painter pole socket", poleSocket(K), [90 - POLE.tilt, 0, 0], "Tilted, thread end up, as the file has it: the angle of the socket that's proven on a pole. Tree supports from the bed; clear any from the thread.");
+        } finally {
+          P.K.free();
+        }
+      }
       if (o.coupon !== false) add("coupon", "Hole test coupon", coupon(K, rods, o.screws), null, "As the file has it. Print it on the same plate as the boom, so that it prints under the same conditions." + (o.screws ? ` Its end has the three screw hole sizes, ${SCREW.pilots.join(", ")} mm, marked with 1, 2 and 3 notches.` : ""));
     } finally {
       K.free();
@@ -1187,14 +1223,76 @@
     return { parts: out, plan };
   }
 
+  /** A sleeve dipole's parts (src/sleeve-parts.js), placed and meshed as buildParts's are. */
+  function sleeveParts(wasm, design, plan, K, out) {
+    const o = plan.o, safe = design.name.replace(/[^\w-]+/g, "_"), PK = YS.POD.kit(wasm);
+    const add = (id, name, solid, turn, print) => {
+      const placed = K.place(solid, turn, o.scale), b = placed.boundingBox();
+      if (placed.status() !== "NoError") throw new Error(`${name} didn't come out as a solid: ${placed.status()}`);
+      out.push({ id, name, file: `${safe}_${id}.stl`, mesh: K.mesh(placed), volume: placed.volume(), genus: placed.genus(), size: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]], print });
+      const p = out[out.length - 1];
+      p.place = YS.placeOn(plan.bed, p.size[0] + BRIM, p.size[1] + BRIM, p.size[2]);
+      p.placing = placing(p.place, plan.bed);
+    };
+    try {
+      const r = YS.SLEEVE.solids(wasm, PK, design, o, Object.assign(podOptions(o, design), { sma: "no" }));
+      r.out.forEach((q) => add(q.id, q.name, q.solid, q.turn, q.print));
+      if (r.pod) {
+        try { r.pod.parts.filter((q) => q.id !== "pod_top_sma").forEach((q) => add(q.id, q.name, q.solid, null, q.print)); } finally { r.pod.K.free(); }
+      }
+    } finally {
+      PK.free(); K.free();
+    }
+    return { parts: out, plan };
+  }
+
+  /** The pod's options from the print options: its own, the label from the boom's text if it has none, no socket with the
+      rods horizontal. */
+  const podOptions = (o, design) => Object.assign({}, YS.POD.OPTIONS, o.pod || {}, rollFor(design.polarization) ? { socket: "none" } : {});
+
+  /** The node pod's notes: how to print it, what to buy, what to measure, how it goes together (node_pod.py's cad/PRINT.md). */
+  function podNotes(p) {
+    const P = YS.POD, cell = P.CELLS[p.battery], L = ["THE NODE POD",
+      "A sealed, upright housing for a Heltec V4 node and its battery, with the boom's socket on its front. Everything that opens or passes through is at the bottom and faces down. The core (the plug with the board and the battery on it) slides out on its cables when you unscrew the ring, with the screen facing you.",
+      "TESTED: an earlier version of its body, ring and finial was printed and fits together, and its ports fit the first core, which broke where its spine stood on a few layer lines (it now ties into the rim, with fillets). NOT YET PRINTED: this version, and every other part.",
+      "", "PRINTING THE POD (ASA, 0.4 mm nozzle, 0.20 mm layers, 6 walls, no supports anywhere)",
+      "  Body: upright on its open end, ON A BRIM: outer brim only, 8 mm. Its end meets the bed on a ring under 1 mm wide, and a body came off the plate without one. Use a scarf seam (or seam at the back) for the body and the core: the seam crosses the O-ring's seal. 40% gyroid infill with the clamps' spine, else 25%. Light colour if you can: a sealed box in sun runs hot.",
+      "  Core: on its plug. Ring: on its lip. Finial: on its stub. Inserts and plugs: head down, as their files have them. Wedge, side arm: as their files have them. Magnet base: on its foot.",
+      "", "WHAT TO BUY FOR THE POD",
+      `  A battery: ${cell.name}. It must be 1S and protected (its own protection board or BMS): the V4 has none of its own.`,
+      "  One 49 x 3 mm O-ring, EPDM or silicone, and a dab of silicone grease, for the plug.",
+      ...["back", "front"].filter((w) => p[w] !== "none").map((w) => `  A ${P.PORT_TYPES[p[w]].name} (${w === "back" ? "away from the antenna" : "toward it"}). Hold its nut with a flat toward the plug's middle as you turn it in.`),
+      ...(p.sma === "yes" ? ["  An SMA bulkhead jack for the base (0.235 in D-hole, an 8 mm hex on its body, a flat of the hex parallel to the thread's flat), on a pigtail to the board's U.FL, and an SMA male-male barrel to join the antenna's lead."] : []),
+      ...(p.socket === "boom" ? ["  One M3 x 25 socket head screw and an M3 nut: the boom's lock, down through the roof and the wedge into the nut in the tail's top slot."] : []),
+      ...(p.top === "solar" ? ["  The finial, or the solar roof: a 30 mm piece of 1/8 in rod (or an M3 x 30 and nut) as its pin, VHB tape (3M 5952 or 4910), and a 5 V panel of about 136 x 110 mm."] : []),
+      ...(p.top === "sleeve" ? ["  An 18 x 2.5 mm O-ring under the sleeve dipole's insert's head, greased, as under the SMA insert. Seal round the coax where it leaves the tube's socket with neutral cure silicone, so nothing runs down the tube into the pod."] : []),
+      ...(p.top === "sma" ? ["  An SMA bulkhead jack with a long enough thread (the insert's head is 2 mm: the thread must reach through it, a lock washer and its nut, and leave enough for the antenna), and an 18 x 2.5 mm O-ring under the insert's head."] : []),
+      ...(p.top === "n" ? ["  An N bulkhead jack (16 mm thread, two flats 13.5 mm apart), and a 34 x 2.5 mm O-ring under the insert's head. The insert's 3 mm head is a guess: check your connector's thread reaches through it and its nut."] : []),
+      ...(p.mount === "clamps" ? ["  Two 1/2 in (12.7 mm) worm-drive hose clamps, long enough for the pole."] : ["  Four M3 hex nuts for the pad's side slots, and four M3 x 16 (the block) or M3 x 12 (a plate) to fix the mount. The block: a 1/4-20 nut for a tripod, or four M3 x 16 and nuts for the painter pole socket. The wall plate: two #8 or M4 pan head screws, 84 mm apart, one above the other. The magnet plate: three 43 mm rubber-coated magnets with a threaded hole (about 30 lb each; the plate is drawn for M5) and three M5 x 8 flat head screws, screwed on from behind before the plate goes on the pad."]),
+      "  The magnet base, if you'll use it: three 43 mm rubber-coated magnets with a threaded hole and their own M5 flat head screws, driven from above down the buttresses' counterbores: each head sits 9.3 mm above its magnet, for 14.3 mm screws into a 5.35 mm thread. The magnets stand out under it, so only their rubber touches the steel.",
+      "", "BEFORE YOU PRINT IT",
+      "  The board's slots are cut for a 1.2 mm board. Measure yours at a long edge: if it isn't 1.2 mm, use cad/node_pod.py's PCB_T, or test-fit a core before the body.",
+      "", "PUTTING IT TOGETHER",
+      "  1. The ports into the plug, nuts inside. The SMA goes in from inside, facing down: its hex drops into the pocket in the floor, which stops it spinning, and its lock washer and nut go on from below. 2. Wire the board: the pigtail to its LoRa U.FL, the solar cable (a 5 V panel) through the gland to its solar socket, the battery to its socket. 3. The board into its slots from the top, USB end up, screen out; the battery into its pocket behind the spine. 4. Test it now, with the screen in front of you. 5. The O-ring into the plug's groove, greased; the core up into the body, keys into the notches; screw the ring on until it clicks. 6. The top piece. 7. The boom: its nut into the tail's top slot, the tail in, TOP up, then the wedge, then the M3 x 25 down through the roof. 8. The mast.",
+      "  A cold note: lithium cells shouldn't be charged below 0 C, and nothing in the pod stops that.",
+    ];
+    return L;
+  }
+
   /** How far the mast's centre ends up behind the reflector in the clamp, for the design's mast setting. */
   const mastBehind = (d) => { const { px } = clampAt(), R = CRADLE.seat; return d <= 2 * R ? -(px + R - d / 2) : -px + (d / 2 - R) / Math.sin(CRADLE.half * Math.PI / 180); };
 
+  const fmt1 = (v) => (+v).toFixed(1);
+
   /** What to print and buy, as text to keep with the files. */
   function partsNotes(design, result) {
+    if (result.plan && result.plan.sleeve) return YS.SLEEVE.notes(design, result) + (result.plan.o.mount === "pod" ? "\n" + podNotes(Object.assign(podOptions(result.plan.o, design), { top: "sleeve", socket: "none", sma: "no" })).join("\n") + "\n" : "");
     const { plan, parts } = result, { o, rods, sections } = plan, L = [];
-    const joints = sections.length - 1, driven = rods.find((r) => r.driven);
-    L.push(`${design.name}: printing and building`, "", "TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes, and the mast clamp, with the boom's tail (its nut slots and coax tunnel). NOT YET PRINTED: the other mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", "", "PRINTING", `The boom: 0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, ...(o.mount === "mast" ? ["The mast clamp: ASA, 5 walls, 40-50% gyroid infill, a brim, lying on its keel as the file has it, no supports (below)."] : []), "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
+    const joints = sections.length - 1, driven = rods.find((r) => r.driven), dip = YS.dipole && YS.dipole.isDipole(design);
+    const pin = design.hairpin && design.hairpin.length > 0 ? design.hairpin : null, cap = design.seriesC > 0 ? design.seriesC : 0;
+    const stub = design.seriesStub && design.seriesStub.length > 0 ? design.seriesStub : null, cable = stub ? ((YS.CABLES || {})[stub.cable] || { name: stub.cable }).name : "";
+    if (dip) L.push(`${design.name}: printing and building`, "", "NOT YET BUILT: a vertical dipole from this tab hasn't been printed, built or swept. Its arm is the tested boom's tail, coax tunnel and solder window, and the mast clamp is the tested one; the hairpin and capacitor match, the longer window and the arm itself are new.", "");
+    L.push(...(dip ? [] : [`${design.name}: printing and building`, ""]), ...(dip ? [] : ["TESTED: a boom from this tab has been printed in ASA, built into a working antenna and tuned, with its joint, gauge, check notches and screw holes, and the mast clamp, with the boom's tail (its nut slots and coax tunnel). NOT YET PRINTED: the other mounts, and the rod lengths written on the boom's side. Test-fit those before you rely on them.", ""]), "PRINTING", `The boom: 0.2 mm layers, 5 walls, 15% gyroid infill, in plain PETG or ASA, no supports.`, ...(o.mount === "mast" ? ["The mast clamp: ASA, 5 walls, 40-50% gyroid infill, a brim, lying on its keel as the file has it, no supports (below)."] : []), "Not carbon fiber filled filament: its fibers conduct, and around the rods they would detune the antenna and soak up power. Glass fiber filled should be fine for the antenna, but print a new coupon in it, as it shrinks differently.",
       `X-Y hole compensation ${HOLE_COMP} mm for the boom and coupon: their holes are modelled for it and come out too small without it. A mount's fine with or without it.`,
       o.scale === 1 ? "Set your filament's shrinkage in the slicer, or the lengths will be short. For SUNLU ASA it's estimated at 99.65%, from a printed boom. Other brands differ." : `These are scaled ${(100 * o.scale).toFixed(2)}% across the bed for your printer's shrinkage. Leave the slicer's shrinkage at 100%.`, "");
     parts.forEach((p) => L.push(`${p.file}: ${p.size.map((v) => v.toFixed(1)).join(" x ")} mm. ${p.print}${p.placing ? " " + p.placing : ""}`));
@@ -1229,13 +1327,20 @@
       L.push("", "SCREWS HOLDING THE RODS", `${n} holes in the boom's back, ${o.pilot} mm, under M3 so that the screw cuts its own thread. Check the size on the coupon first. A screw's tip reaches the rod about ${(plan.sizes.w / 2 - rods[0].hole / 2).toFixed(1)} mm in, so an M3 x 8 stands about 1.5 mm proud when it's tight. Turn it in only until it presses on the rod.`,
         "In the models, a screw at a rod's middle changes nothing, because it sits where the field across the rod is zero. The two on the driven element move the tuning by about 1 MHz. Fit them all before you trim on the VNA, and leave them in.");
     }
-    if (o.mount !== "none") L.push("", "MOUNTING", `Push the boom's tail into the socket until it stops, and fit the pin. The socket ends ${-MOUTH} mm behind the reflector, so the reflector stays in the boom, glued if you like.`);
+    if (dip) {
+      L.push("", stub ? "THE MATCH: A HAIRPIN AND A COAX STUB" : "THE MATCH: A HAIRPIN AND A CAPACITOR", `A dipole is about 73 ohm. ${pin && (cap || stub) ? `These two bring it to 50, for an SWR the model puts at about 1.15 across the band, against about 1.45 without them.` : "This one has no match, so expect an SWR of about 1.45 at best."}`);
+      if (pin) L.push(`  1. The hairpin: a U of ${pin.d} mm bare copper wire (${pin.d >= 1 ? "18 AWG" : "about 20 AWG"}), its two legs ${fmt1(pin.spacing)} mm apart and ${fmt1(pin.length)} mm long from the rods' inner ends to the short across their far ends. Solder each leg to its half ${fmt1((pin.spacing - (design.gap || 3)) / 2)} mm out from the half's inner end, so the legs stand ${fmt1(pin.spacing)} mm apart, and run them back along the window, away from the dipole, flat and in the open: plastic or silicone around it changes it. The window runs ${PIN_ROOM} mm past it, so the short can be moved: the Tune tab says which way and how far.`);
+      if (stub) L.push(`  2. The stub, in place of a capacitor: ${fmt1(stub.length + 2)} mm of ${cable}, open at its far end, to be trimmed to ${fmt1(stub.length)} mm from where its braid is soldered to its open end's cut. It goes in series with the feed coax's centre conductor: the feed's centre conductor to the stub's braid at one end, the stub's centre conductor (at the same end) to the upper half (and the hairpin's leg on it). The feed coax's shield goes to the lower half (and the other leg). So the stub's braid isn't grounded: lay it back along the window beside the hairpin, not toward the dipole. Cut the open end clean, its centre conductor well clear of the braid, and seal it with neutral cure silicone: water in it changes it a lot. It acts as a capacitor, the longer the bigger: trim half a millimetre at a time on the VNA, as the Tune tab says. It only gets shorter, which is why it starts 2 mm long.`);
+      if (cap) L.push(`  2. The capacitor: a ${cap} pF C0G (NP0) ceramic chip capacitor, 0805 or 0603, rated 50 V or more. It goes in series with the coax's centre conductor: centre conductor, capacitor, then the upper half (and the hairpin's leg on it). The coax's shield goes to the lower half (and the other leg). Keep every lead as short as it will go: at 900 MHz each extra millimetre counts.`);
+      L.push(`  ${pin || cap || stub ? (pin && (cap || stub) ? 3 : 2) : 1}. The coax leaves the dipole's middle at right angles and must stay that way along the arm to the mast, or it becomes part of the antenna and skews the pattern. Clip a ferrite choke rated for UHF onto it where it leaves the arm, and run it down the mast from there.`);
+      L.push("", "MOUNTING", `Push the arm's tail into the socket until it stops, and fit the pin. On a ${fmt1(design.mast.d)} mm mast the clamp holds the dipole ${Math.round(design.mast.behind)} mm from the mast's middle, as the design has it: ${design.mast.on ? "the mast is in the model, and its pattern is lopsided by it, as the Design tab shows" : "the design takes the pole to be wood, fiberglass or plastic; a metal one would make its pattern lopsided"}. A thicker mast sits further back in the clamp's V.`);
+    } else if (o.mount !== "none") L.push("", "MOUNTING", `Push the boom's tail into the socket until it stops, and fit the pin. The socket ends ${-MOUTH} mm behind the reflector, so the reflector stays in the boom, glued if you like.`);
     const clamp = parts.find((p) => p.id === "mast_mount");
     if (clamp) L.push("", "THE MAST CLAMP", clamp.owners
       ? "This is the clamp that was printed and tested, every fillet, with its socket cut to this boom's tail so the boom sits level. Put the boom in with TOP up: upside down it sits a few degrees off level, and its screws may not line up."
       : `This design's boom doesn't take the printed clamp (${design.polarization === "horizontal" ? "its rods are horizontal" : "its boom's tail or width is a different size"}), so this one is made here in the same shape: the same V, strap slots, screws and keel, without the printed one's small edge rounds. It hasn't been printed itself.`);
     if (o.mount === "mast") L.push(MOUNTS.mast.print, `Before the boom goes in, push the three nuts (${(NUTS[o.nut] || NUTS.standard).name.toLowerCase()}) into the tail's slots from the screws' side, and run a screw through each to line it up. Then slide the tail in, and fit a short screw from the top and one from the bottom into the tail's nuts, or one long one straight through, and the back screw from the pole's seat into the nut in the tail's end. Strap it to the pole with two hose clamps through the curved slots, or through the extra exits into the V for a thin pole.`);
-    if (driven && plan.sections[0].x1 >= driven.x && !(plan.sections[0].prev)) L.push("", "THE COAX", `It runs in a tunnel from the solder window back under the boom, and out through the coax's side just in front of the reflector, then back along the outside of the socket. Thread it through before soldering, from the window end. ${TUNNEL.d} mm across: made for RG316 (2.5 mm) or thinner. Seal both ends with neutral cure silicone.`);
+    if (driven && plan.sections[0].x1 >= driven.x && !(plan.sections[0].prev)) L.push("", "THE COAX", `It runs in a tunnel from the solder window back under the boom, and out through the coax's side just in front of ${dip ? "where a Yagi's reflector would be" : "the reflector"}, then back along the outside of the socket. Thread it through before soldering, from the window end. ${TUNNEL.d} mm across: made for RG316 (2.5 mm) or thinner. Seal both ends with neutral cure silicone.`);
     L.push("", "HARDWARE");
     rods.forEach((r) => L.push(`  ${r.driven ? `${r.name}: 2 rods` : `${r.name}: 1 rod`}, ${r.d} mm ${r.material === "aluminium" ? "aluminum" : r.material}`));
     if (joints) {
@@ -1243,12 +1348,17 @@
       L.push(`  ${2 * joints} M3 x ${bolt} socket-head bolts with nuts, across the joint${joints > 1 ? "s" : ""}. The heads and nuts sit in the recesses in the prongs`);
     }
     if (driven) L.push("  Coax, RG316 or thinner, soldered at the window at the driven element, through the tunnel");
+    if (dip && pin) L.push(`  About 60 mm of ${pin.d} mm bare copper wire, for the hairpin`);
+    if (dip && cap) L.push(`  One ${cap} pF C0G (NP0) chip capacitor, 0805 or 0603, 50 V or more. Buy a few: they're tiny`);
+    if (dip && stub) L.push(`  About 50 mm of ${cable} coax for the stub, and a dab of neutral cure silicone for its open end`);
+    if (dip) L.push("  A clip-on ferrite choke rated for UHF, for the coax at the mast");
     if (o.screws) {
       const through = sections.flatMap((s) => (s.next ? s.next.through : []));
       const n = rods.filter((r) => !r.driven && !through.includes(r)).length + (driven && T.drivenScrews ? 2 : 0);
       L.push(`  ${n} M3 x 8 screws, steel or stainless, to hold the rods`);
     }
     (MOUNTS[o.mount].hardware || []).forEach((h) => L.push("  " + h));
+    if (o.mount === "pod") L.push("", ...podNotes(podOptions(o, design)));
     L.push("", "IF IT GOES ON A ROOF OR A MAST", "Look up first and stay well clear of power lines, including while raising it. Ground the mast and coax as your local rules require, and check any permits. Don't raise it in wind or near storms.");
     L.push("", "These parts come from Yagi Studio. They're a model's answer until you've swept the real antenna with a VNA.");
     return L.join("\n") + "\n";
@@ -1276,6 +1386,8 @@
     return loading;
   }
 
-  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, MOUTH, SCREW, WINDOW, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt, NUTS }, planParts, buildParts, partsNotes, mastBehind, loadManifold, partPlacing: placing });
+  Object.assign(YS, { PARTS: { MOUNTS, HOLE_COMP, CAL_SPAN, FIT, REAR, MOUTH, SCREW, WINDOW, POLE_BEHIND: -poleBehind(), POLE_TILT: POLE.tilt, NUTS, LETTERS }, planParts, buildParts, partsNotes, mastBehind, loadManifold, partPlacing: placing });
+  // a vertical dipole's arm: the closest it can stand to a 42 mm mast's middle in the clamp, and the arm for a design
+  YS.ARM = { min: Math.ceil(mastBehind(42) + ARM_MIN), of: armOf };
   YS.PARTS.JOINT = JOINT;
 })(typeof globalThis !== "undefined" ? globalThis : this);

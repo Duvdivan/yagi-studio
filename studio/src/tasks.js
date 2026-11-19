@@ -214,14 +214,29 @@
     for (let n = 0; n < tol.count; n++) {
       // tol.bend: each half bent this far, typically, any way. The general solver makes this much slower
       const halfBend = () => ({ deg: Math.abs(tol.bend * r.normal()), az: 360 * r(), from: solver.boomFace });
-      const elements = solver.elements.map((e, i) => ({
-        x: e.x + (i === 0 ? 0 : tol.pos * r.normal()), L: e.L + tol.rod * r.normal(), d: e.d, material: e.material,
-        crook: tol.bend ? { upper: halfBend(), lower: halfBend() } : e.crook,
-      }));
+      const elements = solver.elements.map((e, i) => {
+        if (e.colin) {
+          // a collinear (src/dipole.js): each rod piece cut a little off, and each stub bent a little long or short (tol.pin)
+          const sections = e.colin.sections.map((v) => v + tol.rod * r.normal());
+          const joints = e.colin.joints.map((j) => Object.assign({}, j, { stub: Object.assign({}, j.stub, { length: Math.max(1, j.stub.length + (tol.pin || 0) * r.normal()) }) }));
+          return { x: e.x, L: e.L, d: e.d, material: e.material, colin: Object.assign({}, e.colin, { sections, joints }) };
+        }
+        return { x: e.x + (i === 0 ? 0 : tol.pos * r.normal()), L: e.L + tol.rod * r.normal(), d: e.d, material: e.material,
+          crook: tol.bend ? { upper: halfBend(), lower: halfBend() } : e.crook };
+      });
       const s = Object.assign({}, solver, { elements });
+      // a hairpin bent a little long or short, and a capacitor off its marked value (tol.pin mm, tol.cap pF), where there are
+      // any: a vertical dipole's match (src/dipole.js)
+      if (tol.pin && s.hairpin && s.hairpin.length > 0) s.hairpin = Object.assign({}, s.hairpin, { length: Math.max(1, s.hairpin.length + tol.pin * r.normal()) });
+      if (tol.cap && s.seriesC > 0) s.seriesC = Math.max(0.1, s.seriesC + tol.cap * r.normal());
+      // a coax stub in its place: cut to tol.stub mm, and its velocity factor off the datasheet's by 1% or so
+      if (tol.stub && s.seriesStub && s.seriesStub.length > 0) s.seriesStub = Object.assign({}, s.seriesStub, { length: Math.max(1, s.seriesStub.length + tol.stub * r.normal()), vf: s.seriesStub.vf * (1 + 0.01 * r.normal()) });
       let trimmed = true;
       if (tol.trim) {
-        const x = (L) => { elements[s.feed].L = L; return run(s, f0).z[1]; };
+        // a collinear is trimmed at its top rod's tip: its last section follows the length
+        const fe = elements[s.feed], top0 = fe.colin ? fe.colin.sections[fe.colin.sections.length - 1] : 0, L0 = fe.L;
+        const setL = (L) => { fe.L = L; if (fe.colin) { const secs = fe.colin.sections.slice(); secs[secs.length - 1] = top0 + (L - L0); fe.colin = Object.assign({}, fe.colin, { sections: secs }); } };
+        const x = (L) => { setL(L); return run(s, f0).z[1]; };
         const start = solver.elements[s.feed].L;
         let a = start - 10, b = start + 12, fa = x(a), fb = x(b), de = start;
         if (fa * fb > 0) trimmed = false;
@@ -235,7 +250,7 @@
             if (fa * fc <= 0) { b = c; fb = fc; } else { a = c; fa = fc; }
           }
         }
-        elements[s.feed].L = de;
+        setL(de);
       }
       const m = run(s, f0);
       const v = valleyOf(run, s, f0 - span, f0 + span, 13);
@@ -366,6 +381,7 @@
    * design: the antenna with the measured lengths in it. Each option lists what to do to each rod.
    * Filing only shortens a rod; anything longer means cutting a new one.
    */
+  const PIN_ROOM = 6;   // mm: a vertical dipole's window runs this far past its hairpin (parts.js), so its short can be moved that much further out
   const HAIRPIN = { spacing: 5, d: 0.64, most: 60 };   // the hairpins the Tune tab suggests: 22 AWG legs 5 mm apart, up to 60 mm long (a quarter wave is 82)
   const E12 = [1, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];   // standard capacitor values, per decade
 
@@ -509,10 +525,10 @@
      * at the nearest standard value. Only what isn't already on the antenna is offered.
      */
     const matchOptions = () => {
-      const s0 = built({}), has = YS.matchOf(s0) || {}, bare = Object.assign({}, s0, { coil: 0, hairpin: null, seriesC: 0 });
+      const s0 = built({}), has = YS.matchOf(s0) || {}, bare = Object.assign({}, s0, { coil: 0, hairpin: null, seriesC: 0, seriesStub: null });
       const raw = run(bare, target).z, z0 = base.z0 || 50, swrOf = (z) => YS.swrOf(z[0], z[1], z0);
       const shunt = has.hairpin ? { hairpin: has.hairpin } : has.coil ? { coil: has.coil } : {};
-      const swrWith = (m) => swrOf(YS.feedMatch(raw, Object.assign({}, m), target));
+      const swrWith = (m) => swrOf(YS.feedMatch(raw, Object.assign(has.stub ? { stub: has.stub } : {}, m), target));
       const pin = (len) => ({ length: len, spacing: HAIRPIN.spacing, d: HAIRPIN.d });
       // the best hairpin length for a given capacitor (or none), on a 0.5 mm grid as it's bent by hand
       const bestPin = (cap) => {
@@ -545,7 +561,7 @@
         out.push(make("hairpin", "Add a hairpin across the feed", "No new rods: a U of wire soldered from one driven half to the other, beside the coax. It cancels a driven element that acts short, and lifts its resistance toward 50 ohm." + undo,
           { coil: 0, hairpin: pin(p.len) }, [pinAdd(p.len)]));
       }
-      if (!has.cap) {
+      if (!has.cap && !has.stub) {
         c = bestCap(shunt);
         out.push(make("cap", "Add a capacitor at the feed", "No new rods: a small capacitor between the coax's centre wire and its driven half. It takes off the reactance of a driven element that acts long. You can take it off again.",
           { seriesC: c.pF }, [{ kind: "cap", pF: c.pF }]));
@@ -555,9 +571,9 @@
       if (!has.hairpin && !has.coil) {
         let best = null;
         for (let dL = -0.5; dL >= -12; dL -= 0.5) {
-          const zr = run(Object.assign({}, built({ [drv]: dL }), { coil: 0, hairpin: null, seriesC: 0 }), target).z;
+          const zr = run(Object.assign({}, built({ [drv]: dL }), { coil: 0, hairpin: null, seriesC: 0, seriesStub: null }), target).z;
           for (let len = 1; len <= HAIRPIN.most; len += 0.5) {
-            const v = swrOf(YS.feedMatch(zr, { hairpin: pin(len), cap: has.cap }, target));
+            const v = swrOf(YS.feedMatch(zr, { hairpin: pin(len), cap: has.cap, stub: has.stub }, target));
             // a little more SWR is worth less filing, which is for keeps: 0.005 for each mm
             if (!best || v + 0.005 * -dL < best.swr + 0.005 * -best.dL) best = { dL, len, swr: v };
           }
@@ -576,6 +592,69 @@
       return out;
     };
 
+    /**
+     * A vertical dipole's hairpin (src/dipole.js): its short moved to another place along its legs, for the lowest SWR at the
+     * target, on a 0.5 mm grid as it's soldered by hand; with the rod as it is, and with the rod filed too. Its legs can't grow
+     * past the boom's window, which runs PIN_ROOM mm beyond the design's hairpin, nor shrink under 3 mm.
+     */
+    function pinOptions() {
+      const h0 = base.hairpin, most = h0.length + PIN_ROOM, out = [];
+      const withPin = (s, len) => Object.assign({}, s, { hairpin: Object.assign({}, h0, { length: len }) });
+      const bestLen = (s) => { let b = null; for (let len = 3; len <= most + 1e-9; len += 0.5) { const v = run(withPin(s, len), target).swr; if (!b || v < b.swr) b = { len, swr: v }; } return b; };
+      const make = (id, title, why, len, dL) => {
+        const s = withPin(dL ? built({ [drv]: dL }) : built({}), len), at = run.fixed(s), m = at(target, 1), curve = [];
+        for (let i = 0; i <= 60; i++) { const f = target * (0.95 + 0.1 * i / 60); curve.push({ f, swr: at(f).swr }); }
+        const v = valley(s);
+        const steps = base.elements.map((e, i) => { const c = i === drv && dL ? dL : 0; return { rod: names[i], role: roles[i], from: e.L, to: e.L + c, change: c, action: c ? (c < 0 ? "file" : "new") : "keep" }; });
+        return { id, title, why, steps, adds: [{ kind: "pinmove", from: h0.length, length: len, spacing: h0.spacing, d: h0.d }], newRods: dL > 0 ? 1 : 0, swr: m.swr, gain: m.gainDbd, fb: m.fb, z: m.z, valley: v.f, valleySwr: v.swr, curve };
+      };
+      const only = bestLen(built({}));
+      if (Math.abs(only.len - h0.length) >= 0.5) out.push(make("pinmove", "Move the hairpin's short",
+        `No cutting: unsolder the short across the hairpin's legs and solder it ${Math.abs(only.len - h0.length).toFixed(1)} mm ${only.len > h0.length ? "further from" : "nearer"} the rods. A longer hairpin moves the valley up, about 2 MHz per mm. You can move it again.`, only.len));
+      let both = null;
+      for (let dL = -6; dL <= 0.001; dL += 0.5) {
+        if (Math.abs(dL) < CUT_TOL) continue;
+        const b = bestLen(built({ [drv]: dL }));
+        if (!both || b.swr + 0.005 * -dL < both.swr + 0.005 * -both.dL) both = { dL, len: b.len, swr: b.swr };
+      }
+      if (both && both.swr < only.swr - 0.03) out.push(make("pintrim", "File the dipole, and move the hairpin's short",
+        "The rod sets where the valley sits and the hairpin how deep it is, so the two together reach further than either. Filing is for keeps; the short can be moved again.", both.len, both.dL));
+      return out;
+    }
+
+    /**
+     * A vertical dipole's coax stub, in place of its capacitor: trimmed shorter (it can't grow), in 0.5 mm steps, for the lowest
+     * SWR at the target; alone, and with the hairpin's short moved too.
+     */
+    function stubOptions() {
+      const st = base.seriesStub, h0 = base.hairpin, most = h0 ? h0.length + PIN_ROOM : 0, s0 = built({}), out = [];
+      const withStub = (s, len, pin) => Object.assign({}, s, { seriesStub: Object.assign({}, st, { length: len }) }, pin ? { hairpin: Object.assign({}, h0, { length: pin }) } : {});
+      const make = (id, title, why, len, pin) => {
+        const s = withStub(s0, len, pin), at = run.fixed(s), m = at(target, 1), curve = [];
+        for (let i = 0; i <= 60; i++) { const f = target * (0.95 + 0.1 * i / 60); curve.push({ f, swr: at(f).swr }); }
+        const v = valley(s), adds = [{ kind: "stubtrim", from: st.length, length: len, cable: st.cable }];
+        if (pin) adds.push({ kind: "pinmove", from: h0.length, length: pin, spacing: h0.spacing, d: h0.d });
+        const steps = base.elements.map((e, i) => ({ rod: names[i], role: roles[i], from: e.L, to: e.L, change: 0, action: "keep" }));
+        return { id, title, why, steps, adds, newRods: 0, swr: m.swr, gain: m.gainDbd, fb: m.fb, z: m.z, valley: v.f, valleySwr: v.swr, curve };
+      };
+      let only = { len: st.length, swr: run(s0, target).swr };
+      for (let len = st.length - 0.5; len >= Math.max(3, st.length - 15); len -= 0.5) { const v = run(withStub(s0, len), target).swr; if (v < only.swr) only = { len, swr: v }; }
+      if (only.len < st.length) out.push(make("stubtrim", "Trim the coax stub",
+        `No new parts: cut ${(st.length - only.len).toFixed(1)} mm off the stub's open end, and seal it again. A shorter stub is a smaller capacitor. It can only get shorter, so trim half a millimetre at a time and sweep between.`, only.len));
+      if (h0) {
+        let both = null;
+        for (let len = st.length; len >= Math.max(3, st.length - 15); len -= 0.5) for (let pin = 3; pin <= most + 1e-9; pin += 0.5) {
+          const v = run(withStub(s0, len, pin), target).swr + 0.004 * (st.length - len);
+          if (!both || v < both.rank) both = { len, pin, rank: v };
+        }
+        if (both && (both.len !== only.len || Math.abs(both.pin - h0.length) >= 0.5)) {
+          const o = make("stubpin", "Trim the stub, and move the hairpin's short", "The two together reach further than either. The short can be moved again; the stub only gets shorter.", both.len, both.pin);
+          if (o.swr < only.swr - 0.02) out.push(o);
+        }
+      }
+      return out;
+    }
+
     const options = [];
     const none = describe("now", "Leave it as it is", "What the fit says the antenna does now.", {});
     const directors = base.elements.map((_, i) => i).filter((i) => roles[i] === "directors");
@@ -591,12 +670,18 @@
           "The directors decide where the valley sits. Changing them together keeps the design's balance, so it holds the most gain.", c));
       }
     }
-    // 2. only the driven element: no new aluminium
+    // 2. only the driven element: no new aluminium. On a vertical dipole it's the one rod, and it moves the valley
+    const dipole = design.kind === "dipole";
     {
       const c = { [drv]: tuneDriven({}) };
-      options.push(describe("driven", "Change only the driven element",
-        "The least work. It deepens the match where you want it, but it barely moves the valley.", c));
+      const sleeve = dipole && design.elements[0] && design.elements[0].sleeve, colin = sleeve && design.elements[0].colin;
+      options.push(describe("driven", colin ? "Change the top rod" : sleeve ? "Change the rod above the feed" : dipole ? "Change the dipole's length" : "Change only the driven element",
+        colin ? "Only the top rod is trimmed, at its tip: the rods below, the stubs and the tube stay as they are. Longer is lower." :
+        sleeve ? "Only the rod above is trimmed: the tube below is the choke, cut to its own length. It moves the valley about 5 MHz for each mm: longer is lower." : dipole ? "Both tips filed (or new rods cut) alike. It moves the valley about 5 MHz for each mm of the whole length: longer is lower." : "The least work. It deepens the match where you want it, but it barely moves the valley.", c));
     }
+    // 2b. a vertical dipole's hairpin: its short moved along its legs, no cutting, within the window's room past it
+    if (dipole && base.hairpin && base.hairpin.length > 0) options.push(...pinOptions());
+    if (dipole && base.seriesStub && base.seriesStub.length > 0) options.push(...stubOptions());
     // 3. the one director that does the most for the least
     let bestSingle = null;
     for (const i of directors) {
@@ -622,7 +707,11 @@
     const kept = options.filter((o) => o && (o.swr < none.swr - 0.02 || o.gain > none.gain + 0.05));
     const distinct = kept.filter((o, i) => work(o) !== "" && kept.findIndex((q) => work(q) === work(o)) === i);
     const changed = (o) => o.steps.filter((t) => t.action !== "keep").length + (o.bends ? o.bends.length : 0) + (o.adds ? o.adds.length : 0);
-    const score = (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
+    // a vertical dipole has no gain to win one way, so only the match counts, and filing (for keeps) pays 0.04 of SWR
+    const filed = (o) => o.steps.some((t) => t.action === "file");
+    const trimmed = (o) => (o.adds || []).some((q) => q.kind === "stubtrim");      // a stub trimmed is for keeps too, but cheaper than a rod
+    const score = dipole ? (o) => -o.swr - (filed(o) ? 0.04 : 0) - (trimmed(o) ? 0.02 : 0) - 0.03 * o.newRods
+      : (o) => Math.round(o.gain / 0.05) * 0.05 - 3 * Math.max(0, o.swr - 1.3) - 0.03 * o.newRods;
     distinct.sort((a, b) => score(b) - score(a) || changed(a) - changed(b));
     options.length = 0;
     options.push(...distinct);
@@ -644,6 +733,8 @@
     sensitivity,
     fitReadings,
     tunePlan,
+    // a vertical dipole's rod and match, for one capacitor value (src/dipole.js); the page runs the values side by side
+    dipoleSize: ({ design, cap }) => { const d = JSON.parse(JSON.stringify(design)); const r = YS.dipole.size(d, cap); return Object.assign({ design: d }, r); },
     ping: () => "pong",
   };
 

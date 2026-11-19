@@ -237,10 +237,31 @@ def mark_svg(path):
         f.write(svg + "\n")
 
 
+RELIEF_TOL = 0.02          # how far the pod's raised bee may stray from the drawing, units (node_pod.py simplifies the same)
+
+
+def relief_js(path):
+    """The raised bee for the node pod's nose in Yagi Studio (src/pod-bee.js): the body's and the wings' outlines, in units,
+    each a list of loops (outer ones counterclockwise, holes clockwise), which pod.js scales to fit the nose."""
+    body, wings = relief()
+    loops = lambda cs: [[round(float(v), 3) for xy in np.asarray(lp) for v in xy] for lp in cs.simplify(RELIEF_TOL).to_polygons()]
+    data = {"body": loops(body), "wings": loops(wings), "bounds": [round(float(v), 3) for v in (body + wings).bounds()]}
+    import json
+    nl = chr(10)
+    with open(path, "w", encoding="utf-8", newline=nl) as f:
+        f.write("/* Yagi Studio's bee, as the node pod's raised mark: made by bee.py (python bee.py icons), don't edit by hand. Each loop" + nl
+                + "   is x, y, x, y, ... in the drawing's units. */" + nl
+                + "(function (root) {" + nl + '  "use strict";' + nl
+                + "  (root.YS || (root.YS = {})).POD_BEE = " + json.dumps(data, separators=(",", ":")) + ";" + nl
+                + '})(typeof globalThis !== "undefined" ? globalThis : this);' + nl)
+
+
 def icons(root):
-    """Every icon from the drawing: the web app's four PNGs, Android's adaptive icon foreground, and the header's mark."""
+    """Every icon from the drawing: the web app's four PNGs, Android's adaptive icon foreground, the header's mark, and the
+    pod's raised bee."""
     import os
     mark_svg(os.path.join(root, "src", "bee.svg"))
+    relief_js(os.path.join(root, "src", "pod-bee.js"))
     web = os.path.join(root, "src", "icons")
     icon_png(os.path.join(web, "icon-192.png"), 192)
     icon_png(os.path.join(web, "icon-512.png"), 512)

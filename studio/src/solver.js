@@ -198,15 +198,17 @@
 
   /**
    * What's added at the feed, from the design: a coil across it (coil, nH), or a hairpin across it (hairpin: { length,
-   * spacing, d }, mm, which takes the coil's place), and a capacitor in series between it and the coax (seriesC, pF).
+   * spacing, d }, mm, which takes the coil's place), and a capacitor in series between it and the coax (seriesC, pF), or in its
+   * place an open-ended stub of coax (seriesStub: { length mm, vf, z0 }), which acts as a capacitor set by its length.
    * null when there's none, which is most designs: Yagi Studio's own set the spacing so the driven element matches alone.
    */
   function matchOf(design) {
     const m = {};
     if (design.hairpin && design.hairpin.length > 0) m.hairpin = design.hairpin;
     else if (design.coil > 0) m.coil = design.coil;
-    if (design.seriesC > 0) m.cap = design.seriesC;
-    return m.hairpin || m.coil || m.cap ? m : null;
+    if (design.seriesStub && design.seriesStub.length > 0) m.stub = design.seriesStub;
+    else if (design.seriesC > 0) m.cap = design.seriesC;
+    return m.hairpin || m.coil || m.cap || m.stub ? m : null;
   }
 
   /**
@@ -236,7 +238,18 @@
       r = [yr / d2, -yi / d2];
     }
     if (m.cap) r = [r[0], r[1] - 1e6 / (2 * Math.PI * f * m.cap)];
+    if (m.stub) r = [r[0], r[1] + stubX(m.stub, f)];
     return r;
+  }
+
+  /**
+   * An open-ended stub of coax in series, ohm: -j z0 cot(beta l), beta from the coax's velocity factor. Under a quarter wave
+   * it's a capacitor whose value grows with its length, changing a little faster with frequency than a real one. Its loss
+   * isn't counted (a few cm of RG178 at 900 MHz loses well under 0.1 dB).
+   */
+  function stubX(st, f) {
+    const t = Math.tan(2 * Math.PI * f * st.length / (C * 1000 * (st.vf || 0.695)));
+    return -(st.z0 || 50) / (Math.abs(t) < 1e-9 ? 1e-9 : t);
   }
 
   function assignOffsets(wires) {
@@ -708,7 +721,7 @@
 
   /** Whether a design needs the general solver (crooked.js). */
   function isCrooked(design) {
-    return design.elements.some((e) => e.crook || e.fold);
+    return design.elements.some((e) => e.crook || e.fold || e.colin);
   }
 
   /** Runs a list of frequencies on a design. */
@@ -743,6 +756,6 @@
     return { nth, nph, g };
   }
 
-  Object.assign(YS, { C, ETA, MATERIALS, QUALITY, END_CAP: 0.10, buildWires, assignOffsets, workspace, solveAt, metricsAt, matchOf, shuntX, feedMatch,
+  Object.assign(YS, { C, ETA, MATERIALS, QUALITY, END_CAP: 0.10, buildWires, assignOffsets, workspace, solveAt, metricsAt, matchOf, shuntX, stubX, feedMatch,
     sweep, pattern3d, gainDbi, gainFactor, directivityDbi, swrOf, currents, fieldAt, meshNodes, meshCount, cutFigures, isCrooked, feedWireX });
 })(typeof globalThis !== "undefined" ? globalThis : this);

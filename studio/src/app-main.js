@@ -186,9 +186,46 @@
     try { A.loadDesign(YS.importText(text, name), true); A.go(S.view); A.toast("Opened " + name); } catch (e) { A.toast(e.message); }
   }
 
+  /**
+   * New design: first what kind of antenna, as each kind has its own path through the tabs (the owner's wish, 2026-11-17).
+   * The vertical dipoles (on an arm, the sleeve dipole, the collinear) haven't been built, so they sit in an experimental zone
+   * and open only once the person says they understand that (the owner's wish, 2026-11-19).
+   */
   function newDesignDialog() {
+    A.modal(`<h2>What are you building?</h2>
+      <p>Each kind has its own screens on every tab, with only what's about it. You can start the other kind here any time.</p>
+      <div class="kind-pick">
+        <button class="btn kind-card" id="k-yagi"><b>A Yagi</b><span>A beam: its gain goes one way, so you aim it. For a far node, a hilltop, a link.</span><span class="pill good">Built and tuned</span></button>
+      </div>
+      <div class="exp-zone">
+        <h3><span class="exp-badge">Experimental</span> Not built or tested yet</h3>
+        <p>These are designed and checked on the computer only: none has been built, printed or swept. The model may be wrong about them, and their parts may not fit. Sweep anything you build before you trust it.</p>
+        <label class="check"><input type="checkbox" id="k-ok"> I understand this is untested</label>
+        <div class="kind-pick">
+          <button class="btn kind-card" id="k-dipole" disabled><b>A vertical dipole</b><span>All round, about 2 dBi, nothing to aim. For a node that talks to neighbours on every side. On an arm from the mast, or on top as a sleeve dipole or a collinear.</span></button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="btn" id="k-no">Cancel</button></div>`, (b, close) => {
+      $("#k-no", b).onclick = close;
+      $("#k-ok", b).onchange = (e) => { $("#k-dipole", b).disabled = !e.target.checked; };
+      $("#k-yagi", b).onclick = () => { close(); newYagiDialog(); };
+      $("#k-dipole", b).onclick = () => { close(); newDipole(); };
+    });
+  }
+
+  /** A vertical dipole at the open design's frequency and network, its rod and match not yet sized: its start screen does that. */
+  function newDipole() {
+    const d = S.design, lam = 299792.458 / d.f0;
+    const made = YS.dipole.blank({ f0: d.f0, band: d.band.slice(), radio: d.radio, d: 3.175, material: "brass", gap: d.gap || 3, mast: { on: true, d: 42, behind: 250, length: 2000 } });
+    made.name = `Vertical dipole, ${Math.round(d.f0)} MHz`;
+    made.elements[0].L = Math.round(0.47 * lam * 10) / 10;
+    A.loadDesign(made, true);
+    A.showStage("goals");
+  }
+
+  function newYagiDialog() {
     const metals = `<option value="aluminium">Aluminum</option><option value="brass">Brass</option><option value="copper">Copper</option><option value="steel">Stainless</option>`;
-    A.modal(`<h2>Start a new design</h2>
+    A.modal(`<h2>Start a new Yagi</h2>
       <p>This gives you a sensible starting point using a standard spacing recipe. Then polish it on the Design tab. To start from the gain you want instead, use Design an antenna for me there. Undo brings back the design you have open.</p>
       <div class="field-grid">
         <div class="field"><label for="n-f">Frequency, MHz</label><input class="num" id="n-f" value="915" inputmode="decimal"></div>

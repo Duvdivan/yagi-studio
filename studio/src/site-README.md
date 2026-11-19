@@ -1,6 +1,6 @@
 # Yagi Studio
 
-A Yagi antenna simulator and tuning assistant that runs entirely on your device. Design a beam, optimize it, see what build errors will do to it, get a cut list and a printable cutting guide, and, once it's built, work out from your VNA readings what to change.
+A Yagi antenna simulator and tuning assistant that runs entirely on your device. Design a beam, optimize it, see what build errors will do to it, get a cut list and a printable cutting guide, and, once it's built, work out from your VNA readings what to change. It also designs, as experimental, vertical antennas for all-round coverage: a matched dipole on an arm from the mast, a sleeve dipole, and a collinear of two or three sections. These are designed and checked on the computer, but none has been built yet, so New design asks you to say you understand that before it opens one, and an Experimental badge shows on every tab while one is open. The node pod and the PVC pipe over a vertical are marked experimental on the 3D print tab too.
 
 It has presets for MeshCore and Meshtastic networks, and works at any frequency you type in.
 
@@ -42,6 +42,8 @@ It's all in [`studio/`](studio/): `python studio/build.py` rebuilds this page fr
 ## The 3D print tab: boom and mast clamp tested, other mounts not yet
 
 The app makes printable files for a design's boom and mount. A boom from it has been printed in ASA, built into a working antenna and tuned, and so have two of the 8 dBd DuvYagi, which is a preset. So has the mast clamp, with the boom's tail that goes in it: captive M3 nuts in the tail (thin square, standard square or hex) and a tunnel that brings the coax out just in front of the reflector. The clamp the app gives you is that printed clamp itself, unchanged, for any design with the standard boom (rods up to 3.2 mm) and its rods vertical: every such boom ends in the same 38.3 mm tail. For rods horizontal or a bigger boom, the app makes one in the same shape, which hasn't been printed. It prints on a keel under its block, tilted 45 degrees with the socket pointing up, in ASA with 5 walls and 40-50% gyroid infill, and needs no supports. The other mounts (painter pole arm, hand grip and tripod mount) haven't been printed yet, so test-fit one before you rely on it.
+
+The node pod (Mount: Node pod) is a sealed, upright housing for a Heltec V4 node and its battery, with the boom's socket on its front, so the antenna and the node go up the mast as one. Its toggles choose the battery (a pouch cell, two 18650s or one 26650), its top (ready for a solar roof, sealed, or an SMA or N antenna on a screw-in insert), its back (a spine for two hose clamps, or a pad for a tripod and painter pole block, a wall plate or a magnet plate), its two ports (PG7 or PG9 glands, a breather), and its hex lace and marks. A magnet base, a ring on a round skirt standing on three rubber-coated magnets, stands it on a flat steel top, such as an HVAC unit's. An earlier version of its body, ring and finial has been printed and fits together; this version and its other parts haven't been printed. Its body prints on a brim.
 
 ## License
 

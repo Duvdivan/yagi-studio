@@ -84,6 +84,21 @@
   }
 
   /**
+   * The same between two coaxial tubes of radii a and b, axial distance az apart: the mean of 1/R between their circles is
+   * 1 / agm(sqrt(az^2 + (a + b)^2), sqrt(az^2 + (a - b)^2)), the complete elliptic integral in AGM form, which is tubeKernel's
+   * when a = b; the dynamic remainder is taken at the mean squared distance, az^2 + a^2 + b^2. For a rod whose halves
+   * differ in size, such as a sleeve dipole's rod above and tube below.
+   */
+  function tubeKernel2(az, a, b, k) {
+    if (a === b) { tubeKernel(az, a, k); return; }
+    const R = Math.sqrt(az * az + a * a + b * b), kR = k * R, sk = Math.sin(kR);
+    if (az > FAST_ZETA * Math.max(a, b)) { gr = Math.cos(kR) / R; gi = -sk / R; return; }
+    const half = Math.sin(0.5 * kR), s = a + b, t = a - b;
+    gr = 1 / agm(Math.sqrt(az * az + s * s), Math.max(Math.sqrt(az * az + t * t), 1e-300)) - 2 * half * half / R;
+    gi = -sk / R;
+  }
+
+  /**
    * Which way a rod points at position u along it, as angles in degrees toward +x and +y.
    * c, all optional:
    *   shift   slid along its own axis, mm
@@ -159,7 +174,11 @@
       }
       return out;
     });
-    return { a: w.a, sigma: w.sigma, M, s, p, d, tan, pts, off: 0, shapes: RULES.map((rule) => new Float64Array(4 * M * rule.x.length)) };
+    // each panel's radius: the rod's, or below c.stepAt (mm along the rod, 0 the feed) a different one, c.lowerA: a sleeve
+    // dipole's tube, whose top face is at the gap's lower edge
+    const ap = new Float64Array(M), step = c.stepAt === undefined ? 0 : c.stepAt;
+    for (let j = 0; j < M; j++) ap[j] = c.lowerA && 0.5 * (s[j] + s[j + 1]) < step ? c.lowerA : w.a;
+    return { a: w.a, ap, sigma: w.sigma, M, s, p, d, tan, pts, off: 0, shapes: RULES.map((rule) => new Float64Array(4 * M * rule.x.length)) };
   }
 
   /** Panel edges along a straight piece, fine at both its ends, as solver.js grades toward a tip. */
@@ -211,6 +230,132 @@
     return { a, sigma: e.sigma !== undefined ? e.sigma : material.sigma, M, s: Float64Array.from(s), p, d, tan, pts: rules, off: 0, closed: true, shapes: RULES.map((rule) => new Float64Array(4 * M * rule.x.length)) };
   }
 
+  /**
+   * A collinear (src/collinear.js): one upright rod fed off its middle, its lower part a tube of another radius (a sleeve
+   * dipole's), and above the feed rod sections joined end to end, each joint bridged by a shorted two-wire stub. The rod is
+   * modelled whole through the joints, as it is through the feed gap, and each stub is a load in series at a node put on
+   * the joint's middle: its own field and its coupling to the rod are left out, as NEC's TL card leaves them out.
+   * c: { below (mm from the feed's middle down to the lower tip), lowerA (mm, the radius below the gap; the rod's if none),
+   * sections (mm: the feed's middle to the first joint's middle, joint to joint, the last to the top tip), joints: [{ gap,
+   * stub }] }. Panels are graded fine at every tip, gap edge and joint, as gradedPiece grades them.
+   */
+  function buildCollinear(e, c, gap, lam, q) {
+    const a = e.d / 2, la = c.lowerA || a, marks = gap > 0 ? [-c.below, -gap / 2, gap / 2] : [-c.below, 0];
+    let z = 0;
+    c.sections.forEach((L, i) => {
+      z += L;
+      if (i + 1 < c.sections.length) { const g = (c.joints[i] && c.joints[i].gap) || 0; if (g > 0) marks.push(z - g / 2, z, z + g / 2); else marks.push(z); }
+      else marks.push(z);
+    });
+    const s = [marks[0]];
+    for (let i = 0; i + 1 < marks.length; i++) {
+      const len = marks[i + 1] - marks[i];
+      if (!(len > 1e-9)) continue;                      // no gap: the feed is a node
+      const r = marks[i + 1] <= -gap / 2 + 1e-9 ? la : a, run = gradedPiece(len, r, lam, q);
+      for (let j = 1; j < run.length; j++) s.push(marks[i] + run[j]);
+    }
+    const M = s.length - 1, p = new Float64Array(3 * (M + 1)), d = new Float64Array(M), tan = new Float64Array(3 * M), ap = new Float64Array(M);
+    for (let i = 0; i <= M; i++) { p[3 * i] = e.x; p[3 * i + 1] = e.y || 0; p[3 * i + 2] = s[i]; }
+    for (let j = 0; j < M; j++) { d[j] = s[j + 1] - s[j]; tan[3 * j + 2] = 1; ap[j] = 0.5 * (s[j] + s[j + 1]) < -gap / 2 ? la : a; }
+    const pts = RULES.map((rule) => {
+      const Q = rule.x.length, out = new Float64Array(3 * M * Q);
+      for (let j = 0; j < M; j++) for (let k = 0; k < Q; k++) { const o = 3 * (j * Q + k); out[o] = e.x; out[o + 1] = e.y || 0; out[o + 2] = s[j] + rule.x[k] * d[j]; }
+      return out;
+    });
+    // the node nearest each joint's middle, and the stub across it
+    const loads = [];
+    z = 0;
+    c.sections.slice(0, -1).forEach((L, i) => {
+      z += L;
+      let best = 1;
+      for (let j = 1; j < M; j++) if (Math.abs(s[j] - z) < Math.abs(s[best] - z)) best = j;
+      const g = (c.joints[i] && c.joints[i].gap) || 0;
+      if (c.joints[i] && c.joints[i].stub) loads.push({ node: best, lo: z - g / 2, hi: z + g / 2, stub: c.joints[i].stub });
+    });
+    let mid = 1;
+    for (let j = 1; j < M; j++) if (Math.abs(s[j]) < Math.abs(s[mid])) mid = j;
+    const material = YS.MATERIALS[e.material] || YS.MATERIALS.aluminium;
+    return { a, ap, sigma: e.sigma !== undefined ? e.sigma : material.sigma, M, s: Float64Array.from(s), p, d, tan, pts, off: 0, mid, loads,
+      shapes: RULES.map((rule) => new Float64Array(4 * M * rule.x.length)) };
+  }
+
+  /**
+   * A collinear whose stubs are real wire (the owner's choice, 2026-11-18: folded down beside the rod below). Electrically it
+   * is one wire: up the tube and the first rod to the joint, out and down one leg of the stub, across its short, up the other
+   * leg and back in to the next rod's end, and on up. So it is one open rod along that path, as buildFolded follows a loop,
+   * each panel its own radius (the tube's, the rod's or the stub wire's) and conductivity, with nodes on every corner. Where
+   * two of its straight runs lie side by side (the legs, or a leg beside the rod) they see each other as filaments.
+   * c: as buildCollinear's, each joint's stub { length (mm down from the joint's lower rod end to the short), spacing (the
+   * legs, side by side), d, out (mm from the rod's axis to the legs' plane), material }. The joint's gap is the legs' spacing
+   * here: each rod end goes straight out to its own leg.
+   */
+  function buildCollinearWire(e, c, gap, lam, q) {
+    const a = e.d / 2, la = c.lowerA || a, mat = (m) => (YS.MATERIALS[m] || YS.MATERIALS.aluminium).sigma;
+    const rodSig = e.sigma !== undefined ? e.sigma : mat(e.material);
+    // corners, each with the radius and conductivity of the run that ends there
+    const pts = [[0, 0, -c.below]], runs = [];
+    const go = (p, r, sg) => { pts.push(p); runs.push({ r, sg }); };
+    let z = 0;
+    // the feed gap is on the first run: put corners at its edges so the panels grade fine there
+    if (gap > 0) { go([0, 0, -gap / 2], la, rodSig); go([0, 0, gap / 2], a, rodSig); }
+    c.sections.forEach((L, i) => {
+      z += L;
+      if (i + 1 === c.sections.length) { go([0, 0, z], a, rodSig); return; }
+      const st = c.joints[i].stub, h = st.spacing / 2, X = st.out, w = st.d / 2, sg = mat(st.material || "copper");
+      const lo = z - h, hi = z + h, zend = lo - st.length;
+      go([0, 0, lo], a, rodSig);
+      go([X, -h, lo], w, sg); go([X, -h, zend], w, sg); go([X, h, zend], w, sg); go([X, h, hi], w, sg); go([0, 0, hi], w, sg);
+    });
+    // panels: each run graded fine at both its ends
+    const P = [pts[0]], ap = [], sp = [], s = [-c.below];
+    for (let i = 0; i < runs.length; i++) {
+      const A = pts[i], B = pts[i + 1], len = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]);
+      if (!(len > 1e-9)) continue;
+      const run = gradedPiece(len, runs[i].r, lam, q);
+      for (let j = 1; j < run.length; j++) {
+        const u = run[j] / len;
+        P.push([A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u, A[2] + (B[2] - A[2]) * u]);
+        ap.push(runs[i].r); sp.push(runs[i].sg); s.push(s[s.length - 1] + run[j] - run[j - 1]);
+      }
+    }
+    // the tube's panels are the ones below the gap
+    for (let j = 0; j < ap.length; j++) if (0.5 * (s[j] + s[j + 1]) < -gap / 2 && ap[j] === la) ap[j] = la;
+    const M = P.length - 1, p = new Float64Array(3 * (M + 1)), d = new Float64Array(M), tan = new Float64Array(3 * M);
+    P.forEach((q2, i) => { p[3 * i] = e.x + q2[0]; p[3 * i + 1] = (e.y || 0) + q2[1]; p[3 * i + 2] = q2[2]; });
+    for (let j = 0; j < M; j++) {
+      const ex = p[3 * j + 3] - p[3 * j], ey = p[3 * j + 4] - p[3 * j + 1], ez = p[3 * j + 5] - p[3 * j + 2];
+      d[j] = Math.sqrt(ex * ex + ey * ey + ez * ez);
+      tan[3 * j] = ex / d[j]; tan[3 * j + 1] = ey / d[j]; tan[3 * j + 2] = ez / d[j];
+    }
+    const rules = RULES.map((rule) => {
+      const Q = rule.x.length, out = new Float64Array(3 * M * Q);
+      for (let j = 0; j < M; j++) for (let k = 0; k < Q; k++) { const u = rule.x[k] * d[j], o = 3 * (j * Q + k); for (let cc = 0; cc < 3; cc++) out[o + cc] = p[3 * j + cc] + tan[3 * j + cc] * u; }
+      return out;
+    });
+    let mid = 1;
+    for (let j = 1; j < M; j++) if (Math.abs(s[j]) < Math.abs(s[mid])) mid = j;
+    return { a, ap: Float64Array.from(ap), sp: Float64Array.from(sp), sigma: rodSig, M, s: Float64Array.from(s), p, d, tan, pts: rules, off: 0, mid, poly: true,
+      shapes: RULES.map((rule) => new Float64Array(4 * M * rule.x.length)) };
+  }
+
+  /**
+   * A shorted stub of two parallel round wires in air: its impedance Z0 tanh(gamma l), as [R, X] in ohm. stub: { length,
+   * spacing (centre to centre), d (each wire), material, lossless }, mm. Z0 = 120 acosh(D/d); the loss is the two wires'
+   * skin resistance, crowded by their nearness (Ramo, Whinnery and Van Duzer, "Fields and Waves", sec. 5.11).
+   */
+  function wireStubZ(stub, f) {
+    const D = stub.spacing, dd = stub.d, z0 = 120 * Math.acosh(D / dd), beta = 2 * Math.PI * f / (C * 1000), l = stub.length;
+    let alpha = 0;
+    if (!stub.lossless) {
+      const sigma = (YS.MATERIALS[stub.material || "copper"] || YS.MATERIALS.copper).sigma, rs = Math.sqrt(Math.PI * f * 1e6 * MU0 / sigma);
+      const rPerM = 2 * rs / (Math.PI * dd * 1e-3) * (D / dd) / Math.sqrt((D / dd) * (D / dd) - 1);
+      alpha = rPerM / (2 * z0) * 1e-3;      // nepers per mm
+    }
+    // tanh(x + jy) = (sinh 2x + j sin 2y) / (cosh 2x + cos 2y)
+    const x = 2 * alpha * l, y = 2 * beta * l, den = Math.cosh(x) + Math.cos(y);
+    return [z0 * Math.sinh(x) / den, z0 * Math.sin(y) / den];
+  }
+
   /** The unknown for a rod's node: on an open rod the tips carry none, and a loop's two ends are the same node. */
   function unknownOf(r, node) {
     if (r.closed) return r.off + (node % r.M);
@@ -223,7 +368,8 @@
     const wires = YS.buildWires(design, opt);
     const q = typeof opt.quality === "number" ? opt.quality : YS.QUALITY[opt.quality || "normal"], lam = C * 1000 / design.f0;
     const list = design.elements.concat(design.extra || []);
-    const rods = wires.map((w, i) => (list[i].fold ? buildFolded(list[i], list[i].fold, lam, q) : buildRod(w, list[i].crook || {})));
+    const gap = design.gap === undefined ? 3 : design.gap;
+    const rods = wires.map((w, i) => (list[i].colin ? (list[i].colin.joints.some((jt) => jt.stub && jt.stub.out > 0) ? buildCollinearWire : buildCollinear)(list[i], list[i].colin, i === design.feed ? gap : 0, lam, q) : list[i].fold ? buildFolded(list[i], list[i].fold, lam, q) : buildRod(w, list[i].crook || {})));
     let N = 0;
     for (const r of rods) { r.off = N; N += r.closed ? r.M : r.M - 1; }
     return { design, rods, N, gap: design.gap === undefined ? 3 : design.gap, z0: design.z0 || 50, feed: design.feed, leadX: wires[design.feed].leadX || 0, match: YS.matchOf(design), lastY: 0,
@@ -254,7 +400,7 @@
   /** A panel with itself: the kernel depends only on the distance along it, and is singular on the diagonal. */
   function selfPanel(r, j, k) {
     E.fill(0);
-    const d = r.d[j], sn = Math.sin(k * d), rule = RULES[END], Q = rule.x.length, a = r.a;
+    const d = r.d[j], sn = Math.sin(k * d), rule = RULES[END], Q = rule.x.length, a = r.ap ? r.ap[j] : r.a;
     for (let u = 0; u < Q; u++) {
       const t = rule.x[u] * d, wu = rule.w[u] * d;
       const f0 = wu * Math.sin(k * (d - t)) / sn, f1 = wu * Math.sin(k * t) / sn;
@@ -286,7 +432,7 @@
       for (let v = 0; v < Q; v++) {
         const ob = 3 * (j * Q + v), dx = ax - pb[ob], dy = ay - pb[ob + 1], dz = az - pb[ob + 2], fb = 4 * (j * Q + v);
         const D = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (same && !apart) tubeKernel(D, a, k);
+        if (same && !apart) { if (A.ap) tubeKernel2(D, A.ap[i], A.ap[j], k); else tubeKernel(D, a, k); }
         else { const kR = k * D; gr = Math.cos(kR) / D; gi = -Math.sin(kR) / D; }
         const f2 = sb[fb], f3 = sb[fb + 1], g2 = sb[fb + 2], g3 = sb[fb + 3];
         const e00 = k * c * f0 * f2 - g0 * g2 / k, e01 = k * c * f0 * f3 - g0 * g3 / k;
@@ -328,12 +474,14 @@
             const big = Math.max(A.d[i], B.d[j]), gapTo = Math.sqrt(dx * dx + dy * dy + dz * dz) - 0.5 * (A.d[i] + B.d[j]);
             const touching = same && (j === i + 1 || (A.closed && i === 0 && j === A.M - 1));
             const rule = touching ? END : gapTo < (same ? NEAR_SAME : NEAR_OTHER) * big ? NEAR : FAR;
-            // the two legs of a loop run side by side: seen from there, a tube's current acts as if on its axis
+            // the two legs of a loop (or a collinear's stub, or a leg beside the rod) run side by side: seen from there, a
+            // tube's current acts as if on its axis
             let apart = false;
-            if (A.closed && same) {
+            if ((A.closed || A.poly) && same) {
               const c = A.tan[3 * i] * A.tan[3 * j] + A.tan[3 * i + 1] * A.tan[3 * j + 1] + A.tan[3 * i + 2] * A.tan[3 * j + 2];
               const along = dx * A.tan[3 * i] + dy * A.tan[3 * i + 1] + dz * A.tan[3 * i + 2];
-              apart = Math.abs(c) > 0.99 && Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - along * along)) > 3 * A.a;
+              const ra = A.ap ? Math.max(A.ap[i], A.ap[j]) : A.a;
+              apart = Math.abs(c) > 0.99 && Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - along * along)) > 3 * ra;
             }
             panelPair(A, i, B, j, rule, k, same, apart);
             add(A, i, B, j, true);
@@ -342,8 +490,9 @@
       }
       // skin effect: a surface impedance per unit length, over the tents' overlaps
       if (isFinite(A.sigma)) {
-        const rs = Math.sqrt(omega * MU0 / (2 * A.sigma)), zs = rs / (2 * Math.PI * A.a * 1e-3) * 1e-3;
+        const rs = Math.sqrt(omega * MU0 / (2 * A.sigma));
         for (let j = 0; j < A.M; j++) {
+          const zs = (A.sp ? Math.sqrt(omega * MU0 / (2 * A.sp[j])) : rs) / (2 * Math.PI * (A.ap ? A.ap[j] : A.a) * 1e-3) * 1e-3;
           const kd = k * A.d[j], s = Math.sin(kd), c = Math.cos(kd), s2 = s * s;
           const selfOv = (kd - s * c) / (2 * k * s2), nbrOv = (s - kd * c) / (2 * k * s2);
           const m = unknownOf(A, j), n = unknownOf(A, j + 1);
@@ -354,6 +503,39 @@
             re[n * N + m] += zs * nbrOv; im[n * N + m] += zs * nbrOv;
           }
         }
+      }
+    }
+  }
+
+  /**
+   * The tents' mean over a stretch of an open rod, [unknown, weight] pairs: the share of each tent seen by a field spread
+   * evenly from lo to hi, as excite spreads the feed's volt over its gap. A point (lo = hi) is the node's own tent.
+   */
+  function gapWeights(r, lo, hi, k, node) {
+    const g = hi - lo, out = [];
+    if (!(g > 0)) { out.push([unknownOf(r, node), 1]); return out; }
+    for (let j = 0; j < r.M; j++) {
+      const a = Math.max(r.s[j], lo), b = Math.min(r.s[j + 1], hi);
+      if (b <= a) continue;
+      const d = r.d[j], sn = Math.sin(k * d), t1 = a - r.s[j], t2 = b - r.s[j];
+      const down = (Math.cos(k * (d - t2)) - Math.cos(k * (d - t1))) / (k * sn), up = (Math.cos(k * t1) - Math.cos(k * t2)) / (k * sn);
+      if (unknownOf(r, j) >= 0) out.push([unknownOf(r, j), down / g]);
+      if (unknownOf(r, j + 1) >= 0) out.push([unknownOf(r, j + 1), up / g]);
+    }
+    return out;
+  }
+
+  /**
+   * Each collinear joint's stub, in series across its gap: Z w_m w_n, w the tents' means over the gap, so the stub sees the
+   * gap's mean current and the rod the stub's voltage spread evenly across it (Harrington's lumped load, made a gap).
+   */
+  function addLoads(sys, f, k) {
+    for (const r of sys.rods) {
+      if (!r.loads) continue;
+      for (const ld of r.loads) {
+        const z = wireStubZ(ld.stub, f), w = gapWeights(r, ld.lo, ld.hi, k, ld.node);
+        ld.w = w;
+        for (const [m, wm] of w) for (const [n, wn] of w) { sys.re[m * sys.N + n] += z[0] * wm * wn; sys.im[m * sys.N + n] += z[1] * wm * wn; }
       }
     }
   }
@@ -377,7 +559,7 @@
       }
       return;
     }
-    if (!(g > 0)) { v[r.off + r.M / 2 - 1] = 1; return; }
+    if (!(g > 0)) { v[r.off + (r.mid || r.M / 2) - 1] = 1; return; }
     for (let j = 0; j < r.M; j++) {
       const a = Math.max(r.s[j], -g / 2), b = Math.min(r.s[j + 1], g / 2);
       if (b <= a) continue;
@@ -471,6 +653,7 @@
   function solve(sys, f, wide) {
     const k = 2 * Math.PI / (C * 1000 / f), omega = 2 * Math.PI * f * 1e6;
     fill(sys, k, omega);
+    addLoads(sys, f, k);
     excite(sys, k);
     luSolve(sys);
     let yr = 0, yi = 0;
@@ -545,7 +728,7 @@
       // the current up the top half of each rod, as solver.js reports it
       let peak = 0, ohmic = 0;
       r.currents = sys.rods.map((rod) => {
-        const z = [], mag = [], phase = [], mid = rod.closed ? 0 : rod.M / 2;
+        const z = [], mag = [], phase = [], mid = rod.closed ? 0 : rod.mid || rod.M / 2;
         for (let node = mid; node <= rod.M; node++) {
           const u = unknownOf(rod, node), ir = u >= 0 ? sys.xr[u] : 0, ii = u >= 0 ? sys.xi[u] : 0, v = Math.hypot(ir, ii);
           z.push(rod.s[node]); mag.push(v); phase.push(Math.atan2(ii, ir) / RAD);
@@ -557,14 +740,20 @@
       const omega = 2 * Math.PI * f * 1e6;
       for (const rod of sys.rods) {
         if (!isFinite(rod.sigma)) continue;
-        const res = Math.sqrt(omega * MU0 / (2 * rod.sigma)) / (2 * Math.PI * rod.a * 1e-3) * 1e-3;
+        const rs0 = Math.sqrt(omega * MU0 / (2 * rod.sigma));
         for (let j = 0; j < rod.M; j++) {
+          const res = (rod.sp ? Math.sqrt(omega * MU0 / (2 * rod.sp[j])) : rs0) / (2 * Math.PI * (rod.ap ? rod.ap[j] : rod.a) * 1e-3) * 1e-3;
           const kd = k * rod.d[j], s = Math.sin(kd), c = Math.cos(kd), s2 = s * s;
           const selfOv = (kd - s * c) / (2 * k * s2), nbrOv = (s - kd * c) / (2 * k * s2);
           const ua = unknownOf(rod, j), ub = unknownOf(rod, j + 1);
           const ar = ua >= 0 ? sys.xr[ua] : 0, ai = ua >= 0 ? sys.xi[ua] : 0, br = ub >= 0 ? sys.xr[ub] : 0, bi = ub >= 0 ? sys.xi[ub] : 0;
           ohmic += 0.5 * res * (selfOv * (ar * ar + ai * ai + br * br + bi * bi) + 2 * nbrOv * (ar * br + ai * bi));
         }
+      }
+      for (const rod of sys.rods) for (const ld of rod.loads || []) {
+        let ir = 0, ii = 0;                              // the gap's mean current, as the stub sees it
+        for (const [u, w] of ld.w) { ir += w * sys.xr[u]; ii += w * sys.xi[u]; }
+        ohmic += 0.5 * wireStubZ(ld.stub, f)[0] * (ir * ir + ii * ii);
       }
       r.efficiency = 1 - ohmic / (0.5 * yr);
     }
@@ -592,5 +781,5 @@
     return { nth, nph, g };
   }
 
-  YS.crooked = { prepare, solve, valley, walk, metrics, sweep, pattern3d, BOOM_FACE };
+  YS.crooked = { prepare, solve, valley, walk, metrics, sweep, pattern3d, wireStubZ, BOOM_FACE };
 })(typeof globalThis !== "undefined" ? globalThis : this);

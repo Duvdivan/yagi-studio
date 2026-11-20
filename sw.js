@@ -6,8 +6,8 @@
  * background, and they take over the next time the app is opened: a page already open is one file and
  * carries on as it is, so nobody loses work in the middle of something.
  */
-const VERSION = "2a9fd7dc31ce";
-const FILES = ["LICENSE", "README.md", "fonts/OFL-barlow-condensed.txt", "fonts/OFL-ibm-plex-mono.txt", "fonts/OFL-ibm-plex-sans.txt", "fonts/barlow-condensed-600.woff2", "fonts/ibm-plex-mono-400.woff2", "fonts/ibm-plex-mono-500.woff2", "fonts/ibm-plex-sans.woff2", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "index.html", "manifest.webmanifest"];
+const VERSION = "b71fae07343e";
+const FILES = ["LICENSE", "README.md", "fonts/OFL-barlow-condensed.txt", "fonts/OFL-ibm-plex-mono.txt", "fonts/OFL-ibm-plex-sans.txt", "fonts/barlow-condensed-600.woff2", "fonts/ibm-plex-mono-400.woff2", "fonts/ibm-plex-mono-500.woff2", "fonts/ibm-plex-sans.woff2", "icons/apple-touch-icon.cd45b5bf.png", "icons/icon-128.21103156.png", "icons/icon-192.af4ffa1c.png", "icons/icon-256.272b26a3.png", "icons/icon-32.b6572c91.png", "icons/icon-48.f154422d.png", "icons/icon-512.4e4e1cee.png", "icons/icon-64.c4edce4f.png", "icons/icon-96.01285519.png", "icons/icon-maskable-512.ba46538e.png", "index.html", "manifest.webmanifest"];
 const CACHE = "yagi-studio-" + VERSION;
 
 self.addEventListener("install", (e) => {

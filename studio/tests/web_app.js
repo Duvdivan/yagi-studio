@@ -38,7 +38,7 @@ async function chrome() {
   await p.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 30000 }).catch(() => {});
   ok("the service worker takes over", await p.evaluate(() => !!navigator.serviceWorker.controller));
   const cached = await p.evaluate(async () => { const n = (await caches.keys())[0]; return (await (await caches.open(n)).keys()).map((r) => r.url.split("/").pop()); });
-  ok("every file is stored", cached.length === 15 && cached.includes("index.html") && cached.includes("ibm-plex-sans.woff2"), `${cached.length} files`);
+  ok("every file is stored", cached.length === 21 && cached.includes("index.html") && cached.includes("ibm-plex-sans.woff2"), `${cached.length} files`);
   const cdp = await ctx.newCDPSession(p);
   const inst = await cdp.send("Page.getInstallabilityErrors").catch((e) => ({ installabilityErrors: [{ errorId: e.message }] }));
   ok("Chrome finds it installable", inst.installabilityErrors.length === 0, JSON.stringify(inst.installabilityErrors));

@@ -82,8 +82,14 @@ def web():
     (out / "icons").mkdir()
     for f in fonts.iterdir():
         shutil.copy(f, out / "fonts" / f.name)
-    for f in (SRC / "icons").iterdir():
-        shutil.copy(f, out / "icons" / f.name)
+    # each icon's name carries a hash of its picture, so a new picture is a new address: an installed app (Edge and Chrome on
+    # Windows keep their own copy, for the taskbar and the title bar) only fetches its icons again when their addresses change,
+    # and the bee stayed the old Yagi mark on the owner's PC under the same names (2026-11-20)
+    icon = {}
+    for f in sorted((SRC / "icons").iterdir()):
+        name = f"{f.stem}.{hashlib.sha256(f.read_bytes()).hexdigest()[:8]}{f.suffix}"
+        shutil.copy(f, out / "icons" / name)
+        icon[f.stem] = "icons/" + name
     shutil.copy(HERE / "LICENSE", out / "LICENSE")
     shutil.copy(SRC / "site-README.md", out / "README.md")
     # iOS's default status bar style keeps the page below the bar, so the top needs no inset
@@ -93,8 +99,9 @@ def web():
             '<meta name="apple-mobile-web-app-capable" content="yes">\n'
             '<meta name="apple-mobile-web-app-status-bar-style" content="default">\n'
             '<meta name="apple-mobile-web-app-title" content="Yagi Studio">\n'
-            '<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">\n'
-            '<link rel="icon" href="icons/icon-192.png">\n')
+            f'<link rel="apple-touch-icon" href="{icon["apple-touch-icon"]}">\n'
+            f'<link rel="icon" type="image/png" sizes="32x32" href="{icon["icon-32"]}">\n'
+            f'<link rel="icon" type="image/png" sizes="192x192" href="{icon["icon-192"]}">\n')
     faces = "".join(f"@font-face {{ font-family: '{family}'; font-weight: {weight}; font-display: swap; "
                     f"src: url(fonts/{file}) format('woff2'); }}\n" for family, weight, file in ANDROID_FONTS)
     full = document(page("Yagi Studio", f"{head}<style>\n{faces}</style>", read("web-shim.js") + "\n"))
@@ -109,11 +116,8 @@ def web():
         "display": "standalone",
         "background_color": "#16324F",
         "theme_color": "#16324F",
-        "icons": [
-            {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
-            {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
-            {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
-        ],
+        "icons": [{"src": icon[f"icon-{px}"], "sizes": f"{px}x{px}", "type": "image/png"} for px in (32, 48, 64, 96, 128, 192, 256, 512)]
+                 + [{"src": icon["icon-maskable-512"], "sizes": "512x512", "type": "image/png", "purpose": "maskable"}],
     }, indent=2) + "\n", encoding="utf-8")
     files = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file())
     worker = (SRC / "sw.js").read_text(encoding="utf-8")

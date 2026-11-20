@@ -257,12 +257,14 @@ def relief_js(path):
 
 
 def icons(root):
-    """Every icon from the drawing: the web app's four PNGs, Android's adaptive icon foreground, the header's mark, and the
+    """Every icon from the drawing: the web app's PNGs, Android's adaptive icon foreground, the header's mark, and the
     pod's raised bee."""
     import os
     mark_svg(os.path.join(root, "src", "bee.svg"))
     relief_js(os.path.join(root, "src", "pod-bee.js"))
     web = os.path.join(root, "src", "icons")
+    for px in (32, 48, 64, 96, 128, 256):      # small ones, drawn at their size: Windows uses them for the title bar and taskbar
+        icon_png(os.path.join(web, f"icon-{px}.png"), px)
     icon_png(os.path.join(web, "icon-192.png"), 192)
     icon_png(os.path.join(web, "icon-512.png"), 512)
     icon_png(os.path.join(web, "icon-maskable-512.png"), 512, maskable=True)
